@@ -32,6 +32,7 @@ from state import SessionState
 from events import EventBus
 from analyzers.fuel import FuelAnalyzer
 from analyzers.pace import PaceAnalyzer
+from analyzers.traffic import TrafficAnalyzer
 from voice import VoiceGenerator
 from tts import AudioPlayer, VoiceWorker, build_engine
 
@@ -73,6 +74,7 @@ class CrewChiefApp:
         self.bus = EventBus(cfg["cooldowns"])
         self.fuel = FuelAnalyzer(cfg)
         self.pace = PaceAnalyzer(cfg)
+        self.traffic = TrafficAnalyzer(cfg)
         self.voice_gen = VoiceGenerator(cfg, self.state)
         self.worker = VoiceWorker(
             bus=self.bus,
@@ -131,7 +133,8 @@ class CrewChiefApp:
     # -- 훅 (이후 마일스톤에서 확장) -----------------------------------------
 
     def on_snapshot(self, snap: Snapshot) -> None:
-        """5Hz마다 호출. 랩 완료 감지 시 무거운 분석 실행."""
+        """5Hz마다 호출. 긴급 이벤트(트래픽)만 체크하고, 랩 완료 시 무거운 분석."""
+        self.traffic.on_tick(self.state, snap, self.bus)
         lap = self.state.update(snap)
         if lap is not None:
             self.on_lap_complete(snap, lap)
