@@ -147,11 +147,7 @@ class SessionState:
                 fuel_used = round(delta, 3)
         self._last_fuel = fuel_now
 
-        gap_behind = -1.0
-        for v in snap.vehicles:
-            if v["place"] == me["place"] + 1 and v["cls"] == me["cls"]:
-                gap_behind = v["time_behind_next"]
-                break
+        gap_ahead, gap_behind = self._same_class_gaps(snap, me)
 
         wheels = snap.player.get("wheels") or []
         pit_lap = self._pit_seen_this_lap
@@ -168,7 +164,7 @@ class SessionState:
             place=me["place"],
             fuel_left=round(fuel_now, 2) if fuel_now is not None else -1.0,
             fuel_used=fuel_used,
-            gap_ahead=me["time_behind_next"] if me["place"] > 1 else -1.0,
+            gap_ahead=gap_ahead,
             gap_behind=gap_behind,
             tyre_wear=[w["wear"] for w in wheels],
             tyre_temps=[w["carcass_temp"] for w in wheels],
@@ -183,6 +179,44 @@ class SessionState:
                  rec.lap_number, rec.lap_time, rec.fuel_left,
                  f"{rec.fuel_used:.2f}L" if rec.fuel_used >= 0 else "-")
         return rec
+
+    @staticmethod
+    def _same_class_gaps(snap: Snapshot, me: dict) -> tuple[float, float]:
+        """
+        같은 클래스의 바로 앞/뒤 차와의 시간 갭. 멀티클래스에서는 사이에 다른
+        클래스 차가 끼므로, mTimeBehindNext(바로 앞 순위 차와의 갭)를 순위를
+        따라 누적해서 구한다. 없으면 -1.
+        """
+        by_place = {v["place"]: v for v in snap.vehicles
+                    if v["place"] > 0 and v["finish_status"] == 0}
+        ahead = behind = -1.0
+
+        # 앞쪽: 내 갭부터 시작해 같은 클래스 차를 만날 때까지 위로 누적
+        total = 0.0
+        cur = me
+        p = me["place"] - 1
+        while p >= 1:
+            total += max(cur["time_behind_next"], 0.0)
+            nxt = by_place.get(p)
+            if nxt is None:
+                break
+            if nxt["cls"] == me["cls"]:
+                ahead = round(total, 3)
+                break
+            cur = nxt
+            p -= 1
+
+        # 뒤쪽: 아래 순위 차들의 갭을 같은 클래스 차를 만날 때까지 누적
+        total = 0.0
+        p = me["place"] + 1
+        while p in by_place:
+            v = by_place[p]
+            total += max(v["time_behind_next"], 0.0)
+            if v["cls"] == me["cls"]:
+                behind = round(total, 3)
+                break
+            p += 1
+        return ahead, behind
 
     # ------------------------------------------------------------------
 

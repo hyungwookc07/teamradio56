@@ -21,7 +21,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import load_config           # noqa: E402
-from tts import build_engine, _cache_path  # noqa: E402
+from tts import build_engine              # noqa: E402
 from voice import PhrasePool, iter_pregen_texts  # noqa: E402
 
 
