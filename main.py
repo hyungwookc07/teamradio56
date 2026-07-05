@@ -29,7 +29,7 @@ from telemetry import (
     Snapshot,
 )
 from state import SessionState
-from events import EventBus
+from events import EventBus, Event, EventType, Priority
 from analyzers.fuel import FuelAnalyzer
 from analyzers.pace import PaceAnalyzer
 from analyzers.traffic import TrafficAnalyzer
@@ -145,6 +145,20 @@ class CrewChiefApp:
         self.pace.on_lap(self.state, snap, self.bus, lap)
         if fuel_status:
             log.debug("연료: %s", fuel_status)
+
+        # 피트 아웃랩 다음 랩 → 스틴트 브리핑 (LLM)
+        if lap.in_pits and self.state.is_race:
+            self.bus.push(Event(
+                type=EventType.STINT_BRIEFING, priority=Priority.NORMAL,
+                data={}, dedup_key=f"stint_{lap.lap_number}",
+            ))
+        # 피트가 필요해진 시점부터 주기적으로 전략 판단 멘트 (LLM, 쿨다운으로 억제)
+        elif (fuel_status and fuel_status.get("pit_needed")
+                and len(self.state.laps) >= 5):
+            self.bus.push(Event(
+                type=EventType.LAP_ANALYSIS, priority=Priority.NORMAL,
+                data=fuel_status, dedup_key=f"analysis_{lap.lap_number}",
+            ))
 
     # -- 콘솔 상태 출력 ------------------------------------------------------
 

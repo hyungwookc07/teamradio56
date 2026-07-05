@@ -45,7 +45,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "llm": {
         "enabled": True,
-        "model": "claude-haiku-4-5-20251001",
+        "model": "claude-haiku-4-5",
         "api_key": "",              # 비우면 ANTHROPIC_API_KEY 환경변수 사용
         "max_tokens": 200,
         "timeout_sec": 10,
@@ -69,6 +69,8 @@ DEFAULTS: dict[str, Any] = {
         "tyre_warning": 180,
         "damage": 60,
         "penalty": 30,
+        "lap_analysis": 300,     # 판단형 전략 멘트 (LLM)
+        "stint_briefing": 120,
         "default": 60,
     },
 }
