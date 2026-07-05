@@ -1,0 +1,5 @@
+# LMU AI 크루치프 — Windows / Python 3.11+
+PyYAML>=6.0
+edge-tts>=6.1
+pygame>=2.5          # 오디오 재생
+anthropic>=0.40      # 실시간 LLM 멘트 (v0.4+)

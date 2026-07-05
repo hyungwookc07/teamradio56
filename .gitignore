@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+config.yaml
+data/
+audio_cache/
+dist/
+build/
+*.spec.bak

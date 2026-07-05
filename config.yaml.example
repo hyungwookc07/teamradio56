@@ -1,0 +1,58 @@
+# LMU AI 크루치프 설정 예시.
+# 이 파일을 config.yaml로 복사한 뒤 수정하세요. 생략한 항목은 기본값이 적용됩니다.
+
+app:
+  poll_hz: 5                 # 스코어링 폴링 주기 (Hz)
+  console_status_sec: 1.0    # 콘솔 상태 라인 출력 간격 (초)
+  log_level: INFO
+  save_race_json: true       # 레이스 종료 시 랩 히스토리를 data/에 JSON 저장
+  data_dir: data
+
+voice:
+  enabled: true
+  volume: 0.9
+  language: ko
+  driver_name: 드라이버       # 멘트에서 부르는 호칭
+  # 크루치프 페르소나 (LLM 시스템 프롬프트에 들어감)
+  persona: >
+    당신은 20년 경력의 내구레이스 크루치프다. 침착하고 간결하며,
+    드라이버를 신뢰하는 톤. 숫자를 나열하지 않고 판단을 말한다.
+    무전 특유의 짧은 문장을 쓴다.
+
+tts:
+  engine: edge               # edge | elevenlabs
+  edge_voice: ko-KR-InJoonNeural   # ko-KR-SunHiNeural(여성) 등으로 교체 가능
+  edge_rate: "+10%"          # 말 속도
+  elevenlabs_api_key: ""     # engine: elevenlabs 사용 시
+  elevenlabs_voice_id: ""
+  cache_dir: audio_cache
+
+llm:
+  enabled: true
+  model: claude-haiku-4-5-20251001
+  api_key: ""                # 비우면 환경변수 ANTHROPIC_API_KEY 사용
+  max_tokens: 200
+  timeout_sec: 10
+
+# 분석기 임계값 — 발화 억제의 핵심. 높일수록 조용해짐.
+thresholds:
+  fuel_warn_laps: 3.0          # 남은 연료 N랩 이하 → 경고
+  fuel_critical_laps: 1.5      # 긴급 경고
+  pace_delta_sec: 0.7          # 평소 대비 랩타임 편차 (초)
+  gap_change_sec_per_lap: 0.4  # 앞뒤 갭 변화율 (초/랩)
+  traffic_warn_gap_sec: 4.0    # 상위 클래스 접근 예고 시점 (초)
+  proximity_m: 50.0            # 근접 경고 거리 (m)
+  tyre_temp_imbalance: 12.0    # 좌우/전후 타이어 온도 불균형 (°C)
+  tyre_wear_warn: 0.35         # 남은 수명 비율 경고선
+  damage_impact_mag: 500.0     # 충격 크기 임계값
+
+# 같은 유형 이벤트의 재발화 최소 간격 (초)
+cooldowns:
+  fuel_warning: 240
+  traffic: 30
+  pace_comment: 120
+  gap_comment: 90
+  tyre_warning: 180
+  damage: 60
+  penalty: 30
+  default: 60
