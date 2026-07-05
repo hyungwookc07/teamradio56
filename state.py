@@ -46,6 +46,7 @@ class SessionState:
     """현재 세션의 축적 상태. 세션이 바뀌면 reset."""
 
     def __init__(self):
+        self.autosave_dir: Optional[str] = None   # 설정 시 세션 전환 때 자동 저장
         self.reset()
 
     def reset(self) -> None:
@@ -105,6 +106,8 @@ class SessionState:
                      or ses["track"] != self.track
                      or ses["current_et"] < self._last_session_et - 30)):
             log.info("세션 전환 감지 → 상태 초기화")
+            if self.autosave_dir and self.laps:
+                self.save_json(self.autosave_dir)
             self.reset()
 
         if self.session_type is None:

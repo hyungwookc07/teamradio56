@@ -33,6 +33,7 @@ from events import EventBus, Event, EventType, Priority
 from analyzers.fuel import FuelAnalyzer
 from analyzers.pace import PaceAnalyzer
 from analyzers.traffic import TrafficAnalyzer
+from analyzers.tyres import TyreAnalyzer
 from voice import VoiceGenerator
 from tts import AudioPlayer, VoiceWorker, build_engine
 
@@ -71,10 +72,13 @@ class CrewChiefApp:
 
         # 상태 + 분석기 + 이벤트 버스 + 보이스 워커
         self.state = SessionState()
+        if cfg.get("app.save_race_json", True):
+            self.state.autosave_dir = cfg.get("app.data_dir", "data")
         self.bus = EventBus(cfg["cooldowns"])
         self.fuel = FuelAnalyzer(cfg)
         self.pace = PaceAnalyzer(cfg)
         self.traffic = TrafficAnalyzer(cfg)
+        self.tyres = TyreAnalyzer(cfg)
         self.voice_gen = VoiceGenerator(cfg, self.state)
         self.worker = VoiceWorker(
             bus=self.bus,
@@ -143,6 +147,7 @@ class CrewChiefApp:
         """크루치프 로직의 90%는 여기서: 연료/페이스 분석 → 이벤트."""
         fuel_status = self.fuel.on_lap(self.state, snap, self.bus)
         self.pace.on_lap(self.state, snap, self.bus, lap)
+        self.tyres.on_lap(self.state, snap, self.bus)
         if fuel_status:
             log.debug("연료: %s", fuel_status)
 
@@ -192,6 +197,8 @@ class CrewChiefApp:
     def shutdown(self) -> None:
         self._running = False
         self.worker.stop()
+        if self.cfg.get("app.save_race_json", True):
+            self.state.save_json(self.cfg.get("app.data_dir", "data"))
         if self.recorder is not None:
             self.recorder.close()
         self.source.close()

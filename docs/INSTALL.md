@@ -97,6 +97,22 @@ python tools\make_test_replay.py data\test.jsonl
 python main.py --replay data\test.jsonl --speed 5
 ```
 
+## 5. (선택) 단일 exe로 패키징
+
+파이썬 없이 배포하고 싶다면 PyInstaller로 단일 실행 파일을 만들 수 있습니다.
+
+```bat
+venv\Scripts\activate
+pip install pyinstaller
+pyinstaller lmu-crewchief.spec
+```
+
+- 결과물: `dist\lmu-crewchief.exe`
+- `config.yaml`을 exe와 같은 폴더에 두고 실행하세요. `audio_cache\`, `data\`도
+  실행 위치 기준으로 생성됩니다.
+- 사전 생성 오디오 캐시(`python tools\pregen_audio.py`)를 미리 만들어
+  `audio_cache\` 폴더째 함께 배포하면 첫 실행부터 긴급 콜이 지연 없이 나옵니다.
+
 ## 문제 해결
 
 | 증상 | 확인 사항 |

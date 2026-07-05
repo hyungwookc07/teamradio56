@@ -38,8 +38,13 @@ LLM_RULES = """
 - 말할 가치가 없으면 정확히 PASS 라고만 출력한다.
 """.strip()
 
-URGENT_LINES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                 "voice_lines", "urgent_ko.yaml")
+def _base_dir() -> str:
+    # PyInstaller onefile 번들에서는 데이터 파일이 sys._MEIPASS에 풀린다
+    import sys
+    return getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
+
+
+URGENT_LINES_FILE = os.path.join(_base_dir(), "voice_lines", "urgent_ko.yaml")
 
 # 게임 클래스명 → 멘트에서 부르는 이름
 CLASS_KO = {
@@ -217,6 +222,7 @@ def build_situation(state, event: Event) -> str:
         EventType.GAP_COMMENT: "갭 변화: {who} 쪽이 랩당 {rate:+.1f}초씩 변하는 중 (현재 {gap:.0f}초). 판단을 말해라.",
         EventType.LAP_ANALYSIS: "연료 {fuel_l}L(랩당 {burn_per_lap}L, {fuel_laps}랩 분량), 잔여 레이스 {race_laps_left}랩. 타이어 상태와 엮어 피트 전략 판단을 말해라.",
         EventType.STINT_BRIEFING: "새 스틴트 시작. 이번 스틴트 목표를 한 줄로 브리핑해라.",
+        EventType.TYRE_WARNING: "타이어 경고({kind}). 연료/잔여 레이스와 엮어 드라이버가 뭘 해야 할지 말해라.",
     }.get(event.type, "지금 상황에 대해 크루치프로서 한마디 해라.")
     try:
         lines.append(topic.format(**event.data))
@@ -233,7 +239,8 @@ class VoiceGenerator:
         self.llm = CrewChiefLLM(cfg)
 
     NONURGENT = (EventType.PACE_COMMENT, EventType.GAP_COMMENT,
-                 EventType.LAP_ANALYSIS, EventType.STINT_BRIEFING)
+                 EventType.LAP_ANALYSIS, EventType.STINT_BRIEFING,
+                 EventType.TYRE_WARNING)
 
     def text_for(self, ev: Event) -> Optional[str]:
         if ev.message:
@@ -298,6 +305,13 @@ class VoiceGenerator:
 
     def _render_stint_briefing(self, d: dict) -> Optional[str]:
         return "새 스틴트야. 첫 랩은 타이어 아끼고, 리듬부터 찾자."
+
+    def _render_tyre_warning(self, d: dict) -> Optional[str]:
+        if d.get("kind") == "temp_imbalance":
+            return f"{d['hot_wheel']} 타이어가 {d['delta']:.0f}도 더 뜨거워. 그쪽 코너 조금만 아껴줘."
+        if d.get("kind") == "wear":
+            return f"{d['wheel']} 타이어 수명이 {d['laps_left']:.0f}랩쯤 남았어. 피트 계획에 반영할게."
+        return None
 
     def _render_pace_comment(self, d: dict) -> Optional[str]:
         delta = abs(d["delta"])
