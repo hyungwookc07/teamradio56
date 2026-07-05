@@ -1,8 +1,9 @@
 """
 LMU AI 크루치프 — 메인 루프.
 
-v0.1: 5Hz로 공유 메모리를 폴링해서 연료/랩타임/갭을 1초마다 콘솔에 출력.
-게임이 꺼져 있으면 크래시 없이 대기하다가 자동 재연결.
+5Hz로 공유 메모리를 폴링하고, 랩 완료 시 분석기(연료/페이스)를 돌려
+이벤트 큐에 넣는다. 멘트 생성/TTS는 보이스 워커 스레드가 처리하므로
+이 루프는 절대 블로킹되지 않는다. 게임이 꺼져 있으면 대기 후 자동 재연결.
 
 사용법:
     python main.py                          # 실전 (Windows, 게임 + 플러그인 필요)
@@ -27,6 +28,12 @@ from telemetry import (
     SnapshotRecorder,
     Snapshot,
 )
+from state import SessionState
+from events import EventBus
+from analyzers.fuel import FuelAnalyzer
+from analyzers.pace import PaceAnalyzer
+from voice import VoiceGenerator
+from tts import AudioPlayer, VoiceWorker, build_engine
 
 log = logging.getLogger("main")
 
@@ -60,6 +67,22 @@ class CrewChiefApp:
         self._last_status = 0.0
         self._last_waiting_msg = 0.0
         self._running = True
+
+        # 상태 + 분석기 + 이벤트 버스 + 보이스 워커
+        self.state = SessionState()
+        self.bus = EventBus(cfg["cooldowns"])
+        self.fuel = FuelAnalyzer(cfg)
+        self.pace = PaceAnalyzer(cfg)
+        self.voice_gen = VoiceGenerator(cfg, self.state)
+        self.worker = VoiceWorker(
+            bus=self.bus,
+            voice_gen=self.voice_gen,
+            engine=build_engine(cfg),
+            player=AudioPlayer(cfg.get("voice.volume", 0.9)),
+            state=self.state,
+            enabled=cfg.get("voice.enabled", True),
+        )
+        self.worker.start()
 
     # -- 메인 루프 ----------------------------------------------------------
 
@@ -108,7 +131,17 @@ class CrewChiefApp:
     # -- 훅 (이후 마일스톤에서 확장) -----------------------------------------
 
     def on_snapshot(self, snap: Snapshot) -> None:
-        """5Hz마다 호출. v0.2+에서 랩 이벤트 디스패치/분석기 연결."""
+        """5Hz마다 호출. 랩 완료 감지 시 무거운 분석 실행."""
+        lap = self.state.update(snap)
+        if lap is not None:
+            self.on_lap_complete(snap, lap)
+
+    def on_lap_complete(self, snap: Snapshot, lap) -> None:
+        """크루치프 로직의 90%는 여기서: 연료/페이스 분석 → 이벤트."""
+        fuel_status = self.fuel.on_lap(self.state, snap, self.bus)
+        self.pace.on_lap(self.state, snap, self.bus, lap)
+        if fuel_status:
+            log.debug("연료: %s", fuel_status)
 
     # -- 콘솔 상태 출력 ------------------------------------------------------
 
@@ -141,6 +174,7 @@ class CrewChiefApp:
 
     def shutdown(self) -> None:
         self._running = False
+        self.worker.stop()
         if self.recorder is not None:
             self.recorder.close()
         self.source.close()
