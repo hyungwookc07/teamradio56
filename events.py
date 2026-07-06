@@ -47,6 +47,8 @@ class EventType:
     STINT_BRIEFING = "stint_briefing"   # LLM (v0.4)
     RACE_START = "race_start"
     RACE_END = "race_end"
+    LAP_FEEDBACK = "lap_feedback"       # 트레이닝: 섹터 델타 피드백
+    TRACK_TREND = "track_trend"         # 트레이닝: 과거 세션 대비 추세
 
 
 # 타입 → 쿨다운 설정 키 매핑 (config.cooldowns)

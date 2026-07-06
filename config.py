@@ -78,6 +78,8 @@ DEFAULTS: dict[str, Any] = {
         "penalty": 30,
         "lap_analysis": 300,     # 판단형 전략 멘트 (LLM)
         "stint_briefing": 120,
+        "lap_feedback": 150,     # 트레이닝: 섹터 델타 피드백
+        "track_trend": 600,
         "default": 60,
     },
 }

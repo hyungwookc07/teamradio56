@@ -35,6 +35,7 @@ from analyzers.pace import PaceAnalyzer
 from analyzers.traffic import TrafficAnalyzer
 from analyzers.tyres import TyreAnalyzer
 from analyzers.strategy import StrategyEngine
+from training import LapCoach, TrackHistory, Debriefer
 from voice import VoiceGenerator
 from tts import AudioPlayer, SpeechLogger, VoiceWorker, build_engine
 
@@ -81,6 +82,9 @@ class CrewChiefApp:
         self.traffic = TrafficAnalyzer(cfg)
         self.tyres = TyreAnalyzer(cfg)
         self.strategy = StrategyEngine(cfg)
+        self.coach = LapCoach()
+        self.history = TrackHistory(cfg.get("app.data_dir", "data"))
+        self.debriefer = Debriefer()
         self.voice_gen = VoiceGenerator(cfg, self.state)
         speech_log_path = None
         if cfg.get("app.speech_log", True):
@@ -167,6 +171,10 @@ class CrewChiefApp:
         # 전략 엔진: 판단이 필요한 전이 시점에만 LLM 전략 멘트 트리거
         self.strategy.on_lap(self.state, snap, self.bus, fuel_status, tyre_status)
 
+        # 트레이닝: 섹터 델타 피드백 + 과거 세션 대비 추세 (한 번만)
+        self.coach.on_lap(self.state, self.bus)
+        self.history.on_lap(self.state, self.bus)
+
     # -- 콘솔 상태 출력 ------------------------------------------------------
 
     def print_status(self, snap: Snapshot) -> None:
@@ -198,6 +206,12 @@ class CrewChiefApp:
 
     def shutdown(self) -> None:
         self._running = False
+        # 디브리핑은 워커 정지 전에 (LLM 1회, 텍스트는 파일로도 저장)
+        try:
+            self.debriefer.run(self.state, self.voice_gen.llm,
+                               self.cfg.get("app.data_dir", "data"))
+        except Exception:
+            log.exception("디브리핑 생성 실패")
         self.worker.stop()
         if self.cfg.get("app.save_race_json", True):
             self.state.save_json(self.cfg.get("app.data_dir", "data"))
