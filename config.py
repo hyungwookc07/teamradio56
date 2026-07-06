@@ -22,6 +22,7 @@ DEFAULTS: dict[str, Any] = {
         "console_status_sec": 1.0,  # 콘솔 상태 출력 간격
         "log_level": "INFO",
         "save_race_json": True,     # 레이스 종료 시 랩 히스토리 JSON 저장
+        "speech_log": True,         # 발화 로그 JSONL (반복감/타이밍 검토용)
         "data_dir": "data",         # 녹화/결과 저장 디렉토리
     },
     "voice": {

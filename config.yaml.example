@@ -6,6 +6,7 @@ app:
   console_status_sec: 1.0    # 콘솔 상태 라인 출력 간격 (초)
   log_level: INFO
   save_race_json: true       # 레이스 종료 시 랩 히스토리를 data/에 JSON 저장
+  speech_log: true           # 발화 로그 data/speech_log.jsonl (반복감/타이밍 검토)
   data_dir: data
 
 voice:

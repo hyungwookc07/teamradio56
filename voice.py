@@ -206,7 +206,7 @@ class CrewChiefLLM:
         text = "".join(b.text for b in response.content if b.type == "text").strip()
         text = text.strip('"“” ').strip()
         if not text or text.upper() == "PASS":
-            return None     # LLM이 침묵을 선택 (발화 억제)
+            return ""       # LLM이 침묵을 선택 (발화 억제) — 오류(None)와 구분
         # 멘트가 비정상적으로 길면 첫 두 문장만
         if len(text) > 160:
             parts = [p for p in text.replace("\n", " ").split(". ") if p]
@@ -284,17 +284,19 @@ class VoiceGenerator:
                  EventType.LAP_ANALYSIS, EventType.STINT_BRIEFING,
                  EventType.TYRE_WARNING)
 
-    def text_for(self, ev: Event) -> Optional[str]:
+    def text_for(self, ev: Event) -> tuple[Optional[str], str]:
+        """(멘트 텍스트, 소스) 반환. 텍스트 None이면 침묵. 소스는 발화 로그용."""
         if ev.message:
-            return ev.message
+            source = "llm" if ev.type == EventType.BRIDGE_FOLLOWUP else "composed"
+            return ev.message, source
         renderer = getattr(self, f"_render_{ev.type}", None)
         if renderer is None:
             log.debug("렌더러 없는 이벤트 무시: %s", ev.type)
-            return None
+            return None, "none"
         fallback = renderer(ev.data, ev.tone)
         if ev.type in self.NONURGENT:
             return self._llm_or(ev, fallback)   # LLM 우선 (3~5초 지연 허용)
-        return fallback                          # 긴급 콜은 변형 풀 즉시 반환
+        return fallback, "cache"                 # 긴급 콜은 변형 풀 즉시 반환
 
     # -- 긴급 콜: 사전 생성 변형 풀 ------------------------------------------
     # 슬롯 값은 반드시 이산화(정수/고정 문자열)한다. 사전 캐시 히트 조건.
@@ -352,13 +354,15 @@ class VoiceGenerator:
             "이미 전달된 사실 반복 금지, 드라이버가 어떻게 대응하면 되는지만.")
         return self.llm.generate("\n".join(lines))
 
-    def _llm_or(self, ev: Event, fallback: Optional[str]) -> Optional[str]:
+    def _llm_or(self, ev: Event, fallback: Optional[str]) -> tuple[Optional[str], str]:
         if self.llm.available:
             text = self.llm.generate(build_situation(self.state, ev))
-            if text is not None:
-                return text
-            # LLM이 PASS(침묵) 또는 오류 → 템플릿 폴백 (None이면 발화 안 함)
-        return fallback
+            if text:
+                return text, "llm"
+            if text == "":                  # LLM이 의도적으로 PASS → 침묵이 기본값
+                return None, "llm-pass"
+            # None = 오류/예산 소진 → 템플릿 폴백
+        return fallback, "template"
 
     def _render_lap_analysis(self, d: dict, tone: str = "casual") -> Optional[str]:
         # 템플릿 폴백: 판단형 최소 멘트

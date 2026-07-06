@@ -182,14 +182,48 @@ class AudioPlayer:
                 pass
 
 
+class SpeechLogger:
+    """
+    발화 로그 (JSONL): [타임스탬프, 이벤트, 멘트, 소스(캐시/LLM), 톤, 우선순위].
+    리플레이 후 반복감/타이밍 검토용. data/speech_log.jsonl에 append.
+    """
+
+    def __init__(self, path: Optional[str]):
+        self._file = None
+        if path:
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            self._file = open(path, "a", encoding="utf-8")
+            log.info("발화 로그: %s", path)
+
+    def write(self, ev, text: str, source: str, lap: int) -> None:
+        if self._file is None:
+            return
+        entry = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "lap": lap,
+            "event": ev.type,
+            "priority": int(ev.priority),
+            "tone": ev.tone,
+            "source": source,
+            "text": text,
+        }
+        self._file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        self._file.flush()
+
+    def close(self) -> None:
+        if self._file is not None:
+            self._file.close()
+
+
 class VoiceWorker(threading.Thread):
     """
     이벤트 큐 소비 스레드: Event → 멘트 텍스트 → TTS → 재생.
-    voice_gen은 voice.VoiceGenerator (텍스트가 None이면 발화 억제).
+    voice_gen은 voice.VoiceGenerator (텍스트가 None이면 발화 억제 — 침묵이 기본값).
     """
 
     def __init__(self, bus: EventBus, voice_gen, engine: TTSEngine,
-                 player: AudioPlayer, state, enabled: bool = True):
+                 player: AudioPlayer, state, enabled: bool = True,
+                 speech_log: Optional[SpeechLogger] = None):
         super().__init__(name="voice-worker", daemon=True)
         self.bus = bus
         self.voice_gen = voice_gen
@@ -197,11 +231,13 @@ class VoiceWorker(threading.Thread):
         self.player = player
         self.state = state
         self.enabled = enabled
+        self.speech_log = speech_log or SpeechLogger(None)
         self._stop_flag = threading.Event()
 
     def stop(self) -> None:
         self._stop_flag.set()
         self.player.stop()
+        self.speech_log.close()
 
     def run(self) -> None:
         log.info("보이스 워커 시작 (음성 %s)", "켜짐" if self.enabled else "꺼짐")
@@ -215,11 +251,12 @@ class VoiceWorker(threading.Thread):
                 log.exception("멘트 처리 중 오류 (이벤트: %s)", ev.type)
 
     def _speak(self, ev) -> None:
-        text = self.voice_gen.text_for(ev)
+        text, source = self.voice_gen.text_for(ev)
         if not text:
             return
         log.info("🎙️ [크루치프] %s", text)
         self.state.add_narrative(f"(랩{len(self.state.laps)}) 크루치프: {text}")
+        self.speech_log.write(ev, text, source, lap=len(self.state.laps))
         self._maybe_bridge(ev)
         if not self.enabled:
             return

@@ -36,7 +36,7 @@ from analyzers.traffic import TrafficAnalyzer
 from analyzers.tyres import TyreAnalyzer
 from analyzers.strategy import StrategyEngine
 from voice import VoiceGenerator
-from tts import AudioPlayer, VoiceWorker, build_engine
+from tts import AudioPlayer, SpeechLogger, VoiceWorker, build_engine
 
 log = logging.getLogger("main")
 
@@ -82,6 +82,10 @@ class CrewChiefApp:
         self.tyres = TyreAnalyzer(cfg)
         self.strategy = StrategyEngine(cfg)
         self.voice_gen = VoiceGenerator(cfg, self.state)
+        speech_log_path = None
+        if cfg.get("app.speech_log", True):
+            speech_log_path = os.path.join(cfg.get("app.data_dir", "data"),
+                                           "speech_log.jsonl")
         self.worker = VoiceWorker(
             bus=self.bus,
             voice_gen=self.voice_gen,
@@ -89,6 +93,7 @@ class CrewChiefApp:
             player=AudioPlayer(cfg.get("voice.volume", 0.9)),
             state=self.state,
             enabled=cfg.get("voice.enabled", True),
+            speech_log=SpeechLogger(speech_log_path),
         )
         self.worker.start()
 
