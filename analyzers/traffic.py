@@ -1,17 +1,25 @@
 """
-트래픽 분석기 — 5Hz 매 틱 호출 (유일하게 랩 완료를 기다리지 않는 분석기).
+트래픽 분석기 v2 — 차량별 상태 머신 (5Hz 매 틱 호출).
 
-멀티클래스 LMU의 핵심: 뒤에서 접근하는 상위 클래스 차량을 도달 몇 초 전에
-예고한다. gap_m은 lapDist 차이(결승선 넘어가는 경우 트랙 길이로 래핑 보정),
-closing_rate는 gap의 시간 미분(EMA 평활)로 계산해 도달 시점을 예측한다.
+설계 원칙 (자연스러움의 핵심):
+  - 각 상대 차량을 ID로 추적하고, 상태가 "전이될 때만" 발화한다.
+    같은 상태 유지 중엔 침묵 → 같은 차 얘기가 서사처럼 이어진다:
+    "뒤로 하이퍼카 붙는다" → (침묵) → "옆이야" → "지나갔어, 라인 복귀해도 돼"
+  - 동시에 여러 대가 관련되면 개별 콜을 쏟아내지 않고 한 문장으로 종합한다.
+    위협도 순으로 1~2대만 언급, 같은 클래스는 묶는다.
+  - 긴급 근접 콜은 사전 캐시 풀(지연 0), 후속 설명은 브리지(LLM)로.
 
-사이드 콜(car left/right)은 5Hz 스코어링 데이터로는 신뢰도가 낮아 v1에서 제외.
+상태 머신:
+    FAR → APPROACHING → NEARBY_BEHIND → ALONGSIDE → NEARBY_AHEAD → FAR
+                              ↘ FAR (DROPPED: 떨어짐)
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass, field
+from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
 from state import SessionState
@@ -19,30 +27,70 @@ from telemetry import Snapshot
 
 log = logging.getLogger("traffic")
 
-GREEN_PHASES = (5, 6)          # 그린 플래그, FCY(서행 중에도 근접 콜은 유효)
-FASTER_CLASS_MARGIN = 3.0      # 예상 랩타임이 이보다 빠르면 상위 클래스로 간주 (초)
-MIN_CLOSING_MS = 2.0           # 이 이상 접근 중일 때만 콜 (m/s, 노이즈 컷)
-REANNOUNCE_SEC = 60.0          # 같은 차 재예고 최소 간격
+# 상태 상수
+FAR = "far"
+APPROACHING = "approaching"
+NEARBY_BEHIND = "nearby_behind"
+NEARBY_AHEAD = "nearby_ahead"
+ALONGSIDE = "alongside"
+
+THREAT_RANK = {ALONGSIDE: 3, NEARBY_BEHIND: 2, APPROACHING: 1,
+               NEARBY_AHEAD: 0, FAR: 0}
+
+GREEN_PHASES = (5, 6)
+FASTER_CLASS_MARGIN = 3.0      # 예상 랩타임 차이가 이보다 크면 상위 클래스
+MIN_CLOSING_MS = 2.0           # m/s — 이 이상 좁혀질 때만 '접근'
+ETA_WINDOW = (0.0, 10.0)       # 접근 예고: 도달 예상 3~10초 (상한만 설정, 하한은 근접콜이 커버)
+SIDE_LAT_MIN = 1.2             # 좌우 판정 최소 횡간격 (m) — 이하면 "옆"으로만
+STATE_REANNOUNCE_SEC = 45.0    # 같은 차·같은 상태 재발화 최소 간격
+BATTLE_GAP_SEC = 2.0           # 동클래스 ±2초 이내면 배틀 → 긴박 톤
 
 
 def wrap_gap(delta_m: float, track_len: float) -> float:
-    """lapDist 차이를 [-L/2, L/2) 범위의 부호 있는 거리로 보정. +면 내 앞."""
+    """lapDist 차이를 [-L/2, L/2) 부호 있는 거리로 보정. +면 내 앞."""
     half = track_len / 2.0
     return (delta_m + half) % track_len - half
 
 
+@dataclass
+class CarTrack:
+    cid: int
+    cls: str
+    driver: str
+    state: str = FAR
+    gap_m: float = 0.0
+    rate: Optional[float] = None       # dgap/dt EMA (m/s), +면 앞으로 이동(접근: 뒤차가 +)
+    side: Optional[str] = None         # left | right | None
+    faster: bool = False               # 상위 클래스인가
+    last_sample_t: float = 0.0
+    announced: dict = field(default_factory=dict)   # state → 마지막 발화 시각
+    engaged: bool = False              # 이 차에 대해 뭔가 말한 적 있는가 (서사 연속성)
+
+
 class TrafficAnalyzer:
     def __init__(self, cfg):
-        self.warn_gap_sec = cfg.get("thresholds.traffic_warn_gap_sec", 4.0)
         self.proximity_m = cfg.get("thresholds.proximity_m", 50.0)
-        self._gap_hist: dict[int, tuple[float, float]] = {}   # id → (t, gap_m)
-        self._rate: dict[int, float] = {}                     # id → dgap/dt EMA (m/s)
-        self._announced: dict[int, float] = {}                # id → 마지막 예고 시각
-        self._close_announced: dict[int, float] = {}
+        self.alongside_m = cfg.get("thresholds.alongside_m", 12.0)
+        self.eta_warn = cfg.get("thresholds.traffic_eta_sec", 10.0)
+        self.tracks: dict[int, CarTrack] = {}
+
+    # -- 외부 조회 (브리지 유효성 검사 등에 사용) -----------------------------
+
+    def car_state(self, cid: int) -> str:
+        t = self.tracks.get(cid)
+        return t.state if t else FAR
+
+    def in_battle(self) -> bool:
+        """동클래스 차량과 ±2초 내 경쟁 중인가 → 톤 태그 결정에 사용."""
+        return any(t.state in (NEARBY_BEHIND, NEARBY_AHEAD, ALONGSIDE)
+                   and not t.faster for t in self.tracks.values())
+
+    # -- 메인 틱 -------------------------------------------------------------
 
     def on_tick(self, state: SessionState, snap: Snapshot, bus: EventBus) -> None:
         me = snap.player_scoring()
         if me is None or me["in_pits"] or me["in_garage"]:
+            self.tracks.clear()
             return
         if snap.session["game_phase"] not in GREEN_PHASES:
             return
@@ -53,84 +101,201 @@ class TrafficAnalyzer:
         my_est = me["estimated_lap"] if me["estimated_lap"] > 0 else \
             (state.baseline_lap_time() or 0)
 
+        transitions: list[tuple[CarTrack, str]] = []   # (track, old_state)
+        seen: set[int] = set()
+
         for v in snap.vehicles:
             if v["is_player"] or v["in_pits"] or v["in_garage"] or v["finish_status"] != 0:
                 continue
-            gap_m = wrap_gap(v["lap_dist"] - me["lap_dist"], track_len)
-            rate = self._update_rate(v["id"], now, gap_m, track_len)
+            seen.add(v["id"])
+            t = self._update_track(v, me, my_est, track_len, now)
+            new_state = self._classify(t)
+            if new_state != t.state:
+                old = t.state
+                t.state = new_state
+                transitions.append((t, old))
+        # 사라진 차량(피트인 등) 정리
+        for cid in list(self.tracks):
+            if cid not in seen:
+                del self.tracks[cid]
 
-            self._check_proximity(v, gap_m, now, bus)
-            if rate is not None:
-                self._check_approach(v, gap_m, rate, my_est, now, bus)
+        if transitions:
+            self._emit(transitions, now, bus)
 
-    # ------------------------------------------------------------------
+    def _update_track(self, v: dict, me: dict, my_est: float,
+                      track_len: float, now: float) -> CarTrack:
+        t = self.tracks.get(v["id"])
+        if t is None:
+            t = CarTrack(cid=v["id"], cls=v["cls"], driver=v["driver"])
+            self.tracks[v["id"]] = t
+        gap_m = wrap_gap(v["lap_dist"] - me["lap_dist"], track_len)
+        dt = now - t.last_sample_t
+        if t.last_sample_t > 0 and 0.01 < dt <= 3.0:
+            inst = wrap_gap(gap_m - t.gap_m, track_len) / dt
+            t.rate = inst if t.rate is None else (0.6 * t.rate + 0.4 * inst)
+        elif dt > 3.0:
+            t.rate = None      # 오래된 샘플로 미분하지 않는다
+        t.gap_m = gap_m
+        t.last_sample_t = now
+        t.faster = (v["estimated_lap"] > 0 and my_est > 0
+                    and v["estimated_lap"] < my_est - FASTER_CLASS_MARGIN)
+        # 좌우 판정: 나란할 때만 의미 있음
+        lat = v.get("path_lat")
+        my_lat = me.get("path_lat")
+        if lat is not None and my_lat is not None and abs(lat - my_lat) >= SIDE_LAT_MIN:
+            t.side = "left" if lat < my_lat else "right"   # rF2 pathLateral: +가 오른쪽 계열이나 트랙마다 달라 근사
+        else:
+            t.side = None
+        return t
 
-    def _update_rate(self, cid: int, now: float, gap_m: float,
-                     track_len: float) -> float | None:
-        prev = self._gap_hist.get(cid)
-        self._gap_hist[cid] = (now, gap_m)
-        if prev is None:
-            return None
-        dt = now - prev[0]
-        if dt <= 0.01 or dt > 3.0:      # 너무 촘촘하거나 오래된 샘플은 버림
-            return None
-        dgap = wrap_gap(gap_m - prev[1], track_len)
-        inst = dgap / dt
-        ema = self._rate.get(cid)
-        ema = inst if ema is None else (0.6 * ema + 0.4 * inst)
-        self._rate[cid] = ema
-        return ema
+    def _classify(self, t: CarTrack) -> str:
+        g = t.gap_m
+        if abs(g) <= self.alongside_m:
+            return ALONGSIDE
+        if -self.proximity_m <= g < 0:
+            return NEARBY_BEHIND
+        if 0 < g <= self.proximity_m:
+            return NEARBY_AHEAD
+        if g < 0 and t.rate is not None and t.rate >= MIN_CLOSING_MS:
+            eta = -g / t.rate
+            # 접근 예고는 위협적인 경우만: 상위 클래스, 또는 이미 서사가 시작된 차
+            if eta <= self.eta_warn and (t.faster or t.engaged):
+                return APPROACHING
+        return FAR
 
-    def _check_approach(self, v: dict, gap_m: float, rate: float,
-                        my_est: float, now: float, bus: EventBus) -> None:
-        """뒤에서 접근하는 상위 클래스 차량 예고."""
-        if gap_m >= 0:                      # 내 앞에 있음
+    # -- 발화 ---------------------------------------------------------------
+
+    def _emit(self, transitions: list[tuple[CarTrack, str]], now: float,
+              bus: EventBus) -> None:
+        # 이번 틱에 전이된 차들 중 발화 가치가 있는 것만 추림
+        speak: list[tuple[CarTrack, str]] = []
+        for t, old in transitions:
+            if self._worth_announcing(t, old, now):
+                speak.append((t, old))
+        if not speak:
             return
-        if rate < MIN_CLOSING_MS:           # 뒤차 gap_m<0이 0으로 커져야 접근 (rate>0)
+
+        active = [t for t in self.tracks.values()
+                  if THREAT_RANK[t.state] >= 1]
+
+        if len(active) >= 2:
+            self._emit_multi(active, now, bus)
             return
-        faster_class = (v["estimated_lap"] > 0 and my_est > 0
-                        and v["estimated_lap"] < my_est - FASTER_CLASS_MARGIN)
-        if not faster_class:
+        t, old = max(speak, key=lambda p: THREAT_RANK[p[0].state])
+        self._emit_single(t, old, now, bus)
+
+    def _worth_announcing(self, t: CarTrack, old: str, now: float) -> bool:
+        last = t.announced.get(t.state)
+        if last is not None and now - last < STATE_REANNOUNCE_SEC:
+            return False
+        if t.state == ALONGSIDE:
+            return True
+        if t.state == NEARBY_BEHIND:
+            return old in (FAR, APPROACHING)          # 뒤에서 붙은 경우만
+        if t.state == APPROACHING:
+            return old == FAR
+        if t.state == NEARBY_AHEAD:
+            return old == ALONGSIDE and t.engaged     # 추월 완료 서사 마무리
+        if t.state == FAR:
+            # 배틀하던 차가 떨어짐 → 서사가 있던 경우만 마무리 멘트
+            return old in (NEARBY_BEHIND, ALONGSIDE) and t.engaged and not t.faster
+        return False
+
+    def _mark(self, t: CarTrack, now: float) -> None:
+        t.announced[t.state] = now
+        t.engaged = True
+
+    def _emit_single(self, t: CarTrack, old: str, now: float, bus: EventBus) -> None:
+        self._mark(t, now)
+        tone = "urgent" if (t.state == ALONGSIDE or self.in_battle()) else "casual"
+        cid = t.cid
+
+        if t.state == ALONGSIDE:
+            pool = {"left": "alongside_left", "right": "alongside_right"}.get(
+                t.side, "alongside")
+            bus.push(Event(
+                type=EventType.TRAFFIC_CLOSE, priority=Priority.CRITICAL,
+                data={"pool": pool, "cls": t.cls, "driver": t.driver},
+                dedup_key=f"along_{cid}", ttl=3.0, tone="urgent",
+                bridge={"topic": f"{t.cls} 차량({t.driver})이 지금 옆에 나란히 있다. "
+                                 f"{'상위 클래스라 무리해서 막을 필요 없음' if t.faster else '같은 클래스 포지션 배틀'}"},
+                valid_fn=lambda: self.car_state(cid) in (ALONGSIDE, NEARBY_BEHIND),
+            ))
+        elif t.state == NEARBY_BEHIND:
+            bus.push(Event(
+                type=EventType.TRAFFIC_CLOSE, priority=Priority.CRITICAL,
+                data={"pool": "nearby_behind", "cls": t.cls, "driver": t.driver},
+                dedup_key=f"near_{cid}", ttl=4.0, tone=tone,
+                bridge={"topic": f"{t.cls} 차량이 뒤 50m 안에 붙었다. "
+                                 f"{'랩핑하러 온 상위 클래스' if t.faster else '동클래스 배틀 상황'}"},
+                valid_fn=lambda: self.car_state(cid) in (NEARBY_BEHIND, ALONGSIDE),
+            ))
+        elif t.state == APPROACHING:
+            eta = max(round(-t.gap_m / t.rate), 1) if t.rate else 4
+            bus.push(Event(
+                type=EventType.TRAFFIC_APPROACH, priority=Priority.CRITICAL,
+                data={"cls": t.cls, "gap_sec": min(eta, 6)},
+                dedup_key=f"appr_{cid}", ttl=5.0, tone=tone,
+            ))
+        elif t.state == NEARBY_AHEAD:      # 추월 완료
+            bus.push(Event(
+                type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
+                data={"pool": "pass_complete", "cls": t.cls},
+                dedup_key=f"passed_{cid}", ttl=6.0, tone="casual",
+                valid_fn=lambda: self.car_state(cid) == NEARBY_AHEAD,
+            ))
+        elif t.state == FAR:               # 배틀하던 차가 떨어짐
+            bus.push(Event(
+                type=EventType.TRAFFIC_UPDATE, priority=Priority.NORMAL,
+                data={"pool": "dropped", "cls": t.cls},
+                dedup_key=f"drop_{cid}", ttl=10.0, tone="casual",
+                valid_fn=lambda: self.car_state(cid) == FAR,
+            ))
+
+    # -- 다중 차량 종합 -------------------------------------------------------
+
+    def _emit_multi(self, active: list[CarTrack], now: float, bus: EventBus) -> None:
+        for t in active:
+            self._mark(t, now)
+        message = self._compose_multi(active)
+        if not message:
             return
-        eta = -gap_m / rate
-        if not (0 < eta <= self.warn_gap_sec):
-            return
-        last = self._announced.get(v["id"])
-        if last is not None and now - last < REANNOUNCE_SEC:
-            return
-        self._announced[v["id"]] = now
         bus.push(Event(
-            type=EventType.TRAFFIC_APPROACH,
-            priority=Priority.CRITICAL,
-            data={
-                "cls": v["cls"],
-                "driver": v["driver"],
-                "gap_sec": max(round(eta), 1),
-            },
-            dedup_key=f"appr_{v['id']}",
-            ttl=5.0,
+            type=EventType.TRAFFIC_MULTI, priority=Priority.CRITICAL,
+            message=message,
+            dedup_key="multi", ttl=4.0, tone="urgent",
+            bridge={"topic": "여러 대가 동시에 얽힌 트래픽 상황: " + message},
+            valid_fn=lambda: sum(
+                THREAT_RANK[t.state] >= 1 for t in self.tracks.values()) >= 2,
         ))
-        log.debug("접근 예고: %s(%s) eta %.1fs", v["driver"], v["cls"], eta)
 
-    def _check_proximity(self, v: dict, gap_m: float, now: float,
-                         bus: EventBus) -> None:
-        """앞뒤 50m 이내 근접 경고 (클래스 무관)."""
-        if abs(gap_m) > self.proximity_m:
-            self._close_announced.pop(v["id"], None)   # 멀어지면 재경고 허용
-            return
-        last = self._close_announced.get(v["id"])
-        if last is not None and now - last < REANNOUNCE_SEC:
-            return
-        self._close_announced[v["id"]] = now
-        bus.push(Event(
-            type=EventType.TRAFFIC_CLOSE,
-            priority=Priority.CRITICAL,
-            data={
-                "direction": "ahead" if gap_m > 0 else "behind",
-                "cls": v["cls"],
-                "driver": v["driver"],
-                "gap_m": round(abs(gap_m)),
-            },
-            dedup_key=f"close_{v['id']}",
-            ttl=4.0,
-        ))
+    def _compose_multi(self, active: list[CarTrack]) -> Optional[str]:
+        """위협도 순 상위 1~2개 절 + 같은 클래스 묶기 → 한 문장."""
+        from voice import class_ko
+
+        ranked = sorted(active, key=lambda t: -THREAT_RANK[t.state])
+        clauses: list[str] = []
+        used: set[int] = set()
+
+        for t in ranked:
+            if t.cid in used or len(clauses) >= 2:
+                continue
+            # 같은 클래스·같은 상태 차량 묶기
+            group = [o for o in ranked if o.cls == t.cls and o.state == t.state
+                     and o.cid not in used]
+            for o in group:
+                used.add(o.cid)
+            name = class_ko(t.cls)
+            n = len(group)
+            if t.state == ALONGSIDE:
+                side = {"left": "왼쪽에", "right": "오른쪽에"}.get(t.side, "옆에")
+                clauses.append(f"{side} {name} 나란히")
+            elif t.state == NEARBY_BEHIND:
+                clauses.append(f"뒤로 {name} {'두 대 줄지어' if n == 2 else f'{n}대' if n > 2 else '하나'} 붙는다")
+            elif t.state == APPROACHING:
+                clauses.append(f"{name} {'두 대' if n == 2 else f'{n}대' if n > 2 else ''} 접근 중".replace("  ", " "))
+        if not clauses:
+            return None
+        ahead_free = not any(t.state == NEARBY_AHEAD for t in active)
+        tail = " 앞은 여유." if ahead_free and len(clauses) >= 2 else ""
+        return ", ".join(clauses) + "." + tail

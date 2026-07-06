@@ -81,6 +81,7 @@ def _vehicle_scoring_to_dict(v) -> dict:
         "place": v.mPlace,
         "total_laps": v.mTotalLaps,
         "lap_dist": round(v.mLapDist, 1),
+        "path_lat": round(v.mPathLateral, 2),   # 센터 라인 기준 횡방향 위치 (m)
         "sector": v.mSector,
         "last_lap": round(v.mLastLapTime, 3),
         "best_lap": round(v.mBestLapTime, 3),

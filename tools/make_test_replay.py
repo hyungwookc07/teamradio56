@@ -77,7 +77,19 @@ class SimCar:
         return TRACK_LEN / self.lap_time_at(self.laps_done)
 
 
-def build_cars() -> list[SimCar]:
+def build_cars(scenario: str = "race") -> list[SimCar]:
+    if scenario == "traffic":
+        # 다중 차량 트래픽 검증용: 하이퍼카 2대 줄지어 접근(묶음 콜),
+        # GT3 한 대 천천히 접근→나란히→추월(상태 전이 서사),
+        # GT3 한 대 붙었다가 떨어짐(dropped 콜)
+        return [
+            SimCar(0, "나", "Porsche 911 GT3 R", GT3_CLASS, PLAYER_LAP, 0.0, is_player=True),
+            SimCar(1, "토요타7", "Toyota GR010", HYPER_CLASS, HYPER_LAP, -600.0),
+            SimCar(2, "토요타8", "Toyota GR010", HYPER_CLASS, HYPER_LAP + 0.1, -690.0),
+            SimCar(3, "리바이", "Ferrari 296 GT3", GT3_CLASS, PLAYER_LAP - 1.4, -350.0),
+            SimCar(4, "헌터", "McLaren 720S GT3", GT3_CLASS, PLAYER_LAP - 0.9, -180.0,
+                   drift_per_lap=0.45),   # 처음엔 접근하다 점점 느려져 떨어짐
+        ]
     return [
         SimCar(0, "나", "Porsche 911 GT3 R", GT3_CLASS, PLAYER_LAP, 0.0, is_player=True),
         SimCar(1, "리바이", "Ferrari 296 GT3", GT3_CLASS, PLAYER_LAP - 0.2, 180.0,
@@ -87,6 +99,17 @@ def build_cars() -> list[SimCar]:
         SimCar(3, "토요타7", "Toyota GR010", HYPER_CLASS, HYPER_LAP, 900.0),
         SimCar(4, "페라리50", "Ferrari 499P", HYPER_CLASS, HYPER_LAP + 0.5, 2500.0),
     ]
+
+
+def path_lat_of(c: SimCar, player: SimCar) -> float:
+    """추월 구간(±40m)에서는 옆으로 비켜 나란히 지나가는 것처럼 시뮬레이션."""
+    if c.is_player:
+        return 0.0
+    half = TRACK_LEN / 2
+    gap = (c.total_dist - player.total_dist + half) % TRACK_LEN - half
+    if abs(gap) < 40.0:
+        return 2.8 if c.id % 2 else -2.8    # 차량별로 왼/오른쪽 고정
+    return ((c.id * 37) % 10) / 10 - 0.5    # 평소엔 라인 미세 편차
 
 
 def make_snapshot(t: float, et: float, cars: list[SimCar], player: SimCar) -> dict:
@@ -109,6 +132,7 @@ def make_snapshot(t: float, et: float, cars: list[SimCar], player: SimCar) -> di
             "is_player": c.is_player, "place": p,
             "total_laps": c.laps_done,
             "lap_dist": round(c.lap_dist, 1),
+            "path_lat": round(path_lat_of(c, player), 2),
             "sector": 1 + int(c.lap_dist / TRACK_LEN * 3) % 3,
             "last_lap": round(c.last_lap_time, 3),
             "best_lap": round(c.best_lap_time, 3),
@@ -196,10 +220,12 @@ def main():
     parser.add_argument("output")
     parser.add_argument("--laps", type=int, default=12, help="플레이어 기준 랩 수")
     parser.add_argument("--hz", type=float, default=5.0, help="스냅샷 주기")
+    parser.add_argument("--scenario", default="race", choices=["race", "traffic"],
+                        help="race=기본 레이스, traffic=다중 차량 트래픽 검증")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-    cars = build_cars()
+    cars = build_cars(args.scenario)
     player = cars[0]
     dt = 1.0 / args.hz
     et = 0.0

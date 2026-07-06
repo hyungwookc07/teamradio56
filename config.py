@@ -55,15 +55,20 @@ DEFAULTS: dict[str, Any] = {
         "fuel_critical_laps": 1.5,    # 긴급 경고
         "pace_delta_sec": 0.7,        # 평소 대비 랩타임 편차가 이 이상이면 코멘트
         "gap_change_sec_per_lap": 0.4,  # 갭 변화율이 이 이상이면 코멘트
-        "traffic_warn_gap_sec": 4.0,  # 상위 클래스 접근 예고 시점 (초)
-        "proximity_m": 50.0,          # 근접 경고 거리 (m)
+        "traffic_eta_sec": 10.0,      # 접근 예고: 도달 예상 N초 이내 (3~10초 권장)
+        "proximity_m": 50.0,          # 근접(NEARBY) 진입 거리 (m)
+        "alongside_m": 12.0,          # 나란히(ALONGSIDE) 판정 거리 (m)
         "tyre_temp_imbalance": 12.0,  # 좌우/전후 온도 불균형 경고 (C)
         "tyre_wear_warn": 0.35,       # 남은 수명 비율이 이 이하로 예상되면 경고
         "damage_impact_mag": 500.0,   # 이 이상 충격이면 데미지 체크 콜
     },
     "cooldowns": {                    # 같은 유형 이벤트 재발화 최소 간격 (초)
         "fuel_warning": 240,
-        "traffic": 30,
+        "traffic": 20,                # 접근 예고
+        "traffic_close": 8,           # 근접/나란히 긴급 콜 (짧게 — 안전 콜)
+        "traffic_update": 15,         # 지나감/떨어짐 후속
+        "traffic_multi": 25,          # 다중 차량 종합
+        "bridge": 20,                 # 긴급 콜 뒤 LLM 후속
         "pace_comment": 120,
         "gap_comment": 90,
         "tyre_warning": 180,

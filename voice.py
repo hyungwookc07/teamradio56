@@ -66,23 +66,41 @@ def class_ko(cls: str) -> str:
 
 
 class PhrasePool:
-    """이벤트 타입(풀 키)별 변형 멘트 풀. 최근 사용 이력을 피해서 뽑는다."""
+    """
+    이벤트 타입(풀 키) × 톤(casual/urgent)별 변형 멘트 풀.
+    최근 사용 이력(키 단위 큐)을 피해서 뽑아 반복감을 줄인다.
+    """
 
     RECENT_EXCLUDE = 5   # 같은 풀에서 최근 N개는 다시 안 씀
 
     def __init__(self, path: str = URGENT_LINES_FILE):
-        self.pools: dict[str, list[str]] = {}
+        self.pools: dict = {}
         self._recent: dict[str, deque] = {}
         try:
             with open(path, "r", encoding="utf-8") as f:
                 self.pools = yaml.safe_load(f) or {}
-            log.info("멘트 풀 로드: %d개 타입, 총 %d개 변형",
-                     len(self.pools), sum(len(v) for v in self.pools.values()))
+            total = sum(len(lines) for tones in self.pools.values()
+                        for lines in (tones.values() if isinstance(tones, dict) else [tones]))
+            log.info("멘트 풀 로드: %d개 타입, 총 %d개 변형", len(self.pools), total)
         except OSError as e:
             log.warning("멘트 풀 로드 실패(%s) — 템플릿 폴백", e)
 
-    def pick(self, pool_key: str, slots: dict) -> Optional[str]:
-        pool = self.pools.get(pool_key)
+    def lines(self, pool_key: str, tone: str = "casual") -> list[str]:
+        entry = self.pools.get(pool_key)
+        if entry is None:
+            return []
+        if isinstance(entry, list):           # 톤 구분 없는 구형 포맷 호환
+            return entry
+        lines = entry.get(tone)
+        if not lines:                          # 해당 톤이 없으면 있는 톤으로 폴백
+            for alt in entry.values():
+                if alt:
+                    return alt
+            return []
+        return lines
+
+    def pick(self, pool_key: str, slots: dict, tone: str = "casual") -> Optional[str]:
+        pool = self.lines(pool_key, tone)
         if not pool:
             return None
         recent = self._recent.setdefault(
@@ -249,7 +267,7 @@ class VoiceGenerator:
         if renderer is None:
             log.debug("렌더러 없는 이벤트 무시: %s", ev.type)
             return None
-        fallback = renderer(ev.data)
+        fallback = renderer(ev.data, ev.tone)
         if ev.type in self.NONURGENT:
             return self._llm_or(ev, fallback)   # LLM 우선 (3~5초 지연 허용)
         return fallback                          # 긴급 콜은 변형 풀 즉시 반환
@@ -257,34 +275,38 @@ class VoiceGenerator:
     # -- 긴급 콜: 사전 생성 변형 풀 ------------------------------------------
     # 슬롯 값은 반드시 이산화(정수/고정 문자열)한다. 사전 캐시 히트 조건.
 
-    def _render_traffic_approach(self, d: dict) -> Optional[str]:
+    def _render_traffic_approach(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("traffic_approach", {
             "cls": class_ko(d["cls"]),
             "gap": int(min(max(d["gap_sec"], 1), 6)),
-        })
+        }, tone)
 
-    def _render_traffic_close(self, d: dict) -> Optional[str]:
-        key = "traffic_close_ahead" if d["direction"] == "ahead" else "traffic_close_behind"
-        return self.pool.pick(key, {})
+    def _render_traffic_close(self, d: dict, tone: str = "casual") -> Optional[str]:
+        # 트래픽 상태 머신이 풀 이름을 지정 (alongside/alongside_left/.../nearby_behind)
+        return self.pool.pick(d["pool"], {"cls": class_ko(d.get("cls", ""))}, tone)
 
-    def _render_fuel_critical(self, d: dict) -> Optional[str]:
+    def _render_traffic_update(self, d: dict, tone: str = "casual") -> Optional[str]:
+        # pass_complete / dropped — 서사 마무리 멘트
+        return self.pool.pick(d["pool"], {"cls": class_ko(d.get("cls", ""))}, tone)
+
+    def _render_fuel_critical(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("fuel_critical", {
             "fuel_laps": int(min(max(d["fuel_laps"], 1), 4)),
-        })
+        }, tone)
 
-    def _render_fuel_warning(self, d: dict) -> Optional[str]:
+    def _render_fuel_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("fuel_warning", {
             "fuel_laps": int(min(max(d["fuel_laps"], 1), 4)),
-        })
+        }, tone)
 
-    def _render_pit_call(self, d: dict) -> Optional[str]:
-        return self.pool.pick("pit_call", {})
+    def _render_pit_call(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self.pool.pick("pit_call", {}, tone)
 
-    def _render_damage(self, d: dict) -> Optional[str]:
-        return self.pool.pick("damage", {})
+    def _render_damage(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self.pool.pick("damage", {}, tone)
 
-    def _render_penalty(self, d: dict) -> Optional[str]:
-        return self.pool.pick("penalty", {})
+    def _render_penalty(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self.pool.pick("penalty", {}, tone)
 
     # -- 비긴급 멘트: LLM 우선, 실패 시 템플릿 폴백 ---------------------------
 
@@ -296,30 +318,29 @@ class VoiceGenerator:
             # LLM이 PASS(침묵) 또는 오류 → 템플릿 폴백 (None이면 발화 안 함)
         return fallback
 
-    def _render_lap_analysis(self, ev_data: dict) -> Optional[str]:
+    def _render_lap_analysis(self, d: dict, tone: str = "casual") -> Optional[str]:
         # 템플릿 폴백: 판단형 최소 멘트
-        d = ev_data
         if d.get("pit_window_laps") is not None:
             return f"피트 윈도우 계산 중이야. 늦어도 {d['pit_window_laps']}랩 안엔 들어와야 해."
         return None
 
-    def _render_stint_briefing(self, d: dict) -> Optional[str]:
+    def _render_stint_briefing(self, d: dict, tone: str = "casual") -> Optional[str]:
         return "새 스틴트야. 첫 랩은 타이어 아끼고, 리듬부터 찾자."
 
-    def _render_tyre_warning(self, d: dict) -> Optional[str]:
+    def _render_tyre_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
         if d.get("kind") == "temp_imbalance":
             return f"{d['hot_wheel']} 타이어가 {d['delta']:.0f}도 더 뜨거워. 그쪽 코너 조금만 아껴줘."
         if d.get("kind") == "wear":
             return f"{d['wheel']} 타이어 수명이 {d['laps_left']:.0f}랩쯤 남았어. 피트 계획에 반영할게."
         return None
 
-    def _render_pace_comment(self, d: dict) -> Optional[str]:
+    def _render_pace_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
         delta = abs(d["delta"])
         if d.get("direction") == "slower":
             return f"방금 랩, 평소보다 {delta:.1f}초 느렸어. 어디서 잃었는지 확인해봐."
         return f"좋아, 평소보다 {delta:.1f}초 빨라. 이 리듬 유지하자."
 
-    def _render_gap_comment(self, d: dict) -> Optional[str]:
+    def _render_gap_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
         rate = d["rate"]
         gap = d["gap"]
         if d["who"] == "behind":
@@ -336,12 +357,16 @@ def iter_pregen_texts(pool: PhrasePool):
     사전 캐시 대상 텍스트 전체를 생성 (tools/pregen_audio.py용).
     런타임 렌더러와 동일한 슬롯 조합을 열거해야 캐시가 히트한다.
     """
+    CLASSES = ("하이퍼카", "엘엠피 투", "GT3", "GTE", "상위 클래스", "")
     slot_values = {
-        "traffic_approach": [{"cls": c, "gap": g}
-                             for c in ("하이퍼카", "엘엠피 투", "GT3", "상위 클래스")
+        "traffic_approach": [{"cls": c, "gap": g} for c in CLASSES if c
                              for g in range(1, 7)],
-        "traffic_close_ahead": [{}],
-        "traffic_close_behind": [{}],
+        "alongside": [{}],
+        "alongside_left": [{}],
+        "alongside_right": [{}],
+        "nearby_behind": [{"cls": c} for c in CLASSES],
+        "pass_complete": [{"cls": c} for c in CLASSES],
+        "dropped": [{"cls": c} for c in CLASSES],
         "fuel_warning": [{"fuel_laps": n} for n in range(1, 5)],
         "fuel_critical": [{"fuel_laps": n} for n in range(1, 5)],
         "pit_call": [{}],
@@ -349,9 +374,10 @@ def iter_pregen_texts(pool: PhrasePool):
         "penalty": [{}],
     }
     for pool_key, combos in slot_values.items():
-        for phrase in pool.pools.get(pool_key, []):
-            for slots in combos:
-                try:
-                    yield phrase.format(**slots)
-                except (KeyError, IndexError):
-                    continue
+        for tone in ("casual", "urgent"):
+            for phrase in pool.lines(pool_key, tone):
+                for slots in combos:
+                    try:
+                        yield phrase.format(**slots)
+                    except (KeyError, IndexError):
+                        continue

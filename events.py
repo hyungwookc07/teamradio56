@@ -17,7 +17,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Optional
+from typing import Callable, Optional
 
 log = logging.getLogger("events")
 
@@ -35,6 +35,9 @@ class EventType:
     PIT_CALL = "pit_call"
     TRAFFIC_APPROACH = "traffic_approach"
     TRAFFIC_CLOSE = "traffic_close"
+    TRAFFIC_UPDATE = "traffic_update"       # 상태 전이 후속 (지나감/떨어짐)
+    TRAFFIC_MULTI = "traffic_multi"         # 다중 차량 종합 한 문장
+    BRIDGE_FOLLOWUP = "bridge_followup"     # 긴급 콜 뒤 LLM 후속 설명
     DAMAGE = "damage"
     PENALTY = "penalty"
     PACE_COMMENT = "pace_comment"
@@ -51,7 +54,10 @@ COOLDOWN_KEY = {
     EventType.FUEL_CRITICAL: "fuel_warning",
     EventType.FUEL_WARNING: "fuel_warning",
     EventType.TRAFFIC_APPROACH: "traffic",
-    EventType.TRAFFIC_CLOSE: "traffic",
+    EventType.TRAFFIC_CLOSE: "traffic_close",
+    EventType.TRAFFIC_UPDATE: "traffic_update",
+    EventType.TRAFFIC_MULTI: "traffic_multi",
+    EventType.BRIDGE_FOLLOWUP: "bridge",
     EventType.PACE_COMMENT: "pace_comment",
     EventType.GAP_COMMENT: "gap_comment",
     EventType.TYRE_WARNING: "tyre_warning",
@@ -75,6 +81,9 @@ class Event:
     message: Optional[str] = None              # 이미 완성된 멘트 텍스트 (있으면 그대로 사용)
     dedup_key: Optional[str] = None            # 없으면 type이 dedup 키
     ttl: Optional[float] = None
+    tone: str = "casual"                       # casual | urgent — 변형 풀 톤 선택
+    bridge: Optional[dict] = None              # 긴급 콜 뒤 LLM 후속 생성 컨텍스트
+    valid_fn: Optional[Callable[[], bool]] = None  # 재생 직전 유효성 검사 (False→폐기)
     created_at: float = field(default_factory=time.monotonic)
 
     @property
@@ -137,6 +146,13 @@ class EventBus:
                 if ev.expired(now):
                     log.debug("TTL 만료로 폐기: %s", ev.type)
                     continue
+                if ev.valid_fn is not None:
+                    try:
+                        if not ev.valid_fn():
+                            log.debug("상황 종료로 폐기: %s", ev.type)
+                            continue
+                    except Exception:
+                        pass  # 유효성 검사 실패는 재생 강행보다 안전한 쪽(폐기 안 함)
                 if not self._heap:
                     self._available.clear()
                 if not any(e.priority == Priority.CRITICAL for _, _, e in self._heap):
