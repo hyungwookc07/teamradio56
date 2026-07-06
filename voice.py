@@ -35,6 +35,10 @@ LLM_RULES = """
 - 여러 데이터를 엮어서 결론을 내라. (예: 연료는 10랩인데 타이어가 8랩쯤 한계면
   "9랩째 들어와서 같이 해결하자"처럼)
 - 지난 멘트와 같은 표현을 반복하지 마라. 서사가 이어지게.
+- 생성 지연이 있으므로 실시간 수치를 단정하지 마라: "지금 2.3초 뒤" 금지,
+  "계속 붙어오는 상황이야", "다음 스트레이트에서 압박 올 거야" 같은
+  범용/예측형 표현을 써라.
+- 사실 통보가 아니라 행동 조언 형태로: "왼쪽 GT3 신경 쓰고 다음 코너 라인 깔끔하게".
 - 말할 가치가 없으면 정확히 PASS 라고만 출력한다.
 """.strip()
 
@@ -309,6 +313,24 @@ class VoiceGenerator:
         return self.pool.pick("penalty", {}, tone)
 
     # -- 비긴급 멘트: LLM 우선, 실패 시 템플릿 폴백 ---------------------------
+
+    def bridge_text(self, ev: Event) -> Optional[str]:
+        """
+        긴급 콜 직후 이어붙일 LLM 후속 멘트 (브리지 기법).
+        긴급 콜이 이미 사실을 전달했으므로, 후속은 맥락/조언만 더한다.
+        """
+        if not self.llm.available or not ev.bridge:
+            return None
+        lines = ["[레이스 상황]"]
+        if self.state.narrative:
+            lines.append("[최근 무전 내역 — 같은 말 반복 금지]")
+            lines.extend(self.state.narrative[-4:])
+        lines.append("[방금 나간 긴급 콜의 상황]")
+        lines.append(ev.bridge.get("topic", ""))
+        lines.append(
+            "[지금 말할 주제] 방금 긴급 콜의 후속 설명을 한 문장으로. "
+            "이미 전달된 사실 반복 금지, 드라이버가 어떻게 대응하면 되는지만.")
+        return self.llm.generate("\n".join(lines))
 
     def _llm_or(self, ev: Event, fallback: Optional[str]) -> Optional[str]:
         if self.llm.available:

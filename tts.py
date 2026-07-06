@@ -17,12 +17,13 @@ import hashlib
 import json
 import logging
 import os
+import random
 import threading
 import time
 import urllib.request
 from typing import Callable, Optional
 
-from events import EventBus, Priority
+from events import Event, EventBus, EventType, Priority
 
 log = logging.getLogger("tts")
 
@@ -155,7 +156,11 @@ class AudioPlayer:
         """재생 완료 시 True, 중단됐으면 False."""
         if not self._ensure_mixer():
             return True
+        # 미세 랜덤화: 기계적인 즉답 느낌 제거 (0~300ms 지연, 볼륨 ±5%)
+        time.sleep(random.uniform(0.0, 0.3))
         try:
+            self._mixer.music.set_volume(
+                max(min(self.volume * random.uniform(0.95, 1.05), 1.0), 0.0))
             self._mixer.music.load(path)
             self._mixer.music.play()
             while self._mixer.music.get_busy():
@@ -215,6 +220,7 @@ class VoiceWorker(threading.Thread):
             return
         log.info("🎙️ [크루치프] %s", text)
         self.state.add_narrative(f"(랩{len(self.state.laps)}) 크루치프: {text}")
+        self._maybe_bridge(ev)
         if not self.enabled:
             return
         path = self.engine.synth(text)
@@ -226,3 +232,38 @@ class VoiceWorker(threading.Thread):
         else:
             should_interrupt = self.bus.urgent_pending.is_set
         self.player.play(path, should_interrupt)
+
+    def _maybe_bridge(self, ev) -> None:
+        """
+        브리지 기법: 긴급 콜(t=0, 캐시) 직후 LLM 후속 멘트(t+3~5s)를
+        백그라운드 스레드에서 생성해 낮은 우선순위로 큐에 넣는다.
+        생성이 끝났을 때 상황이 이미 종료됐으면(valid_fn) 폐기된다.
+        """
+        if not ev.bridge or not getattr(self.voice_gen, "llm", None) \
+                or not self.voice_gen.llm.available:
+            return
+
+        def worker(src_ev):
+            try:
+                text = self.voice_gen.bridge_text(src_ev)
+            except Exception:
+                log.exception("브리지 멘트 생성 실패")
+                return
+            if not text:
+                return
+            if src_ev.valid_fn is not None:
+                try:
+                    if not src_ev.valid_fn():
+                        log.debug("브리지 폐기 (상황 종료): %s", src_ev.type)
+                        return
+                except Exception:
+                    pass
+            self.bus.push(Event(
+                type=EventType.BRIDGE_FOLLOWUP, priority=Priority.NORMAL,
+                message=text, ttl=8.0,
+                dedup_key=f"bridge_{src_ev.key}",
+                valid_fn=src_ev.valid_fn,
+            ))
+
+        threading.Thread(target=worker, args=(ev,),
+                         name="bridge-llm", daemon=True).start()
