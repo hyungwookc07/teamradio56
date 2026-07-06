@@ -122,6 +122,14 @@ class TrafficAnalyzer:
         if transitions:
             self._emit(transitions, now, bus)
 
+        # 레이스 서사 이슈: 동클래스 배틀 여부 (LLM 문맥 연속성용)
+        battler = next((t for t in self.tracks.values()
+                        if t.state in (NEARBY_BEHIND, ALONGSIDE) and not t.faster), None)
+        if battler is not None:
+            state.set_issue("battle", f"{battler.cls} ({battler.driver})와 포지션 배틀 중")
+        else:
+            state.clear_issue("battle")
+
     def _update_track(self, v: dict, me: dict, my_est: float,
                       track_len: float, now: float) -> CarTrack:
         t = self.tracks.get(v["id"])

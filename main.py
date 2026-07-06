@@ -34,6 +34,7 @@ from analyzers.fuel import FuelAnalyzer
 from analyzers.pace import PaceAnalyzer
 from analyzers.traffic import TrafficAnalyzer
 from analyzers.tyres import TyreAnalyzer
+from analyzers.strategy import StrategyEngine
 from voice import VoiceGenerator
 from tts import AudioPlayer, VoiceWorker, build_engine
 
@@ -79,6 +80,7 @@ class CrewChiefApp:
         self.pace = PaceAnalyzer(cfg)
         self.traffic = TrafficAnalyzer(cfg)
         self.tyres = TyreAnalyzer(cfg)
+        self.strategy = StrategyEngine(cfg)
         self.voice_gen = VoiceGenerator(cfg, self.state)
         self.worker = VoiceWorker(
             bus=self.bus,
@@ -147,7 +149,7 @@ class CrewChiefApp:
         """크루치프 로직의 90%는 여기서: 연료/페이스 분석 → 이벤트."""
         fuel_status = self.fuel.on_lap(self.state, snap, self.bus)
         self.pace.on_lap(self.state, snap, self.bus, lap)
-        self.tyres.on_lap(self.state, snap, self.bus)
+        tyre_status = self.tyres.on_lap(self.state, snap, self.bus)
         if fuel_status:
             log.debug("연료: %s", fuel_status)
 
@@ -157,13 +159,8 @@ class CrewChiefApp:
                 type=EventType.STINT_BRIEFING, priority=Priority.NORMAL,
                 data={}, dedup_key=f"stint_{lap.lap_number}",
             ))
-        # 피트가 필요해진 시점부터 주기적으로 전략 판단 멘트 (LLM, 쿨다운으로 억제)
-        elif (fuel_status and fuel_status.get("pit_needed")
-                and len(self.state.laps) >= 5):
-            self.bus.push(Event(
-                type=EventType.LAP_ANALYSIS, priority=Priority.NORMAL,
-                data=fuel_status, dedup_key=f"analysis_{lap.lap_number}",
-            ))
+        # 전략 엔진: 판단이 필요한 전이 시점에만 LLM 전략 멘트 트리거
+        self.strategy.on_lap(self.state, snap, self.bus, fuel_status, tyre_status)
 
     # -- 콘솔 상태 출력 ------------------------------------------------------
 

@@ -33,6 +33,7 @@ llm:
   api_key: ""                # 비우면 환경변수 ANTHROPIC_API_KEY 사용
   max_tokens: 200
   timeout_sec: 10
+  budget_per_hour: 15        # LLM 호출 예산 (2시간 레이스 기준 30회 이내)
 
 # 분석기 임계값 — 발화 억제의 핵심. 높일수록 조용해짐.
 thresholds:

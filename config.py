@@ -49,6 +49,7 @@ DEFAULTS: dict[str, Any] = {
         "api_key": "",              # 비우면 ANTHROPIC_API_KEY 환경변수 사용
         "max_tokens": 200,
         "timeout_sec": 10,
+        "budget_per_hour": 15,      # LLM 호출 예산 (레이스 2시간 기준 10~30회 목표)
     },
     "thresholds": {
         "fuel_warn_laps": 3.0,        # 남은 연료가 N랩 이하이면 경고

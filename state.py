@@ -60,6 +60,7 @@ class SessionState:
         self.class_vehicles: int = 0
         self.race_started_wall: float = time.time()
         self.narrative: list[str] = []     # 발화한 멘트/주요 사건 로그 (LLM 서사 연속성용)
+        self.issues: dict[str, str] = {}   # 진행 중 이슈 (연료 타이트, 배틀 중 등)
         self.stint_start_lap: int = 0      # 마지막 피트 이후 첫 랩
         self._last_total_laps: Optional[int] = None
         self._pit_seen_this_lap = False
@@ -87,6 +88,17 @@ class SessionState:
         self.narrative.append(text)
         if len(self.narrative) > 60:
             self.narrative = self.narrative[-60:]
+
+    # 진행 중 이슈 — 분석기들이 유지하는 "현재 레이스 서사"의 핵심 상태.
+    # LLM 호출 시 함께 전달되어 멘트 간 톤/주제 연속성을 만든다.
+
+    def set_issue(self, key: str, text: str) -> None:
+        if self.issues.get(key) != text:
+            self.issues[key] = text
+            log.debug("이슈 갱신 [%s] %s", key, text)
+
+    def clear_issue(self, key: str) -> None:
+        self.issues.pop(key, None)
 
     # ------------------------------------------------------------------
 

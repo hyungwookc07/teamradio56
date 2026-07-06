@@ -134,6 +134,8 @@ class CrewChiefLLM:
         self.model = cfg.get("llm.model", "claude-haiku-4-5")
         self.max_tokens = cfg.get("llm.max_tokens", 200)
         self.timeout = cfg.get("llm.timeout_sec", 10)
+        self.budget_per_hour = cfg.get("llm.budget_per_hour", 15)
+        self._call_times: list[float] = []
         self._api_key = cfg.anthropic_api_key
         self._system = [{
             "type": "text",
@@ -159,8 +161,20 @@ class CrewChiefLLM:
             )
         return self._client
 
+    def _budget_ok(self) -> bool:
+        """호출 예산: 시간당 N회 (레이스 2시간 기준 10~30회 목표)."""
+        import time as _time
+        now = _time.monotonic()
+        self._call_times = [t for t in self._call_times if now - t < 3600]
+        if len(self._call_times) >= self.budget_per_hour:
+            log.info("LLM 호출 예산 소진 (시간당 %d회) — 이번 멘트는 템플릿/침묵",
+                     self.budget_per_hour)
+            return False
+        self._call_times.append(now)
+        return True
+
     def generate(self, situation: str) -> Optional[str]:
-        if self._disabled:
+        if self._disabled or not self._budget_ok():
             return None
         try:
             import anthropic
@@ -207,6 +221,9 @@ def build_situation(state, event: Event) -> str:
     """
     lines = ["[레이스 상황]"]
     lines.append(f"트랙 {state.track}, 클래스 {state.player_class} (동클래스 {state.class_vehicles}대)")
+    if state.issues:
+        lines.append("[진행 중 이슈]")
+        lines.extend(f"- {text}" for text in state.issues.values())
 
     valid = [l for l in state.laps if l.valid]
     if valid:
@@ -238,6 +255,9 @@ def build_situation(state, event: Event) -> str:
         lines.append("[최근 무전 내역 — 같은 말 반복 금지]")
         lines.extend(state.narrative[-5:])
 
+    if event.data.get("triggers"):
+        lines.append("[전략 트리거]")
+        lines.extend(f"- {t}" for t in event.data["triggers"])
     lines.append("[지금 말할 주제]")
     topic = {
         EventType.PACE_COMMENT: "방금 랩타임이 평소 대비 {delta:+.1f}초였다. 이유 추정이나 지시를 짧게.",
