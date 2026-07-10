@@ -278,30 +278,43 @@ class TrafficAnalyzer:
         ))
 
     def _compose_multi(self, active: list[CarTrack]) -> Optional[str]:
-        """위협도 순 상위 1~2개 절 + 같은 클래스 묶기 → 한 문장."""
+        """
+        같은 상태의 차량들을 한 절로 합치고(클래스별 카운트), 위협도 순
+        상위 2개 절만 한 문장으로. "뒤로 하이퍼카 하나, GT3 하나 붙는다" 식.
+        """
         from voice import class_ko
 
-        ranked = sorted(active, key=lambda t: -THREAT_RANK[t.state])
-        clauses: list[str] = []
-        used: set[int] = set()
+        def names_of(cars: list[CarTrack]) -> str:
+            counts: dict[str, int] = {}
+            for c in cars:
+                key = class_ko(c.cls)
+                counts[key] = counts.get(key, 0) + 1
+            parts = []
+            for name, n in counts.items():
+                if n == 1:
+                    parts.append(f"{name} 하나")
+                elif n == 2:
+                    parts.append(f"{name} 두 대 줄지어")
+                else:
+                    parts.append(f"{name} {n}대")
+            return ", ".join(parts)
 
-        for t in ranked:
-            if t.cid in used or len(clauses) >= 2:
+        by_state: dict[str, list[CarTrack]] = {}
+        for t in active:
+            by_state.setdefault(t.state, []).append(t)
+
+        clauses: list[str] = []
+        for st in (ALONGSIDE, NEARBY_BEHIND, APPROACHING):   # 위협도 순
+            cars = by_state.get(st)
+            if not cars or len(clauses) >= 2:
                 continue
-            # 같은 클래스·같은 상태 차량 묶기
-            group = [o for o in ranked if o.cls == t.cls and o.state == t.state
-                     and o.cid not in used]
-            for o in group:
-                used.add(o.cid)
-            name = class_ko(t.cls)
-            n = len(group)
-            if t.state == ALONGSIDE:
-                side = {"left": "왼쪽에", "right": "오른쪽에"}.get(t.side, "옆에")
-                clauses.append(f"{side} {name} 나란히")
-            elif t.state == NEARBY_BEHIND:
-                clauses.append(f"뒤로 {name} {'두 대 줄지어' if n == 2 else f'{n}대' if n > 2 else '하나'} 붙는다")
-            elif t.state == APPROACHING:
-                clauses.append(f"{name} {'두 대' if n == 2 else f'{n}대' if n > 2 else ''} 접근 중".replace("  ", " "))
+            if st == ALONGSIDE:
+                side = {"left": "왼쪽에", "right": "오른쪽에"}.get(cars[0].side, "옆에")
+                clauses.append(f"{side} {class_ko(cars[0].cls)} 나란히")
+            elif st == NEARBY_BEHIND:
+                clauses.append(f"뒤로 {names_of(cars)} 붙는다")
+            else:
+                clauses.append(f"{names_of(cars)} 접근 중")
         if not clauses:
             return None
         ahead_free = not any(t.state == NEARBY_AHEAD for t in active)
