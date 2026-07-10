@@ -27,6 +27,8 @@ class StrategyEngine:
     def __init__(self, cfg):
         self._pit_needed = False
         self._last_rain: Optional[float] = None
+        self.wet_threshold = cfg.get("thresholds.wetness_crossover", 0.20)
+        self._wet = False    # 현재 '슬릭 한계' 상태인가
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus,
                fuel_status: Optional[dict], tyre_status: Optional[dict]) -> None:
@@ -62,6 +64,19 @@ class StrategyEngine:
             self._last_rain = rain
         elif rain < 0.05:
             state.clear_issue("weather")
+
+        # 3-b) 노면 웻니스 크로스오버 (슬릭 ↔ 웻 타이어 판단 지점)
+        wetness = snap.session.get("avg_wetness", 0.0)
+        if not self._wet and wetness >= self.wet_threshold:
+            self._wet = True
+            triggers.append(f"노면이 젖어 슬릭 한계에 도달했다 (웻니스 {wetness:.2f}). "
+                            "웻 타이어 전환 판단을 말해라.")
+            state.set_issue("track_wet", "노면 젖음 — 슬릭 한계 구간")
+        elif self._wet and wetness <= self.wet_threshold * 0.5:
+            self._wet = False
+            triggers.append("노면이 마르면서 드라이 라인이 나오고 있다. "
+                            "슬릭 복귀 타이밍 판단을 말해라.")
+            state.clear_issue("track_wet")
 
         # 타이어 이슈 유지
         if tyre_status and tyre_status.get("worst"):

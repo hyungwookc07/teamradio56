@@ -28,7 +28,8 @@ class LapRecord:
     s1: float
     s2: float                    # 원시 값은 S1+S2 누적이지만 여기엔 구간값으로 저장
     s3: float
-    place: int
+    place: int                   # 전체 순위 (멀티클래스 통합)
+    class_place: int             # 클래스 내 순위 — 멀티클래스에선 이게 진짜 순위
     fuel_left: float
     fuel_used: float             # 이 랩에서 쓴 연료 (피트 급유 랩은 -1)
     gap_ahead: float             # 랩 완료 시점 앞차와 갭 (없으면 -1)
@@ -174,6 +175,7 @@ class SessionState:
             s2=round(me["last_s2"] - me["last_s1"], 3) if me["last_s2"] > 0 else 0.0,
             s3=round(lap_time - me["last_s2"], 3) if me["last_s2"] > 0 else 0.0,
             place=me["place"],
+            class_place=self.class_place_of(snap, me),
             fuel_left=round(fuel_now, 2) if fuel_now is not None else -1.0,
             fuel_used=fuel_used,
             gap_ahead=gap_ahead,
@@ -191,6 +193,12 @@ class SessionState:
                  rec.lap_number, rec.lap_time, rec.fuel_left,
                  f"{rec.fuel_used:.2f}L" if rec.fuel_used >= 0 else "-")
         return rec
+
+    @staticmethod
+    def class_place_of(snap: Snapshot, me: dict) -> int:
+        """클래스 내 순위 (1-based). 멀티클래스에서 전체 순위 대신 이걸 부른다."""
+        return 1 + sum(1 for v in snap.vehicles
+                       if v["cls"] == me["cls"] and 0 < v["place"] < me["place"])
 
     @staticmethod
     def _same_class_gaps(snap: Snapshot, me: dict) -> tuple[float, float]:

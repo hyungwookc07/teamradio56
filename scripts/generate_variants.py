@@ -102,6 +102,46 @@ POOL_SPECS: dict[str, dict] = {
         "slots": [], "required": [],
         "tones": {"casual": "드라이버가 흥분하지 않게 차분히."},
     },
+    "race_start": {
+        "situation": "레이스 스타트, 그린 플래그가 나왔다.",
+        "slots": [], "required": [],
+        "tones": {"urgent": "짧고 에너지 있게. 첫 랩 조심 당부 섞기."},
+    },
+    "fcy_start": {
+        "situation": "풀코스옐로(세이프티카)가 발동됐다. 감속/추월금지 + 전략 기회라는 뉘앙스.",
+        "slots": [], "required": [],
+        "tones": {"urgent": "즉각적이지만 침착하게."},
+    },
+    "fcy_pit_open": {
+        "situation": "FCY 중 피트가 열렸다. 지금 피트하면 시간 손실이 최소인 기회.",
+        "slots": [], "required": [],
+        "tones": {"urgent": "기회를 놓치지 않게 단호하게. '박스' 포함 권장."},
+    },
+    "green_flag": {
+        "situation": "FCY가 끝나고 리스타트 그린이 나왔다.",
+        "slots": [], "required": [],
+        "tones": {"urgent": "짧게. 리스타트 집중 당부."},
+    },
+    "race_end": {
+        "situation": "체커드 플래그. 클래스 {place}등으로 완주했다.",
+        "slots": ["place"], "required": ["place"],
+        "tones": {"casual": "수고 치하 + 결과 언급."},
+    },
+    "position_up": {
+        "situation": "클래스 순위가 올라 {place}등이 됐다.",
+        "slots": ["place"], "required": ["place"],
+        "tones": {"casual": "짧은 칭찬 + 유지 독려."},
+    },
+    "position_down": {
+        "situation": "클래스 순위가 내려가 {place}등이 됐다.",
+        "slots": ["place"], "required": ["place"],
+        "tones": {"casual": "탓하지 않고 침착하게 만회 독려."},
+    },
+    "pit_limiter": {
+        "situation": "피트레인인데 스피드 리미터가 안 켜져 있다. 페널티 직전 초긴급 경고.",
+        "slots": [], "required": [],
+        "tones": {"urgent": "극도로 짧게, 2~5단어."},
+    },
 }
 
 SYSTEM = """당신은 한국어 심레이싱 크루치프의 무전 대사 작가다.

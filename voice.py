@@ -265,6 +265,8 @@ def build_situation(state, event: Event) -> str:
         EventType.LAP_ANALYSIS: "연료 {fuel_l}L(랩당 {burn_per_lap}L, {fuel_laps}랩 분량), 잔여 레이스 {race_laps_left}랩. 타이어 상태와 엮어 피트 전략 판단을 말해라.",
         EventType.STINT_BRIEFING: "새 스틴트 시작. 이번 스틴트 목표를 한 줄로 브리핑해라.",
         EventType.TYRE_WARNING: "타이어 경고({kind}). 연료/잔여 레이스와 엮어 드라이버가 뭘 해야 할지 말해라.",
+        EventType.RIVAL_PIT: "클래스 {rel} P{their_class_place} {driver}가 방금 피트에 들어갔다. 언더컷/오버컷 관점에서 우리 대응을 판단해라.",
+        EventType.RIVAL_PACE: "라이벌 페이스 인텔: {mode} 상황, 랩당 {diff}초 차이, 약 {laps}랩. 추격/방어 지시를 짧게.",
     }.get(event.type, "지금 상황에 대해 크루치프로서 한마디 해라.")
     try:
         lines.append(topic.format(**event.data))
@@ -282,7 +284,8 @@ class VoiceGenerator:
 
     NONURGENT = (EventType.PACE_COMMENT, EventType.GAP_COMMENT,
                  EventType.LAP_ANALYSIS, EventType.STINT_BRIEFING,
-                 EventType.TYRE_WARNING)
+                 EventType.TYRE_WARNING, EventType.RIVAL_PIT,
+                 EventType.RIVAL_PACE)
 
     def text_for(self, ev: Event) -> tuple[Optional[str], str]:
         """(멘트 텍스트, 소스) 반환. 텍스트 None이면 침묵. 소스는 발화 로그용."""
@@ -327,6 +330,34 @@ class VoiceGenerator:
 
     def _render_pit_call(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("pit_call", {}, tone)
+
+    # 레이스 컨트롤 계열: 상태 머신이 data["pool"]로 풀 지정 (race_start/
+    # fcy_start/fcy_pit_open/green_flag/pit_limiter)
+    def _render_race_start(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self.pool.pick(d["pool"], {}, tone)
+
+    _render_fcy = _render_race_start
+    _render_fcy_pit_open = _render_race_start
+    _render_green_flag = _render_race_start
+    _render_pit_limiter = _render_race_start
+
+    def _render_race_end(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self.pool.pick("race_end", {
+            "place": int(min(max(d.get("class_place", 1), 1), 8)),
+        }, tone)
+
+    def _render_position_change(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self.pool.pick(d["pool"], {
+            "place": int(min(max(d.get("class_place", 1), 1), 8)),
+        }, tone)
+
+    def _render_race_milestone(self, d: dict, tone: str = "casual") -> Optional[str]:
+        m = d.get("remaining_min")
+        if m is None:
+            return None
+        if m >= 60:
+            return f"남은 시간 {m // 60}시간. 지금 페이스면 계획대로야."
+        return f"{m}분 남았어. 연료·타이어 계산 다시 돌리고 있어."
 
     def _render_damage(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("damage", {}, tone)
@@ -373,6 +404,19 @@ class VoiceGenerator:
     def _render_stint_briefing(self, d: dict, tone: str = "casual") -> Optional[str]:
         return "새 스틴트야. 첫 랩은 타이어 아끼고, 리듬부터 찾자."
 
+    def _render_rival_pit(self, d: dict, tone: str = "casual") -> Optional[str]:
+        base = f"클래스 {d['rel']} P{d['their_class_place']} {d['driver']}, 방금 피트 들어갔어."
+        if d.get("undercut_risk"):
+            return base + " 언더컷 노리는 거야. 우리 타이밍도 앞당길지 판단할게."
+        return base + " 나오면 갭 다시 계산해서 불러줄게."
+
+    def _render_rival_pace(self, d: dict, tone: str = "casual") -> Optional[str]:
+        if d["mode"] == "catch":
+            return (f"앞 {d['driver']}가 랩당 {d['diff']:.1f}초 느려. "
+                    f"이 페이스면 {d['laps']}랩 안에 잡는다.")
+        return (f"뒤 {d['driver']}가 랩당 {d['diff']:.1f}초 빨라. "
+                f"{d['laps']}랩쯤 뒤에 온다. 미리 준비하자.")
+
     def _render_tyre_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
         if d.get("kind") == "temp_imbalance":
             return f"{d['hot_wheel']} 타이어가 {d['delta']:.0f}도 더 뜨거워. 그쪽 코너 조금만 아껴줘."
@@ -418,6 +462,14 @@ def iter_pregen_texts(pool: PhrasePool):
         "pit_call": [{}],
         "damage": [{}],
         "penalty": [{}],
+        "race_start": [{}],
+        "fcy_start": [{}],
+        "fcy_pit_open": [{}],
+        "green_flag": [{}],
+        "pit_limiter": [{}],
+        "race_end": [{"place": n} for n in range(1, 9)],
+        "position_up": [{"place": n} for n in range(1, 9)],
+        "position_down": [{"place": n} for n in range(1, 9)],
     }
     for pool_key, combos in slot_values.items():
         for tone in ("casual", "urgent"):

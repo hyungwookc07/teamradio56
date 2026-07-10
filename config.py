@@ -63,6 +63,12 @@ DEFAULTS: dict[str, Any] = {
         "tyre_temp_imbalance": 12.0,  # 좌우/전후 온도 불균형 경고 (C)
         "tyre_wear_warn": 0.35,       # 남은 수명 비율이 이 이하로 예상되면 경고
         "damage_impact_mag": 500.0,   # 이 이상 충격이면 데미지 체크 콜
+        "water_temp_warn": 105.0,     # 수온 경고 (C)
+        "oil_temp_warn": 115.0,       # 유온 경고 (C)
+        "brake_temp_warn": 700.0,     # 브레이크 평균 온도 경고 (C)
+        "fuel_save_delta": 0.1,       # 랩당 목표 대비 이 이상 오버 소모 시 코칭 (L)
+        "rival_pace_diff": 0.3,       # 라이벌 페이스 차이 인텔 기준 (초/랩)
+        "wetness_crossover": 0.20,    # 이 이상이면 슬릭 한계로 판단
     },
     "cooldowns": {                    # 같은 유형 이벤트 재발화 최소 간격 (초)
         "fuel_warning": 240,
@@ -80,6 +86,17 @@ DEFAULTS: dict[str, Any] = {
         "stint_briefing": 120,
         "lap_feedback": 150,     # 트레이닝: 섹터 델타 피드백
         "track_trend": 600,
+        "race_control": 15,      # FCY/레이스 스타트
+        "fcy_pit_open": 45,      # FCY 피트 오픈 (전용 — FCY 콜에 눌리지 않게)
+        "green_flag": 30,        # 리스타트
+        "sector_yellow": 45,
+        "race_milestone": 60,
+        "position_change": 45,
+        "rival_pit": 90,
+        "rival_pace": 240,
+        "pit_limiter": 15,
+        "engine_warning": 240,
+        "fuel_save": 180,
         "default": 60,
     },
 }

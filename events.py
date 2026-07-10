@@ -49,6 +49,18 @@ class EventType:
     RACE_END = "race_end"
     LAP_FEEDBACK = "lap_feedback"       # 트레이닝: 섹터 델타 피드백
     TRACK_TREND = "track_trend"         # 트레이닝: 과거 세션 대비 추세
+    FCY = "fcy"                         # 풀코스옐로/세이프티카 시작
+    FCY_PIT_OPEN = "fcy_pit_open"       # FCY 중 피트 오픈 (전략 기회)
+    GREEN_FLAG = "green_flag"           # 리스타트/그린
+    SECTOR_YELLOW = "sector_yellow"     # 로컬 옐로
+    RACE_MILESTONE = "race_milestone"   # 남은 시간/랩 카운트다운, 마지막 랩
+    POSITION_CHANGE = "position_change" # 클래스 순위 변동
+    RIVAL_PIT = "rival_pit"             # 동클래스 경쟁자 피트 (언더컷/오버컷)
+    RIVAL_PACE = "rival_pace"           # 라이벌 페이스 비교 인텔
+    PIT_LIMITER = "pit_limiter"         # 피트레인 리미터 미작동 경고
+    ENGINE_WARNING = "engine_warning"   # 수온/유온/과열
+    BRAKE_WARNING = "brake_warning"     # 브레이크 온도
+    FUEL_SAVE = "fuel_save"             # 연료 세이브 목표 코칭
 
 
 # 타입 → 쿨다운 설정 키 매핑 (config.cooldowns)
@@ -65,6 +77,18 @@ COOLDOWN_KEY = {
     EventType.TYRE_WARNING: "tyre_warning",
     EventType.DAMAGE: "damage",
     EventType.PENALTY: "penalty",
+    EventType.FCY: "race_control",
+    EventType.FCY_PIT_OPEN: "fcy_pit_open",   # 전용 버킷 — FCY 콜에 눌리면 안 됨
+    EventType.GREEN_FLAG: "green_flag",
+    EventType.SECTOR_YELLOW: "sector_yellow",
+    EventType.RACE_MILESTONE: "race_milestone",
+    EventType.POSITION_CHANGE: "position_change",
+    EventType.RIVAL_PIT: "rival_pit",
+    EventType.RIVAL_PACE: "rival_pace",
+    EventType.PIT_LIMITER: "pit_limiter",
+    EventType.ENGINE_WARNING: "engine_warning",
+    EventType.BRAKE_WARNING: "engine_warning",
+    EventType.FUEL_SAVE: "fuel_save",
 }
 
 # CRITICAL 쿨다운 예외: 더 심각한 단계는 쿨다운 무시하고 1회 통과

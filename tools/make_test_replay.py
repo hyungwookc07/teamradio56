@@ -33,7 +33,7 @@ HYPER_CLASS = "Hypercar"
 
 class SimCar:
     def __init__(self, cid, driver, vehicle, cls, base_lap, start_offset_m,
-                 drift_per_lap=0.0, is_player=False):
+                 drift_per_lap=0.0, is_player=False, pit_lap=None):
         self.id = cid
         self.driver = driver
         self.vehicle = vehicle
@@ -42,12 +42,18 @@ class SimCar:
         self.start_offset = start_offset_m
         self.drift = drift_per_lap      # 랩마다 랩타임 변화 (음수=빨라짐)
         self.is_player = is_player
+        self.pit_lap = pit_lap          # 이 랩을 마치면 25초 피트 (라이벌 피트 테스트)
+        self.pit_until = -1.0
+        self.pits_made = 0
         self.laps_done = 0
         self.last_lap_time = 0.0
         self.best_lap_time = 0.0
         self.lap_start_et = 0.0
         self.total_dist = start_offset_m
         self._rng = random.Random(cid * 7919)
+
+    def in_pits(self, et: float) -> bool:
+        return et < self.pit_until
 
     def lap_time_at(self, lap_no: int) -> float:
         t = self.base_lap + self.drift * lap_no + self._rng.uniform(-0.4, 0.4)
@@ -59,9 +65,15 @@ class SimCar:
     def advance(self, dt: float, et: float):
         cur_lap_time = self.lap_time_at(self.laps_done)
         speed = TRACK_LEN / cur_lap_time  # m/s (등속 근사)
+        if self.in_pits(et):
+            speed *= 0.35                 # 피트레인 서행
         self.total_dist += speed * dt
         new_laps = int(self.total_dist // TRACK_LEN)
         if new_laps > self.laps_done:
+            if self.pit_lap is not None and new_laps == self.pit_lap \
+                    and self.pit_until < 0:
+                self.pit_until = et + 25.0
+                self.pits_made += 1
             self.last_lap_time = cur_lap_time
             if self.best_lap_time <= 0 or cur_lap_time < self.best_lap_time:
                 self.best_lap_time = cur_lap_time
@@ -93,12 +105,26 @@ def build_cars(scenario: str = "race") -> list[SimCar]:
     return [
         SimCar(0, "나", "Porsche 911 GT3 R", GT3_CLASS, PLAYER_LAP, 0.0, is_player=True),
         SimCar(1, "리바이", "Ferrari 296 GT3", GT3_CLASS, PLAYER_LAP - 0.2, 180.0,
-               drift_per_lap=-0.15),   # 앞에서 출발, 서서히 더 빨라짐 → 갭 벌어짐
+               drift_per_lap=-0.15, pit_lap=6),   # 앞에서 달리다 6랩 마치고 피트 (언더컷 테스트)
         SimCar(2, "헌터", "McLaren 720S GT3", GT3_CLASS, PLAYER_LAP + 1.2, -220.0,
                drift_per_lap=-0.35),   # 뒤에서 출발, 점점 빨라져 접근 → 갭 코멘트 테스트
         SimCar(3, "토요타7", "Toyota GR010", HYPER_CLASS, HYPER_LAP, 900.0),
         SimCar(4, "페라리50", "Ferrari 499P", HYPER_CLASS, HYPER_LAP + 0.5, 2500.0),
     ]
+
+
+def phase_at(et: float, scenario: str) -> tuple[int, int, list]:
+    """(game_phase, yellow_state, sector_flags). race 시나리오에 FCY/옐로 구간 삽입."""
+    if scenario != "race":
+        return 5, 0, [0, 0, 0]
+    if et < 3.0:
+        return 4, 0, [0, 0, 0]              # 카운트다운 → 그린 (레이스 스타트 콜)
+    if 300.0 <= et < 320.0:
+        return 5, 0, [0, 1, 0]              # 섹터2 로컬 옐로
+    if 610.0 <= et < 690.0:                 # 플레이어 5랩째쯤 FCY 80초
+        yellow = 2 if et < 650.0 else 4     # 전반 피트 클로즈 → 후반 오픈
+        return 6, yellow, [1, 1, 1]
+    return 5, 0, [0, 0, 0]
 
 
 def path_lat_of(c: SimCar, player: SimCar) -> float:
@@ -112,7 +138,9 @@ def path_lat_of(c: SimCar, player: SimCar) -> float:
     return ((c.id * 37) % 10) / 10 - 0.5    # 평소엔 라인 미세 편차
 
 
-def make_snapshot(t: float, et: float, cars: list[SimCar], player: SimCar) -> dict:
+def make_snapshot(t: float, et: float, cars: list[SimCar], player: SimCar,
+                  scenario: str = "race") -> dict:
+    game_phase, yellow_state, sector_flags = phase_at(et, scenario)
     # 순위: 총 주행거리 내림차순 (전 클래스 통합)
     ranked = sorted(cars, key=lambda c: -c.total_dist)
     place = {c.id: i + 1 for i, c in enumerate(ranked)}
@@ -141,7 +169,8 @@ def make_snapshot(t: float, et: float, cars: list[SimCar], player: SimCar) -> di
             "time_behind_next": round(tbn, 3),
             "laps_behind_next": 0,
             "time_behind_leader": round(tbl, 3),
-            "in_pits": False, "pit_state": 0, "num_pitstops": 0,
+            "in_pits": c.in_pits(et), "pit_state": 3 if c.in_pits(et) else 0,
+            "num_pitstops": c.pits_made,
             "num_penalties": 0, "finish_status": 0,
             "flag_blue": (c.is_player and any(
                 0 < (h.total_dist - c.total_dist) % (TRACK_LEN * 99) and
@@ -202,8 +231,10 @@ def make_snapshot(t: float, et: float, cars: list[SimCar], player: SimCar) -> di
             "end_et": 3600.0,
             "max_laps": 2147483647,
             "track_len": TRACK_LEN,
-            "game_phase": 5,             # green flag
-            "yellow_state": 0,
+            "game_phase": game_phase,
+            "yellow_state": yellow_state,
+            "sector_flags": sector_flags,
+            "pit_speed_limit": 80.0,
             "in_realtime": True,
             "raining": 0.0, "dark_cloud": 0.1,
             "ambient_temp": 22.0, "track_temp": 31.0,
@@ -234,7 +265,7 @@ def main():
         while player.laps_done < args.laps:
             for c in cars:
                 c.advance(dt, et)
-            snap = make_snapshot(et, et, cars, player)
+            snap = make_snapshot(et, et, cars, player, args.scenario)
             f.write(json.dumps(snap, ensure_ascii=False, separators=(",", ":")) + "\n")
             et += dt
             n += 1

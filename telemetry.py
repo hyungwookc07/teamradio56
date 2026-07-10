@@ -193,6 +193,7 @@ class SharedMemoryTelemetry(TelemetrySource):
         try:
             scor = self._read_consistent(self._scor_mm, rF2Scoring)
             tele = self._read_consistent(self._tele_mm, rF2Telemetry)
+            ext = self._read_consistent(self._ext_mm, rF2Extended)
         except (OSError, ValueError) as e:
             log.warning("공유 메모리 읽기 오류, 재연결 예정: %s", e)
             self.close()
@@ -208,10 +209,10 @@ class SharedMemoryTelemetry(TelemetrySource):
             return snap
 
         snap.connected = True
-        self._fill_snapshot(snap, scor, tele)
+        self._fill_snapshot(snap, scor, tele, ext)
         return snap
 
-    def _fill_snapshot(self, snap: Snapshot, scor, tele) -> None:
+    def _fill_snapshot(self, snap: Snapshot, scor, tele, ext=None) -> None:
         info = scor.mScoringInfo
         num = min(info.mNumVehicles, rFactor2Constants.MAX_MAPPED_VEHICLES)
         snap.in_session = num > 0
@@ -224,6 +225,9 @@ class SharedMemoryTelemetry(TelemetrySource):
             "track_len": round(info.mLapDist, 1),
             "game_phase": info.mGamePhase,
             "yellow_state": info.mYellowFlagState,
+            "sector_flags": list(info.mSectorFlag),
+            # 피트 리밋 (km/h) — Extended 버퍼, 0이면 불명
+            "pit_speed_limit": round(ext.mCurrentPitSpeedLimit * 3.6, 1) if ext else 0.0,
             "in_realtime": bool(info.mInRealtime),
             "raining": round(info.mRaining, 3),
             "dark_cloud": round(info.mDarkCloud, 3),

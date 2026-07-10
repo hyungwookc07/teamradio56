@@ -35,6 +35,9 @@ from analyzers.pace import PaceAnalyzer
 from analyzers.traffic import TrafficAnalyzer
 from analyzers.tyres import TyreAnalyzer
 from analyzers.strategy import StrategyEngine
+from analyzers.racecontrol import RaceControlAnalyzer
+from analyzers.rivals import RivalAnalyzer
+from analyzers.health import HealthAnalyzer
 from training import LapCoach, TrackHistory, Debriefer
 from voice import VoiceGenerator
 from tts import AudioPlayer, SpeechLogger, VoiceWorker, build_engine
@@ -82,6 +85,9 @@ class CrewChiefApp:
         self.traffic = TrafficAnalyzer(cfg)
         self.tyres = TyreAnalyzer(cfg)
         self.strategy = StrategyEngine(cfg)
+        self.racecontrol = RaceControlAnalyzer(cfg)
+        self.rivals = RivalAnalyzer(cfg)
+        self.health = HealthAnalyzer(cfg)
         self.coach = LapCoach()
         self.history = TrackHistory(cfg.get("app.data_dir", "data"))
         self.debriefer = Debriefer()
@@ -148,8 +154,10 @@ class CrewChiefApp:
     # -- 훅 (이후 마일스톤에서 확장) -----------------------------------------
 
     def on_snapshot(self, snap: Snapshot) -> None:
-        """5Hz마다 호출. 긴급 이벤트(트래픽)만 체크하고, 랩 완료 시 무거운 분석."""
+        """5Hz마다 호출. 긴급 이벤트만 체크하고, 랩 완료 시 무거운 분석."""
         self.traffic.on_tick(self.state, snap, self.bus)
+        self.racecontrol.on_tick(self.state, snap, self.bus)   # FCY/리미터/마일스톤
+        self.rivals.on_tick(self.state, snap, self.bus)        # 경쟁자 피트 진입
         lap = self.state.update(snap)
         if lap is not None:
             self.on_lap_complete(snap, lap)
@@ -170,6 +178,11 @@ class CrewChiefApp:
             ))
         # 전략 엔진: 판단이 필요한 전이 시점에만 LLM 전략 멘트 트리거
         self.strategy.on_lap(self.state, snap, self.bus, fuel_status, tyre_status)
+
+        # 클래스 순위 변동 / 라이벌 페이스 인텔 / 차량 컨디션
+        self.racecontrol.on_lap(self.state, snap, self.bus)
+        self.rivals.on_lap(self.state, snap, self.bus)
+        self.health.on_lap(self.state, snap, self.bus)
 
         # 트레이닝: 섹터 델타 피드백 + 과거 세션 대비 추세 (한 번만)
         self.coach.on_lap(self.state, self.bus)
@@ -194,10 +207,11 @@ class CrewChiefApp:
         phase = GAME_PHASES.get(ses["game_phase"], f'?{ses["game_phase"]}')
         fuel = p.get("fuel")
         fuel_str = f"{fuel:.1f}L" if fuel is not None else "--"
+        class_p = SessionState.class_place_of(snap, me)
         log.info(
-            "[%s|%s] P%d L%d | 연료 %s | 랩 %s (베스트 %s) | 앞 %s / 뒤 %s | %.0fkm/h",
+            "[%s|%s] 클래스P%d(전체P%d) L%d | 연료 %s | 랩 %s (베스트 %s) | 앞 %s / 뒤 %s | %.0fkm/h",
             ses["track"][:20] or "?", phase,
-            me["place"], me["total_laps"] + 1,
+            class_p, me["place"], me["total_laps"] + 1,
             fuel_str,
             fmt_time(me["last_lap"]), fmt_time(me["best_lap"]),
             fmt_gap(gap_ahead), fmt_gap(gap_behind),
