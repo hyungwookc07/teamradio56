@@ -158,6 +158,7 @@ class CrewChiefApp:
         self.traffic.on_tick(self.state, snap, self.bus)
         self.racecontrol.on_tick(self.state, snap, self.bus)   # FCY/리미터/마일스톤
         self.rivals.on_tick(self.state, snap, self.bus)        # 경쟁자 피트 진입
+        self.health.on_tick(self.state, snap, self.bus)        # 충격/부품 탈락
         lap = self.state.update(snap)
         if lap is not None:
             self.on_lap_complete(snap, lap)

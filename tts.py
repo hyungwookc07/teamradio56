@@ -196,7 +196,7 @@ class SpeechLogger:
             log.info("발화 로그: %s", path)
 
     def write(self, ev, text: str, source: str, lap: int) -> None:
-        if self._file is None:
+        if self._file is None or self._file.closed:
             return
         entry = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -237,6 +237,11 @@ class VoiceWorker(threading.Thread):
     def stop(self) -> None:
         self._stop_flag.set()
         self.player.stop()
+        # 워커가 마지막 멘트를 마치기를 기다린 뒤 로그를 닫는다
+        try:
+            self.join(timeout=3.0)
+        except RuntimeError:
+            pass
         self.speech_log.close()
 
     def run(self) -> None:

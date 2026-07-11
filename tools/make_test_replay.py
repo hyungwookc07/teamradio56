@@ -201,6 +201,10 @@ def make_snapshot(t: float, et: float, cars: list[SimCar], player: SimCar,
             "flat": False, "detached": False,
         }
 
+    # 3랩째 중반에 접촉 발생 시뮬레이션 (프론트 우측, 페이스 영향 없음 시나리오)
+    impact_et = 3 * PLAYER_LAP + 40.0
+    hit = scenario == "race" and et >= impact_et
+
     player_tele = {
         "id": player.id,
         "lap_number": player.laps_done + 1,
@@ -213,8 +217,9 @@ def make_snapshot(t: float, et: float, cars: list[SimCar], player: SimCar,
         "fuel_capacity": 90.0,
         "water_temp": 88.0, "oil_temp": 102.0,
         "overheating": False, "detached": False,
-        "dent_severity": [0] * 8,
-        "last_impact_et": 0.0, "last_impact_mag": 0.0,
+        "dent_severity": [0, 1, 0, 0, 0, 0, 0, 0] if hit else [0] * 8,
+        "last_impact_et": round(impact_et, 1) if hit else 0.0,
+        "last_impact_mag": 850.0 if hit else 0.0,
         "in_pitlane": False, "speed_limiter": False,
         "wheels": [wheel(88.0, wear_fl), wheel(fr_temp, wear_fr),
                    wheel(85.0, wear_r), wheel(86.0, wear_r)],
