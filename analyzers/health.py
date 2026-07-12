@@ -1,13 +1,17 @@
 """
 차량 컨디션 분석기 — 파손(충격/차체/부품 탈락)과 엔진/브레이크 온도.
 
-파손 흐름 (판단하는 엔지니어의 핵심):
+파손 흐름 (판단하는 엔지니어의 핵심 — 드라이버가 아니라 툴이 확인한다):
   1. 충격 감지 (5Hz): mLastImpactET 변화 + 크기 임계값 → 즉시 데미지 콜
      (mDentSeverity로 대략적 부위 추정, 브리지로 LLM 후속)
-  2. 이후 랩에서 충격 전 페이스와 비교 → 유의미하게 느려졌으면
+  2. 충격 8초 뒤 자동 점검 리포트: 덴트 심각도/휠·타이어/공기압 누출을
+     데이터로 훑고 결과를 불러준다 ("체크했어, 가벼운 자국뿐이야" /
+     "우측 앞 공기압 빠지는 중, 박스 준비")
+  3. 이후 랩에서 충격 전 페이스와 비교 → 유의미하게 느려졌으면
      "수리할지 말지" LLM 판단 트리거, 영향 없으면 안심 멘트 후 이슈 해제
-  3. 피트 인 = 수리로 간주하고 데미지 이슈 리셋
+  4. 피트 인 = 수리로 간주하고 데미지 이슈 리셋
 
+충격과 무관한 상시 감시: 휠 탈락(즉시 콜), 슬로우 펑처(공기압 지속 하락).
 임계값 초과 시에만 발화. 쿨다운으로 반복 억제.
 """
 
@@ -31,6 +35,13 @@ REPAIR_PACE_DELTA = 0.5      # 데미지 후 랩당 이 이상 느려지면 수�
 NO_EFFECT_DELTA = 0.2        # 이 이하면 "영향 없음"으로 이슈 해제
 OBSERVE_LAPS = 2             # 충격 후 관찰 랩 수
 
+WHEEL_NAMES = ("왼쪽 앞", "오른쪽 앞", "왼쪽 뒤", "오른쪽 뒤")   # FL FR RL RR
+REPORT_DELAY_SEC = 8.0       # 충격 후 자동 점검 리포트까지 대기
+IMPACT_PRESSURE_DROP_KPA = 12.0   # 충격 전후 이 이상 빠지면 누출로 판단
+# 슬로우 펑처: 세션 중 최고 공기압 대비 이 이상 하락 (온도에 따른 자연 변동
+# ±10~20kPa를 넘는 값으로 설정해 오탐 방지)
+SLOW_PUNCTURE_DROP_KPA = 25.0
+
 
 class HealthAnalyzer:
     def __init__(self, cfg):
@@ -46,6 +57,12 @@ class HealthAnalyzer:
         self._impact_lap: Optional[int] = None
         self._pre_impact_pace: Optional[float] = None
         self._detached_warned = False
+        self._report_due: Optional[float] = None    # 자동 점검 리포트 예정 시각
+        self._pre_pressures: Optional[list] = None  # 충격 직전 휠 공기압
+        self._wheel_detached_warned: set[int] = set()
+        self._pressure_max = [0.0, 0.0, 0.0, 0.0]   # 세션/스틴트 중 최고 공기압
+        self._puncture_warned: set[int] = set()
+        self._was_in_pitlane = False
 
     # -- 5Hz 틱: 충격/부품 탈락 즉시 감지 ---------------------------------------
 
@@ -54,6 +71,18 @@ class HealthAnalyzer:
         if not p:
             return
 
+        wheels = p.get("wheels") or []
+
+        # 피트레인 진입 = 타이어 교체/수리 가능성 → 공기압 기준 리셋
+        if p.get("in_pitlane"):
+            if not self._was_in_pitlane:
+                self._pressure_max = [0.0] * 4
+                self._puncture_warned.clear()
+                self._wheel_detached_warned.clear()
+            self._was_in_pitlane = True
+        else:
+            self._was_in_pitlane = False
+
         impact_et = p.get("last_impact_et", 0.0)
         if impact_et and impact_et > self._last_impact_et + 0.5:
             prev_dents = self._dents
@@ -61,17 +90,39 @@ class HealthAnalyzer:
             self._last_impact_et = impact_et
             mag = p.get("last_impact_mag", 0.0)
             if mag >= self.impact_mag:
+                self._pre_pressures = [w.get("pressure", 0.0) for w in wheels[:4]]
+                self._report_due = snap.t + REPORT_DELAY_SEC
                 self._on_impact(mag, prev_dents, state, bus)
+
+        # 충격 후 자동 점검 리포트 — 드라이버가 아니라 우리가 데이터로 확인
+        if self._report_due is not None and snap.t >= self._report_due:
+            self._report_due = None
+            self._damage_report(p, state, bus)
 
         # 차체 부품 탈락 (미러/보닛/윙 등) — 펑크와 별개
         if p.get("detached") and not self._detached_warned:
             self._detached_warned = True
             bus.push(Event(
                 type=EventType.DAMAGE, priority=Priority.CRITICAL,
-                message="차에서 부품 떨어졌어. 에어로 영향 있을 거야, 감각 이상하면 바로 말해.",
+                message="차에서 부품 떨어졌어. 에어로 영향 있을 거야. 지금 데이터 훑고 있으니까 잠깐만.",
                 dedup_key="detached", tone="urgent", ttl=10.0,
             ))
             state.set_issue("damage", "차체 부품 탈락 — 에어로 손상 의심")
+            if self._report_due is None:      # 점검 리포트가 예약 안 됐으면 예약
+                self._report_due = snap.t + REPORT_DELAY_SEC
+
+        # 휠 탈락 즉시 콜 (주행 불능급 — 페이스 관찰 없이 바로)
+        for i, w in enumerate(wheels[:4]):
+            if w.get("detached") and i not in self._wheel_detached_warned:
+                self._wheel_detached_warned.add(i)
+                bus.push(Event(
+                    type=EventType.WHEEL_DAMAGE, priority=Priority.CRITICAL,
+                    message=f"{WHEEL_NAMES[i]} 휠 나갔어! 스핀 조심, 천천히 피트로 들어와.",
+                    dedup_key=f"wheel_det_{i}", tone="urgent", ttl=10.0,
+                ))
+                state.set_issue("damage", f"{WHEEL_NAMES[i]} 휠 탈락 — 즉시 피트 필요")
+
+        self._check_slow_puncture(p, wheels, state, bus)
 
     def _on_impact(self, mag: float, prev_dents: Optional[list],
                    state: SessionState, bus: EventBus) -> None:
@@ -83,13 +134,83 @@ class HealthAnalyzer:
             data={"pool": "damage", "zone": zone or "", "mag": round(mag)},
             dedup_key="impact", tone="urgent", ttl=8.0,
             bridge={"topic": f"방금 {'큰 ' if heavy else ''}충격이 있었다 ({where}). "
-                             "다음 랩 페이스를 보고 수리 여부를 판단할 예정. "
-                             "드라이버를 안심시키고 뭘 체크해야 하는지 조언해라."},
+                             "우리가 지금 데이터(휠/공기압/보디)를 점검 중이고 곧 결과를 "
+                             "부를 예정. 드라이버는 페이스만 유지하면 된다고 안심시켜라. "
+                             "드라이버에게 확인을 시키지 마라."},
         ))
         state.set_issue("damage", f"접촉 데미지 ({where}) — 페이스 영향 관찰 중")
         state.add_narrative(f"(이벤트) 충격 감지 ({where}, 크기 {mag:.0f})")
         self._impact_lap = len(state.laps)
         self._pre_impact_pace = state.baseline_lap_time()
+
+    def _damage_report(self, p: dict, state: SessionState, bus: EventBus) -> None:
+        """충격 몇 초 뒤 데이터를 훑어 결과를 불러준다 — 점검은 툴의 일."""
+        wheels = p.get("wheels") or []
+        problems: list[str] = []
+
+        detached = [WHEEL_NAMES[i] for i, w in enumerate(wheels[:4]) if w.get("detached")]
+        flats = [WHEEL_NAMES[i] for i, w in enumerate(wheels[:4])
+                 if w.get("flat") and not w.get("detached")]
+        if detached:
+            problems.append(f"{'/'.join(detached)} 휠 손상")
+        if flats:
+            problems.append(f"{'/'.join(flats)} 펑크")
+
+        # 충격 전후 공기압 비교 — 서서히 새는 누출 조기 발견
+        if self._pre_pressures:
+            for i, w in enumerate(wheels[:4]):
+                if i in self._puncture_warned or w.get("flat") or w.get("detached"):
+                    continue
+                if i < len(self._pre_pressures) and self._pre_pressures[i] > 0 \
+                        and self._pre_pressures[i] - w.get("pressure", 0.0) \
+                        >= IMPACT_PRESSURE_DROP_KPA:
+                    self._puncture_warned.add(i)
+                    problems.append(f"{WHEEL_NAMES[i]} 공기압 빠지는 중")
+        self._pre_pressures = None
+
+        dents = list(p.get("dent_severity") or [])[:8]
+        heavy_zones = [DENT_ZONES[i] for i, s in enumerate(dents) if s >= 2]
+        light = any(s == 1 for s in dents)
+        if heavy_zones:
+            problems.append(f"{'/'.join(heavy_zones)} 보디 손상 큼")
+
+        if problems:
+            need_box = bool(detached or flats)
+            advice = "박스 준비하자." if need_box else "일단 페이스 보면서 가자, 수리 여부는 내가 계산할게."
+            message = f"체크 결과. {', '.join(problems)}. {advice}"
+            state.set_issue("damage", "점검 결과: " + ", ".join(problems))
+        elif light:
+            message = "체크 끝났어. 가벼운 자국뿐이야, 휠·타이어·공기압 다 정상. 그대로 가."
+        else:
+            message = "데이터 훑었는데 깨끗해. 손상 없어, 신경 쓰지 말고 가자."
+        bus.push(Event(
+            type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
+            message=message, dedup_key=f"dmg_report_{self._last_impact_et}",
+            ttl=20.0, tone="casual",
+        ))
+        state.add_narrative(f"(점검) {message}")
+
+    def _check_slow_puncture(self, p: dict, wheels: list,
+                             state: SessionState, bus: EventBus) -> None:
+        """충격과 무관한 상시 공기압 감시 — 최고치 대비 큰 하락 = 슬로우 펑처."""
+        if p.get("in_pitlane") or (p.get("speed_kmh", 0.0) or 0.0) < 60:
+            return    # 저속/피트에선 온도 하락으로 공기압이 자연히 떨어짐
+        for i, w in enumerate(wheels[:4]):
+            pr = w.get("pressure", 0.0)
+            if pr <= 0:
+                continue
+            if pr > self._pressure_max[i]:
+                self._pressure_max[i] = pr
+            elif (self._pressure_max[i] - pr >= SLOW_PUNCTURE_DROP_KPA
+                    and i not in self._puncture_warned and not w.get("flat")):
+                self._puncture_warned.add(i)
+                bus.push(Event(
+                    type=EventType.TYRE_WARNING, priority=Priority.HIGH,
+                    message=f"{WHEEL_NAMES[i]} 타이어 공기압이 계속 빠지고 있어. "
+                            "슬로우 펑처야. 무리하지 말고 다음 피트에서 교체하자.",
+                    dedup_key=f"slowpunc_{i}", ttl=20.0, tone="casual",
+                ))
+                state.set_issue("tyres", f"{WHEEL_NAMES[i]} 슬로우 펑처 의심")
 
     @staticmethod
     def _new_dent_zone(prev: Optional[list], cur: Optional[list]) -> Optional[str]:

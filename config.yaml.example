@@ -73,6 +73,8 @@ cooldowns:
   gap_comment: 90
   tyre_warning: 180
   damage: 60
+  damage_report: 20          # 충격 후 자동 점검 결과
+  wheel_damage: 30           # 휠 탈락
   penalty: 30
   lap_analysis: 300
   stint_briefing: 120

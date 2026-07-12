@@ -39,6 +39,8 @@ class EventType:
     TRAFFIC_MULTI = "traffic_multi"         # 다중 차량 종합 한 문장
     BRIDGE_FOLLOWUP = "bridge_followup"     # 긴급 콜 뒤 LLM 후속 설명
     DAMAGE = "damage"
+    DAMAGE_REPORT = "damage_report"     # 충격 후 자동 점검 결과 (전용 버킷)
+    WHEEL_DAMAGE = "wheel_damage"       # 휠 탈락 (전용 버킷 — 충격 콜에 안 눌리게)
     PENALTY = "penalty"
     PACE_COMMENT = "pace_comment"
     GAP_COMMENT = "gap_comment"
@@ -78,6 +80,8 @@ COOLDOWN_KEY = {
     EventType.GAP_COMMENT: "gap_comment",
     EventType.TYRE_WARNING: "tyre_warning",
     EventType.DAMAGE: "damage",
+    EventType.DAMAGE_REPORT: "damage_report",
+    EventType.WHEEL_DAMAGE: "wheel_damage",
     EventType.PENALTY: "penalty",
     EventType.FCY: "race_control",
     EventType.FCY_PIT_OPEN: "fcy_pit_open",   # 전용 버킷 — FCY 콜에 눌리면 안 됨
