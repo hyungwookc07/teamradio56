@@ -36,8 +36,10 @@ DEFAULT_PIT_LIMIT_KMH = 80.0       # Extended에서 리밋을 못 읽으면 이 
 
 class RaceControlAnalyzer:
     def __init__(self, cfg):
+        self.sector_calls = cfg.get("thresholds.sector_yellow_calls", True)
         self._phase: Optional[int] = None
         self._yellow: Optional[int] = None
+        self._prev_sector_flags: Optional[list] = None
         self._sector_yellow_announced: dict[int, float] = {}
         self._milestones_done: set[int] = set()
         self._initial_remaining: Optional[float] = None
@@ -122,10 +124,22 @@ class RaceControlAnalyzer:
 
     def _check_sector_yellow(self, ses: dict, me: dict, now: float,
                              bus: EventBus) -> None:
-        flags = ses.get("sector_flags") or []
-        for i, flag in enumerate(flags[:3]):
-            if flag <= 0:
-                self._sector_yellow_announced.pop(i, None)
+        """
+        엣지 트리거: 플래그가 0 → 양수로 '바뀌는 순간'만 콜한다.
+        LMU가 mSectorFlag를 제대로 안 채우거나 값이 계속 박혀 있는 경우
+        (앱 시작 시점부터 켜져 있던 값 포함) 반복 콜을 내지 않기 위함.
+        비정상적으로 큰 값(>2)은 쓰레기 데이터로 보고 무시한다.
+        """
+        if not self.sector_calls:
+            return
+        flags = list((ses.get("sector_flags") or [])[:3])
+        prev = self._prev_sector_flags
+        self._prev_sector_flags = flags
+        if prev is None:
+            return    # 첫 샘플: 이미 켜져 있던 플래그는 신뢰하지 않음
+        for i, flag in enumerate(flags):
+            was = prev[i] if i < len(prev) else 0
+            if not (was <= 0 < flag <= 2):     # 0→(1|2) 전이만 유효
                 continue
             last = self._sector_yellow_announced.get(i)
             if last is not None and now - last < 120:
