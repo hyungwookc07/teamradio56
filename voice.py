@@ -340,6 +340,7 @@ class VoiceGenerator:
     _render_fcy_pit_open = _render_race_start
     _render_green_flag = _render_race_start
     _render_pit_limiter = _render_race_start
+    _render_blue_flag = _render_race_start
 
     def _render_race_end(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("race_end", {
@@ -462,6 +463,8 @@ def iter_pregen_texts(pool: PhrasePool):
         "nearby_behind": [{"cls": c} for c in CLASSES],
         "pass_complete": [{"cls": c} for c in CLASSES],
         "dropped": [{"cls": c} for c in CLASSES],
+        "backmarker_ahead": [{"cls": c} for c in CLASSES],
+        "blue_flag": [{}],
         "fuel_warning": [{"fuel_laps": n} for n in range(1, 5)],
         "fuel_critical": [{"fuel_laps": n} for n in range(1, 5)],
         "pit_call": [{}],

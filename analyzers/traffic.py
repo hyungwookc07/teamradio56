@@ -85,7 +85,10 @@ class CarTrack:
     rate: Optional[float] = None       # dgap/dt EMA (m/s), +면 앞으로 이동(접근: 뒤차가 +)
     speed_est: Optional[float] = None  # 상대 절대속도 추정 (m/s) = 내 속도 + rate
     side: Optional[str] = None         # left | right | None
-    faster: bool = False               # 상위 클래스인가
+    faster: bool = False               # 랩핑 트래픽인가 (상위 클래스 or 랩 앞선 리더)
+    lap_delta: float = 0.0             # 상대 진행도 - 내 진행도 (랩 단위, +면 앞섬)
+    lapping: bool = False              # 동클래스인데 나를 랩 돌리러 오는 중
+    backmarker: bool = False           # 내가 랩 돌리는(또는 하위 클래스) 트래픽
     slow_since: Optional[float] = None  # 저속 상태가 시작된 시각 (정지차 지속 판정)
     last_sample_t: float = 0.0
     announced: dict = field(default_factory=dict)   # state → 마지막 발화 시각
@@ -112,9 +115,10 @@ class TrafficAnalyzer:
         return t.state if t else FAR
 
     def in_battle(self) -> bool:
-        """동클래스 차량과 ±2초 내 경쟁 중인가 → 톤 태그 결정에 사용."""
+        """동클래스 같은 랩 차량과 근접 경쟁 중인가 → 톤 태그 결정에 사용."""
         return any(t.state in (NEARBY_BEHIND, NEARBY_AHEAD, ALONGSIDE)
-                   and not t.faster for t in self.tracks.values())
+                   and not t.faster and not t.backmarker
+                   for t in self.tracks.values())
 
     # -- 메인 틱 -------------------------------------------------------------
 
@@ -162,9 +166,11 @@ class TrafficAnalyzer:
         if transitions:
             self._emit(transitions, now, bus)
 
-        # 레이스 서사 이슈: 동클래스 배틀 여부 (LLM 문맥 연속성용)
+        # 레이스 서사 이슈: 동클래스 배틀 여부 (LLM 문맥 연속성용).
+        # 랩 차이 나는 트래픽(백마커/랩핑)은 배틀이 아니다.
         battler = next((t for t in self.tracks.values()
-                        if t.state in (NEARBY_BEHIND, ALONGSIDE) and not t.faster), None)
+                        if t.state in (NEARBY_BEHIND, ALONGSIDE)
+                        and not t.faster and not t.backmarker), None)
         if battler is not None:
             state.set_issue("battle", f"{battler.cls} ({battler.driver})와 포지션 배틀 중")
         else:
@@ -218,19 +224,31 @@ class TrafficAnalyzer:
             t.slow_since = None
         t.gap_m = gap_m
         t.last_sample_t = now
-        # '상위 클래스' 판정: 클래스가 달라야만 한다. 같은 클래스는 아무리
-        # 빨라도 랩핑 트래픽이 아니라 배틀 상대 (양보 콜 대상 아님).
-        # LMU의 mEstimatedLapTime은 전 차량 동일값이라 쓰지 않고 클래스 서열로 판정.
+        # 랩 진행도 차이 — 랩핑/백마커 판정의 기준.
+        # total_laps는 라인 통과 시 갱신되므로 lap_dist 비율을 더해 연속화한다.
+        my_prog = me["total_laps"] + me["lap_dist"] / track_len
+        their_prog = v["total_laps"] + v["lap_dist"] / track_len
+        t.lap_delta = their_prog - my_prog
+
+        # 랩핑 트래픽 판정: ① 상위 클래스(서열 비교) ② 동클래스라도 랩을
+        # 앞선 리더가 돌리러 오는 경우 (블루 플래그 상황). 같은 랩의 동클래스는
+        # 아무리 빨라도 배틀 상대 (양보 콜 대상 아님).
+        # LMU의 mEstimatedLapTime은 전 차량 동일값이라 쓰지 않는다.
+        mine, theirs = class_rank(me["cls"]), class_rank(v["cls"])
         if v["cls"] == me["cls"]:
-            t.faster = False
+            t.lapping = t.lap_delta >= 0.9
+            t.faster = t.lapping
         else:
-            mine, theirs = class_rank(me["cls"]), class_rank(v["cls"])
+            t.lapping = False
             if mine > 0 and theirs > 0:
                 t.faster = theirs > mine
             else:
                 # 서열 불명인 낯선 클래스명 → 접근 예고 대상으로 취급
                 # (실제 닫힘 속도 조건이 오탐을 걸러준다)
                 t.faster = True
+        # 내가 잡는 트래픽: 한 랩 이상 뒤졌거나 하위 클래스
+        t.backmarker = (t.lap_delta <= -0.9
+                        or (0 < theirs < mine))
         # 좌우 판정: 나란할 때만 의미 있음
         lat = v.get("path_lat")
         my_lat = me.get("path_lat")
@@ -288,7 +306,9 @@ class TrafficAnalyzer:
         if t.state == APPROACHING:
             return old == FAR
         if t.state == NEARBY_AHEAD:
-            return old == ALONGSIDE and t.engaged     # 추월 완료 서사 마무리
+            if old == ALONGSIDE and t.engaged:        # 추월 완료 서사 마무리
+                return True
+            return t.backmarker and old == FAR        # 전방 백마커 예고
         if t.state == FAR:
             # 배틀하던 차가 떨어짐 → 서사가 있던 경우만 마무리 멘트
             return old in (NEARBY_BEHIND, ALONGSIDE) and t.engaged and not t.faster
@@ -297,6 +317,17 @@ class TrafficAnalyzer:
     def _mark(self, t: CarTrack, now: float) -> None:
         t.announced[t.state] = now
         t.engaged = True
+
+    @staticmethod
+    def _rel_context(t: CarTrack) -> str:
+        """브리지(LLM 후속)용 관계 설명 — 배틀인지 랩핑 트래픽인지."""
+        if t.lapping:
+            return "랩을 앞선 동클래스 리더가 랩 돌리러 온 상황 (블루 플래그, 양보 대상)"
+        if t.faster:
+            return "랩핑하러 온 상위 클래스 (무리해서 막을 필요 없음)"
+        if t.backmarker:
+            return "내가 랩 돌리는 백마커 (배틀 아님, 안전하게 추월)"
+        return "동클래스 같은 랩 포지션 배틀 상황"
 
     def _emit_single(self, t: CarTrack, old: str, now: float, bus: EventBus) -> None:
         self._mark(t, now)
@@ -311,7 +342,7 @@ class TrafficAnalyzer:
                 data={"pool": pool, "cls": t.cls, "driver": t.driver},
                 dedup_key=f"along_{cid}", ttl=3.0, tone="urgent",
                 bridge={"topic": f"{t.cls} 차량({t.driver})이 지금 옆에 나란히 있다. "
-                                 f"{'상위 클래스라 무리해서 막을 필요 없음' if t.faster else '같은 클래스 포지션 배틀'}"},
+                                 + self._rel_context(t)},
                 valid_fn=lambda: self.car_state(cid) in (ALONGSIDE, NEARBY_BEHIND),
             ))
         elif t.state == NEARBY_BEHIND:
@@ -320,7 +351,7 @@ class TrafficAnalyzer:
                 data={"pool": "nearby_behind", "cls": t.cls, "driver": t.driver},
                 dedup_key=f"near_{cid}", ttl=4.0, tone=tone,
                 bridge={"topic": f"{t.cls} 차량이 뒤 50m 안에 붙었다. "
-                                 f"{'랩핑하러 온 상위 클래스' if t.faster else '동클래스 배틀 상황'}"},
+                                 + self._rel_context(t)},
                 valid_fn=lambda: self.car_state(cid) in (NEARBY_BEHIND, ALONGSIDE),
             ))
         elif t.state == APPROACHING:
@@ -330,13 +361,24 @@ class TrafficAnalyzer:
                 data={"cls": t.cls, "gap_sec": min(eta, 6)},
                 dedup_key=f"appr_{cid}", ttl=5.0, tone=tone,
             ))
-        elif t.state == NEARBY_AHEAD:      # 추월 완료
-            bus.push(Event(
-                type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
-                data={"pool": "pass_complete", "cls": t.cls},
-                dedup_key=f"passed_{cid}", ttl=6.0, tone="casual",
-                valid_fn=lambda: self.car_state(cid) == NEARBY_AHEAD,
-            ))
+        elif t.state == NEARBY_AHEAD:
+            if old == ALONGSIDE:           # 추월 완료 (내가 추월당함)
+                bus.push(Event(
+                    type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
+                    data={"pool": "pass_complete", "cls": t.cls},
+                    dedup_key=f"passed_{cid}", ttl=6.0, tone="casual",
+                    valid_fn=lambda: self.car_state(cid) == NEARBY_AHEAD,
+                ))
+            else:                          # 전방 백마커 예고 (내가 잡는 트래픽)
+                bus.push(Event(
+                    type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
+                    data={"pool": "backmarker_ahead", "cls": t.cls},
+                    dedup_key=f"bm_{cid}", ttl=8.0, tone=tone,
+                    bridge={"topic": f"전방에 백마커({t.cls}, 랩 차이 "
+                                     f"{abs(t.lap_delta):.0f}랩)를 잡았다. "
+                                     "무리 없는 추월 조언을 짧게."},
+                    valid_fn=lambda: self.car_state(cid) in (NEARBY_AHEAD, ALONGSIDE),
+                ))
         elif t.state == FAR:               # 배틀하던 차가 떨어짐
             bus.push(Event(
                 type=EventType.TRAFFIC_UPDATE, priority=Priority.NORMAL,

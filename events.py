@@ -54,6 +54,7 @@ class EventType:
     FCY_PIT_OPEN = "fcy_pit_open"       # FCY 중 피트 오픈 (전략 기회)
     GREEN_FLAG = "green_flag"           # 리스타트/그린
     SECTOR_YELLOW = "sector_yellow"     # 로컬 옐로
+    BLUE_FLAG = "blue_flag"             # 블루 플래그 (랩 앞선 차에 양보)
     RACE_MILESTONE = "race_milestone"   # 남은 시간/랩 카운트다운, 마지막 랩
     POSITION_CHANGE = "position_change" # 클래스 순위 변동
     RIVAL_PIT = "rival_pit"             # 동클래스 경쟁자 피트 (언더컷/오버컷)
@@ -82,6 +83,7 @@ COOLDOWN_KEY = {
     EventType.FCY_PIT_OPEN: "fcy_pit_open",   # 전용 버킷 — FCY 콜에 눌리면 안 됨
     EventType.GREEN_FLAG: "green_flag",
     EventType.SECTOR_YELLOW: "sector_yellow",
+    EventType.BLUE_FLAG: "blue_flag",
     EventType.RACE_MILESTONE: "race_milestone",
     EventType.POSITION_CHANGE: "position_change",
     EventType.RIVAL_PIT: "rival_pit",

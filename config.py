@@ -95,6 +95,7 @@ DEFAULTS: dict[str, Any] = {
         "fcy_pit_open": 45,      # FCY 피트 오픈 (전용 — FCY 콜에 눌리지 않게)
         "green_flag": 30,        # 리스타트
         "sector_yellow": 45,
+        "blue_flag": 45,         # 랩핑 트레인 통과 중 반복 억제
         "race_milestone": 60,
         "position_change": 45,
         "rival_pit": 90,

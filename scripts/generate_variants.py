@@ -83,6 +83,22 @@ POOL_SPECS: dict[str, dict] = {
         "slots": ["cls"], "required": [],
         "tones": {"casual": "칭찬+차분한 톤."},
     },
+    "backmarker_ahead": {
+        "situation": "전방에 백마커(랩 뒤진 차 또는 하위 클래스 트래픽)를 잡았다. 배틀이 아니므로 리듬을 유지하며 안전하게 추월하라는 조언. {cls} 생략 가능.",
+        "slots": ["cls"], "required": [],
+        "tones": {
+            "casual": "차분한 안내 + 추월 조언.",
+            "urgent": "배틀 중 백마커 처리. 짧고 집중된 주의.",
+        },
+    },
+    "blue_flag": {
+        "situation": "드라이버에게 블루 플래그가 게시됐다 (랩 앞선 차가 뒤에서 접근). 라인을 유지하며 손해 최소로 양보하라는 지시.",
+        "slots": [], "required": [],
+        "tones": {
+            "casual": "차분한 안내. 코너 말고 직선에서 보내라는 조언.",
+            "urgent": "즉시 양보 필요. 짧고 단호하게.",
+        },
+    },
     "fuel_warning": {
         "situation": "연료가 앞으로 {fuel_laps}랩 분량 남았다. 아직 여유는 있음.",
         "slots": ["fuel_laps"], "required": ["fuel_laps"],

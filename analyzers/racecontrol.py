@@ -50,6 +50,7 @@ class RaceControlAnalyzer:
         self._race_started = False
         self._class_place: Optional[int] = None
         self._limiter_warned_t = 0.0
+        self._blue_flag = False
 
     # -- 5Hz 틱: 코스 상태 전이 ------------------------------------------------
 
@@ -71,6 +72,7 @@ class RaceControlAnalyzer:
 
         self._check_sector_yellow(ses, me, snap.t, bus)
         self._check_pit_limiter(ses, snap, bus)
+        self._check_blue_flag(me, state, bus)
         if state.is_race and phase == PHASE_GREEN:
             self._check_time_milestones(state, ses, bus)
 
@@ -153,6 +155,23 @@ class RaceControlAnalyzer:
                 message=f"섹터{i + 1} 옐로야. 사고 지점 지날 때 추월 금지, 감속 준비.",
                 dedup_key=f"syellow_{i}", ttl=15.0, tone="urgent",
             ))
+
+    def _check_blue_flag(self, me: dict, state: SessionState,
+                         bus: EventBus) -> None:
+        """
+        내게 블루 플래그가 게시된 순간(mFlag=6 엣지) 양보 안내.
+        트래픽 분석기의 랩 델타 기반 콜과 상호 보완 — LMU가 mFlag를 안 채우면
+        트래픽 쪽 랩핑 판정이, 채우면 이쪽이 먼저 잡는다 (쿨다운으로 중복 억제).
+        """
+        blue = bool(me.get("flag_blue"))
+        if blue and not self._blue_flag:
+            bus.push(Event(
+                type=EventType.BLUE_FLAG, priority=Priority.HIGH,
+                data={"pool": "blue_flag"}, dedup_key="blue_flag",
+                tone="urgent", ttl=6.0,
+            ))
+            state.add_narrative("(이벤트) 블루 플래그 — 랩 앞선 차에 양보")
+        self._blue_flag = blue
 
     def _check_pit_limiter(self, ses: dict, snap: Snapshot, bus: EventBus) -> None:
         p = snap.player
