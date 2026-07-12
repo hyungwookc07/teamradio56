@@ -15,6 +15,15 @@
 
 from __future__ import annotations
 
+# Windows 콘솔(cp949) 인코딩 가드
+import sys
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
 import argparse
 import json
 import math

@@ -13,6 +13,15 @@ audio_cache에 저장한다. 런타임과 같은 캐시 키(md5)를 쓰므로 �
 
 from __future__ import annotations
 
+# Windows 콘솔(cp949) 인코딩 가드
+import sys
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
 import argparse
 import os
 import sys
