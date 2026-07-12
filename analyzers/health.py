@@ -42,6 +42,13 @@ IMPACT_PRESSURE_DROP_KPA = 12.0   # 충격 전후 이 이상 빠지면 누출로
 # ±10~20kPa를 넘는 값으로 설정해 오탐 방지)
 SLOW_PUNCTURE_DROP_KPA = 25.0
 
+# 프론트 윙 감시 — mFrontWingHeight의 충격 전후 지속적 변화 = 윙 손상.
+# 고속(직선)에서만 샘플링해 코너 자세/연료에 의한 자연 변동을 배제한다.
+# 서스펜션은 손상 필드가 공유 메모리에 없어 페이스 관찰로만 판단한다.
+WING_SAMPLE_SPEED_KMH = 150.0
+WING_DROP_M = 0.010          # 10mm 이상 지속 하락이면 윙 손상 의심
+WING_EMA_ALPHA = 0.03        # 5Hz 기준 ~7초 시정수
+
 
 class HealthAnalyzer:
     def __init__(self, cfg):
@@ -63,6 +70,9 @@ class HealthAnalyzer:
         self._pressure_max = [0.0, 0.0, 0.0, 0.0]   # 세션/스틴트 중 최고 공기압
         self._puncture_warned: set[int] = set()
         self._was_in_pitlane = False
+        self._wing_ema: Optional[float] = None      # 고속 구간 프론트 윙 높이 EMA
+        self._pre_impact_wing: Optional[float] = None
+        self._wing_warned = False
 
     # -- 5Hz 틱: 충격/부품 탈락 즉시 감지 ---------------------------------------
 
@@ -73,15 +83,20 @@ class HealthAnalyzer:
 
         wheels = p.get("wheels") or []
 
-        # 피트레인 진입 = 타이어 교체/수리 가능성 → 공기압 기준 리셋
+        # 피트레인 진입 = 타이어 교체/수리 가능성 → 공기압/윙 기준 리셋
         if p.get("in_pitlane"):
             if not self._was_in_pitlane:
                 self._pressure_max = [0.0] * 4
                 self._puncture_warned.clear()
                 self._wheel_detached_warned.clear()
+                self._wing_ema = None
+                self._pre_impact_wing = None
+                self._wing_warned = False
             self._was_in_pitlane = True
         else:
             self._was_in_pitlane = False
+
+        self._track_wing(p, state, bus)
 
         impact_et = p.get("last_impact_et", 0.0)
         if impact_et and impact_et > self._last_impact_et + 0.5:
@@ -91,6 +106,8 @@ class HealthAnalyzer:
             mag = p.get("last_impact_mag", 0.0)
             if mag >= self.impact_mag:
                 self._pre_pressures = [w.get("pressure", 0.0) for w in wheels[:4]]
+                if self._pre_impact_wing is None:    # 다중 충격 시 최초 기준 유지
+                    self._pre_impact_wing = self._wing_ema
                 self._report_due = snap.t + REPORT_DELAY_SEC
                 self._on_impact(mag, prev_dents, state, bus)
 
@@ -189,6 +206,37 @@ class HealthAnalyzer:
             ttl=20.0, tone="casual",
         ))
         state.add_narrative(f"(점검) {message}")
+
+    def _track_wing(self, p: dict, state: SessionState, bus: EventBus) -> None:
+        """
+        프론트 윙 높이 감시 — 고속 직선에서만 EMA를 갱신하고, 충격 후
+        같은 조건에서 기준 대비 지속적으로 낮아졌으면 윙 손상으로 특정한다.
+        (연료 소모/코너 자세에 의한 자연 변동은 고속 한정 샘플링 + 10mm
+        임계값으로 배제. 서스펜션 손상은 필드가 없어 페이스 관찰로 판단.)
+        """
+        h = p.get("front_wing_height")
+        if not h or h <= 0 or p.get("in_pitlane") \
+                or (p.get("speed_kmh", 0.0) or 0.0) < WING_SAMPLE_SPEED_KMH:
+            return
+        if self._wing_ema is None:
+            self._wing_ema = h
+            return
+        self._wing_ema = (1 - WING_EMA_ALPHA) * self._wing_ema + WING_EMA_ALPHA * h
+
+        if self._wing_warned or self._pre_impact_wing is None:
+            return
+        drop = self._pre_impact_wing - self._wing_ema
+        if drop >= WING_DROP_M:
+            self._wing_warned = True
+            bus.push(Event(
+                type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
+                message=f"프론트 윙 높이가 충격 전보다 {drop * 1000:.0f}밀리 내려가 있어. "
+                        "윙 데미지야. 다운포스 줄었을 테니 고속 코너 조심하고, "
+                        "수리 여부는 페이스 보고 정하자.",
+                dedup_key="wing_damage", ttl=20.0, tone="casual",
+            ))
+            state.set_issue("damage", f"프론트 윙 손상 (높이 -{drop * 1000:.0f}mm)")
+            state.add_narrative("(점검) 프론트 윙 손상 감지")
 
     def _check_slow_puncture(self, p: dict, wheels: list,
                              state: SessionState, bus: EventBus) -> None:

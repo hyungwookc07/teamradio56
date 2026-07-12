@@ -268,6 +268,7 @@ class SharedMemoryTelemetry(TelemetrySource):
                 "oil_temp": round(vt.mEngineOilTemp, 1),
                 "overheating": bool(vt.mOverheating),
                 "detached": bool(vt.mDetached),
+                "front_wing_height": round(vt.mFrontWingHeight, 4),  # m — 윙 손상 감지용
                 "dent_severity": list(vt.mDentSeverity),
                 "last_impact_et": round(vt.mLastImpactET, 3),
                 "last_impact_mag": round(vt.mLastImpactMagnitude, 1),
