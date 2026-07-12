@@ -74,6 +74,7 @@ class CrewChiefApp:
         self._last_status = 0.0
         self._last_waiting_msg = 0.0
         self._was_in_session = False
+        self._briefed_session = False   # 세션 시작 브리핑을 이미 했는가
         self._running = True
 
         # 상태 + 분석기 + 이벤트 버스 + 보이스 워커
@@ -150,6 +151,7 @@ class CrewChiefApp:
             self._on_session_end("세션 종료")
         elif not self._was_in_session and snap.in_session:
             log.info("세션 시작 감지 (트랙: %s)", snap.session.get("track", "?"))
+            self._briefed_session = False
         self._was_in_session = snap.in_session
 
         if not snap.in_session:
@@ -195,6 +197,7 @@ class CrewChiefApp:
 
     def on_snapshot(self, snap: Snapshot) -> None:
         """5Hz마다 호출. 긴급 이벤트만 체크하고, 랩 완료 시 무거운 분석."""
+        self._maybe_session_briefing(snap)
         self.traffic.on_tick(self.state, snap, self.bus)
         self.racecontrol.on_tick(self.state, snap, self.bus)   # FCY/리미터/마일스톤
         self.rivals.on_tick(self.state, snap, self.bus)        # 경쟁자 피트 진입
@@ -202,6 +205,66 @@ class CrewChiefApp:
         lap = self.state.update(snap)
         if lap is not None:
             self.on_lap_complete(snap, lap)
+
+    def _maybe_session_briefing(self, snap: Snapshot) -> None:
+        """
+        세션 시작 브리핑 (세션당 1회) — 주행 가능 상태에서 첫 데이터가 잡히면
+        세션 종류/길이/그리드/날씨/연료를 한 번에 브리핑한다. 앱을 세션 중간에
+        켜도 현재 상황 기준으로 브리핑한다.
+        """
+        if self._briefed_session:
+            return
+        me = snap.player_scoring()
+        if me is None:
+            return
+        self._briefed_session = True
+
+        ses = snap.session
+        stype = ses.get("session_type", 0)
+        is_race = stype >= 10
+        kind = ("레이스" if is_race else "웜업" if stype == 9
+                else "퀄리파잉" if stype >= 5 else "연습")
+        track = (ses.get("track") or "").strip()
+        parts = [f"{track}, {kind} 세션이야." if track else f"무전 체크. {kind} 세션이야."]
+
+        # 세션 길이 — 시간제(잔여 기준)와 랩제를 구분. 미기입 거대값은 무시.
+        end_et = ses.get("end_et", 0.0) or 0.0
+        cur_et = ses.get("current_et", 0.0) or 0.0
+        max_laps = ses.get("max_laps", 0) or 0
+        mid_join = cur_et > 120 or me.get("total_laps", 0) > 0
+        if 0 < end_et < 86400:
+            minutes = max(int(round((end_et - cur_et) / 60)), 1)
+            length = (f"{minutes // 60}시간" if minutes >= 120 and minutes % 60 == 0
+                      else f"{minutes}분")
+            parts.append(f"{'남은 시간' if mid_join else ''} {length}{'' if mid_join else '짜리'}.".strip())
+        elif 0 < max_laps < 10000:
+            parts.append(f"{max_laps}랩짜리.")
+
+        if is_race:
+            cls_count = sum(1 for v in snap.vehicles if v["cls"] == me["cls"])
+            cp = self.state.class_place_of(snap, me)
+            if cls_count > 1:
+                parts.append(f"우리 클래스 {cls_count}대 중 P{cp}"
+                             f"{'.' if mid_join else ' 스타트.'}")
+
+        rain = ses.get("raining", 0.0)
+        if rain >= 0.05:
+            parts.append("비 오고 있어, 노면 조심.")
+        elif ses.get("track_temp", 0.0) > 0:
+            parts.append(f"노면 {ses['track_temp']:.0f}도.")
+
+        fuel = snap.player.get("fuel")
+        if fuel:
+            parts.append(f"연료 {fuel:.0f}리터.")
+
+        parts.append("이대로 가자." if mid_join
+                     else "첫 랩 침착하게 가자." if is_race
+                     else "준비되면 나가자.")
+        self.bus.push(Event(
+            type=EventType.SESSION_BRIEFING, priority=Priority.NORMAL,
+            message=" ".join(parts), dedup_key="session_brief",
+            ttl=60.0, tone="casual",
+        ))
 
     def on_lap_complete(self, snap: Snapshot, lap) -> None:
         """크루치프 로직의 90%는 여기서: 연료/페이스 분석 → 이벤트."""

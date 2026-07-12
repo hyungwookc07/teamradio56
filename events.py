@@ -45,6 +45,7 @@ class EventType:
     TYRE_WARNING = "tyre_warning"
     LAP_ANALYSIS = "lap_analysis"       # LLM 판단형 멘트 (v0.4)
     STINT_BRIEFING = "stint_briefing"   # LLM (v0.4)
+    SESSION_BRIEFING = "session_briefing"  # 세션 시작 브리핑 (세션당 1회)
     RACE_START = "race_start"
     RACE_END = "race_end"
     LAP_FEEDBACK = "lap_feedback"       # 트레이닝: 섹터 델타 피드백
@@ -189,8 +190,10 @@ class EventBus:
         return None
 
     def clear(self) -> None:
+        """세션 경계에서 호출 — 대기 이벤트와 쿨다운 기록을 모두 비운다."""
         with self._lock:
             self._heap.clear()
             self._pending_keys.clear()
+            self._last_fired.clear()
             self._available.clear()
             self.urgent_pending.clear()
