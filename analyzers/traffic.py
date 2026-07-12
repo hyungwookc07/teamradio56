@@ -192,8 +192,15 @@ class TrafficAnalyzer:
         t.speed_est = (my_speed + t.rate) if t.rate is not None else None
         t.gap_m = gap_m
         t.last_sample_t = now
-        t.faster = (v["estimated_lap"] > 0 and my_est > 0
-                    and v["estimated_lap"] < my_est - FASTER_CLASS_MARGIN)
+        # '상위 클래스' 판정: 클래스가 달라야만 한다. 같은 클래스는 아무리
+        # 빨라도 랩핑 트래픽이 아니라 배틀 상대 (양보 콜 대상 아님).
+        # 예상 랩타임은 LMU에서 부실할 수 있어 보조 신호로만 쓴다.
+        if v["cls"] == me["cls"]:
+            t.faster = False
+        elif v["estimated_lap"] > 0 and my_est > 0:
+            t.faster = v["estimated_lap"] < my_est - FASTER_CLASS_MARGIN
+        else:
+            t.faster = True    # 클래스가 다르고 랩타임 불명 → 접근 예고 대상으로 취급
         # 좌우 판정: 나란할 때만 의미 있음
         lat = v.get("path_lat")
         my_lat = me.get("path_lat")
@@ -213,8 +220,9 @@ class TrafficAnalyzer:
             return NEARBY_AHEAD
         if g < 0 and t.rate is not None and t.rate >= MIN_CLOSING_MS:
             eta = -g / t.rate
-            # 접근 예고는 위협적인 경우만: 상위 클래스, 또는 이미 서사가 시작된 차
-            if eta <= self.eta_warn and (t.faster or t.engaged):
+            # 접근 예고는 '다른(빠른) 클래스' 랩핑 트래픽만. 같은 클래스의
+            # 접근은 갭 추세/라이벌 인텔/근접 콜이 배틀 문맥으로 처리한다.
+            if eta <= self.eta_warn and t.faster:
                 return APPROACHING
         return FAR
 
