@@ -58,7 +58,22 @@ WING_EMA_ALPHA = 0.03        # 5Hz 기준 ~7초 시정수
 STEER_SAMPLE_SPEED_KMH = 150.0
 STEER_SAMPLE_MAX = 0.20      # 이 이상 꺾인 샘플은 코너로 보고 제외
 STEER_SHIFT_MIN = 0.03       # 락 대비 3% 이상 오프셋 변화면 얼라인 손상 의심
+STEER_SHIFT_SEVERE = 0.08    # 이 이상이면 주행 자체가 힘든 수준 → 즉시 박스 권고
 STEER_EMA_ALPHA = 0.02       # ~10초 시정수
+STEER_JUDGE_SAMPLES = 75     # 충격 후 고속 샘플이 이만큼 쌓여 EMA가 안정된
+                             # 뒤에 판정 (수렴 중 경미 단계를 스치는 오판 방지)
+
+# 리어 불안정(오버스티어) 감시 — 리어 윙/서스가 죽으면 코너마다 차가
+# 조향량보다 많이 돈다. 요레이트가 높은데 조향이 거의 없는 순간
+# (= 슬라이드/스핀 카운터 상황)을 세서, 손상 이벤트 후 반복되면
+# 페이스 관찰을 기다리지 않고 즉시 박스를 부른다.
+# 오탐 방지: 손상(리어 존 충격/부품 탈락/큰 충격) 이후에만 감시 활성.
+INSTAB_WATCH_SEC = 180.0     # 손상 후 감시 시간
+INSTAB_SPEED_KMH = 80.0
+INSTAB_YAW_RAD_S = 0.55      # |요레이트| 이 이상 (약 31도/초)
+INSTAB_STEER_MAX = 0.12      # 인데 조향은 거의 없음 → 의도치 않은 회전
+INSTAB_COUNT = 2             # 이 횟수 반복되면 박스 콜
+INSTAB_GAP_SEC = 3.0         # 같은 슬라이드를 중복 카운트하지 않는 간격
 
 
 class HealthAnalyzer:
@@ -86,7 +101,13 @@ class HealthAnalyzer:
         self._wing_warned = False
         self._steer_ema: Optional[float] = None     # 고속 직선 조향 오프셋 EMA
         self._pre_impact_steer: Optional[float] = None
+        self._steer_samples = 0                     # 기준 확보 후 쌓인 고속 샘플 수
         self._align_warned = False
+        self._last_impact_zone: Optional[str] = None
+        self._instab_until = 0.0                    # 리어 불안정 감시 종료 시각
+        self._instab_count = 0
+        self._instab_last_t = 0.0
+        self._instab_called = False
 
     # -- 5Hz 틱: 충격/부품 탈락 즉시 감지 ---------------------------------------
 
@@ -108,7 +129,11 @@ class HealthAnalyzer:
                 self._wing_warned = False
                 self._steer_ema = None
                 self._pre_impact_steer = None
+                self._steer_samples = 0
                 self._align_warned = False
+                self._instab_until = 0.0
+                self._instab_count = 0
+                self._instab_called = False
             self._was_in_pitlane = True
         else:
             self._was_in_pitlane = False
@@ -128,23 +153,32 @@ class HealthAnalyzer:
                     self._pre_impact_wing = self._wing_ema
                 if self._pre_impact_steer is None:
                     self._pre_impact_steer = self._steer_ema
+                    self._steer_samples = 0
                 self._report_due = snap.t + REPORT_DELAY_SEC
-                self._on_impact(mag, prev_dents, state, bus)
+                self._on_impact(mag, prev_dents, snap.t, state, bus)
 
         # 충격 후 자동 점검 리포트 — 드라이버가 아니라 우리가 데이터로 확인
         if self._report_due is not None and snap.t >= self._report_due:
             self._report_due = None
             self._damage_report(p, state, bus)
 
-        # 차체 부품 탈락 (미러/보닛/윙 등) — 펑크와 별개
+        # 차체 부품 탈락 (미러/보닛/윙 등) — 펑크와 별개.
+        # 직전 충격이 리어 쪽이면 리어 윙 가능성을 특정해서 부르고,
+        # 어느 쪽이든 리어 불안정 감시를 켠다 (에어로 손실 대비).
         if p.get("detached") and not self._detached_warned:
             self._detached_warned = True
+            if self._last_impact_zone and "리어" in self._last_impact_zone:
+                msg = ("리어 쪽 부품 떨어졌어. 리어 윙이면 다운포스 확 죽는다. "
+                       "다음 코너 조심해서 진입해봐, 리어 돌면 바로 박스야.")
+                state.set_issue("damage", "리어 부품 탈락 — 리어 윙 손상 가능성")
+            else:
+                msg = "차에서 부품 떨어졌어. 에어로 영향 있을 거야. 지금 데이터 훑고 있으니까 잠깐만."
+                state.set_issue("damage", "차체 부품 탈락 — 에어로 손상 의심")
             bus.push(Event(
-                type=EventType.DAMAGE, priority=Priority.CRITICAL,
-                message="차에서 부품 떨어졌어. 에어로 영향 있을 거야. 지금 데이터 훑고 있으니까 잠깐만.",
-                dedup_key="detached", tone="urgent", ttl=10.0,
+                type=EventType.PART_DETACHED, priority=Priority.CRITICAL,
+                message=msg, dedup_key="detached", tone="urgent", ttl=10.0,
             ))
-            state.set_issue("damage", "차체 부품 탈락 — 에어로 손상 의심")
+            self._instab_until = snap.t + INSTAB_WATCH_SEC
             if self._report_due is None:      # 점검 리포트가 예약 안 됐으면 예약
                 self._report_due = snap.t + REPORT_DELAY_SEC
 
@@ -160,12 +194,17 @@ class HealthAnalyzer:
                 state.set_issue("damage", f"{WHEEL_NAMES[i]} 휠 탈락 — 즉시 피트 필요")
 
         self._check_slow_puncture(p, wheels, state, bus)
+        self._check_instability(p, snap.t, state, bus)
 
-    def _on_impact(self, mag: float, prev_dents: Optional[list],
+    def _on_impact(self, mag: float, prev_dents: Optional[list], now: float,
                    state: SessionState, bus: EventBus) -> None:
         zone = self._new_dent_zone(prev_dents, self._dents)
         heavy = mag >= self.impact_mag * 4
         where = f"{zone} 쪽" if zone else "위치 불명"
+        self._last_impact_zone = zone
+        # 리어 쪽 충격이나 큰 충격이면 리어 불안정 감시 시작
+        if heavy or (zone and "리어" in zone):
+            self._instab_until = now + INSTAB_WATCH_SEC
         bus.push(Event(
             type=EventType.DAMAGE, priority=Priority.CRITICAL,
             data={"pool": "damage", "zone": zone or "", "mag": round(mag)},
@@ -280,21 +319,71 @@ class HealthAnalyzer:
 
         if self._align_warned or self._pre_impact_steer is None:
             return
+        self._steer_samples += 1
+        if self._steer_samples < STEER_JUDGE_SAMPLES:
+            return    # EMA가 새 상태로 수렴할 때까지 판정 유보
         shift = self._steer_ema - self._pre_impact_steer
-        if abs(shift) >= STEER_SHIFT_MIN:
-            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+        if abs(shift) < STEER_SHIFT_MIN:
+            return
+        # 심각 단계: 주행 자체가 힘든 수준 → 페이스 관찰 없이 즉시 박스 권고
+        if abs(shift) >= STEER_SHIFT_SEVERE:
             accepted = bus.push(Event(
-                type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
-                message="직선에서 조향이 계속 한쪽으로 가 있어. 아까 충격으로 "
-                        "얼라인 틀어진 것 같아. 차 쏠리는 거 맞지? "
-                        "타이어 한쪽만 갉아먹으니까 페이스 보고 수리 판단하자.",
-                dedup_key="align_damage", ttl=20.0, tone="casual",
+                type=EventType.DAMAGE_REPORT, priority=Priority.CRITICAL,
+                message="얼라인 심하게 틀어졌어. 직선에서도 조향 잡고 있어야 하는 "
+                        "수준이야. 이대로 못 달려, 박스에서 수리하자.",
+                dedup_key="align_severe", tone="urgent", ttl=15.0,
             ))
             if not accepted:
                 return
             self._align_warned = True
-            state.set_issue("damage", "얼라인 틀어짐 의심 (직선 조향 오프셋 변화)")
-            state.add_narrative("(점검) 얼라인 틀어짐 감지 — 직선 조향 오프셋 변화")
+            state.set_issue("damage", "얼라인 심각 손상 — 즉시 수리 권장")
+            state.add_narrative("(점검) 얼라인 심각 손상 → 박스 콜")
+            return
+        # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+        accepted = bus.push(Event(
+            type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
+            message="직선에서 조향이 계속 한쪽으로 가 있어. 아까 충격으로 "
+                    "얼라인 틀어진 것 같아. 차 쏠리는 거 맞지? "
+                    "타이어 한쪽만 갉아먹으니까 페이스 보고 수리 판단하자.",
+            dedup_key="align_damage", ttl=20.0, tone="casual",
+        ))
+        if not accepted:
+            return
+        self._align_warned = True
+        state.set_issue("damage", "얼라인 틀어짐 의심 (직선 조향 오프셋 변화)")
+        state.add_narrative("(점검) 얼라인 틀어짐 감지 — 직선 조향 오프셋 변화")
+
+    def _check_instability(self, p: dict, now: float,
+                           state: SessionState, bus: EventBus) -> None:
+        """
+        손상 후 리어 불안정 감시 — 조향은 거의 없는데 차가 크게 회전하는
+        순간(슬라이드/카운터 상황)이 반복되면 리어 에어로/서스가 죽은 것.
+        페이스 관찰(2랩)을 기다리지 않고 즉시 박스를 부른다.
+        """
+        if self._instab_called or now >= self._instab_until:
+            return
+        yaw = p.get("yaw_rate")
+        steer = p.get("steering")
+        if yaw is None or steer is None or p.get("in_pitlane") \
+                or (p.get("speed_kmh", 0.0) or 0.0) < INSTAB_SPEED_KMH:
+            return
+        if abs(yaw) < INSTAB_YAW_RAD_S or abs(steer) > INSTAB_STEER_MAX:
+            return
+        if now - self._instab_last_t < INSTAB_GAP_SEC:
+            return
+        self._instab_last_t = now
+        self._instab_count += 1
+        if self._instab_count < INSTAB_COUNT:
+            return
+        self._instab_called = True
+        bus.push(Event(
+            type=EventType.DAMAGE_REPORT, priority=Priority.CRITICAL,
+            message="리어가 안 잡힌다, 차가 계속 돌아. 리어 에어로 죽은 거야. "
+                    "이대로는 사고 나. 무리하지 말고 박스, 수리하자.",
+            dedup_key="rear_instab", tone="urgent", ttl=15.0,
+        ))
+        state.set_issue("damage", "리어 불안정 (에어로/서스 손상) — 즉시 수리 권장")
+        state.add_narrative("(점검) 손상 후 리어 불안정 반복 감지 → 박스 콜")
 
     def _check_slow_puncture(self, p: dict, wheels: list,
                              state: SessionState, bus: EventBus) -> None:

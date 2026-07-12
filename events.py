@@ -41,6 +41,7 @@ class EventType:
     DAMAGE = "damage"
     DAMAGE_REPORT = "damage_report"     # 충격 후 자동 점검 결과 (전용 버킷)
     WHEEL_DAMAGE = "wheel_damage"       # 휠 탈락 (전용 버킷 — 충격 콜에 안 눌리게)
+    PART_DETACHED = "part_detached"     # 차체 부품 탈락 (전용 버킷 — 충격과 동시 발생)
     PENALTY = "penalty"
     PACE_COMMENT = "pace_comment"
     GAP_COMMENT = "gap_comment"
