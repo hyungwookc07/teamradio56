@@ -110,6 +110,8 @@ def build_cars(scenario: str = "race") -> list[SimCar]:
             SimCar(3, "리바이", "Ferrari 296 GT3", GT3_CLASS, PLAYER_LAP - 1.4, -350.0),
             SimCar(4, "헌터", "McLaren 720S GT3", GT3_CLASS, PLAYER_LAP - 0.9, -180.0,
                    drift_per_lap=0.45),   # 처음엔 접근하다 점점 느려져 떨어짐
+            SimCar(5, "스톨", "Aston Vantage GT3", GT3_CLASS, 2100.0, 450.0),
+            # ↑ 사실상 정지(2m/s) — 고스트/사고 차량 필터 테스트: 배틀 콜 없이 위험 안내만
         ]
     return [
         SimCar(0, "나", "Porsche 911 GT3 R", GT3_CLASS, PLAYER_LAP, 0.0, is_player=True),

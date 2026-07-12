@@ -45,6 +45,12 @@ SIDE_LAT_MIN = 1.2             # 좌우 판정 최소 횡간격 (m) — 이하�
 STATE_REANNOUNCE_SEC = 45.0    # 같은 차·같은 상태 재발화 최소 간격
 BATTLE_GAP_SEC = 2.0           # 동클래스 ±2초 이내면 배틀 → 긴박 톤
 
+# 정지/서행 차량 판정 — LMU가 고스트 처리하는 차(멈춤/서행/복귀 중)는
+# 공유 메모리에 고스트 플래그가 없어서 속도로 추정해 배틀 콜에서 제외한다.
+STOPPED_SPEED_MS = 12.0        # 이 이하로 움직이는 차는 '정지/서행' 취급 (43km/h)
+MY_RACING_SPEED_MS = 25.0      # 내가 이 이상으로 달릴 때만 위 판정 적용 (피트 오해 방지)
+HAZARD_AHEAD_M = 250.0         # 전방 이 거리 안의 정지 차량은 위험 안내 1회
+
 
 def wrap_gap(delta_m: float, track_len: float) -> float:
     """lapDist 차이를 [-L/2, L/2) 부호 있는 거리로 보정. +면 내 앞."""
@@ -60,6 +66,7 @@ class CarTrack:
     state: str = FAR
     gap_m: float = 0.0
     rate: Optional[float] = None       # dgap/dt EMA (m/s), +면 앞으로 이동(접근: 뒤차가 +)
+    speed_est: Optional[float] = None  # 상대 절대속도 추정 (m/s) = 내 속도 + rate
     side: Optional[str] = None         # left | right | None
     faster: bool = False               # 상위 클래스인가
     last_sample_t: float = 0.0
@@ -72,7 +79,9 @@ class TrafficAnalyzer:
         self.proximity_m = cfg.get("thresholds.proximity_m", 50.0)
         self.alongside_m = cfg.get("thresholds.alongside_m", 12.0)
         self.eta_warn = cfg.get("thresholds.traffic_eta_sec", 10.0)
+        self.race_only = cfg.get("thresholds.traffic_race_only", False)
         self.tracks: dict[int, CarTrack] = {}
+        self._hazard_announced: dict[int, float] = {}
 
     # -- 외부 조회 (브리지 유효성 검사 등에 사용) -----------------------------
 
@@ -94,10 +103,14 @@ class TrafficAnalyzer:
             return
         if snap.session["game_phase"] not in GREEN_PHASES:
             return
+        # 연습/퀄리는 고스트 차가 많아 트래픽 콜이 소음이 되기 쉬움 — 옵션으로 차단
+        if self.race_only and not state.is_race:
+            return
         track_len = snap.session["track_len"]
         if track_len <= 0:
             return
         now = snap.t
+        my_speed = (snap.player.get("speed_kmh", 0.0) or 0.0) / 3.6
         my_est = me["estimated_lap"] if me["estimated_lap"] > 0 else \
             (state.baseline_lap_time() or 0)
 
@@ -108,7 +121,14 @@ class TrafficAnalyzer:
             if v["is_player"] or v["in_pits"] or v["in_garage"] or v["finish_status"] != 0:
                 continue
             seen.add(v["id"])
-            t = self._update_track(v, me, my_est, track_len, now)
+            t = self._update_track(v, me, my_est, track_len, now, my_speed)
+            # 정지/서행 차량(고스트 처리됐을 가능성 높음): 배틀 콜 제외,
+            # 전방이면 위험 안내 1회만
+            if self._is_stopped(t, my_speed):
+                self._check_stopped_hazard(t, now, bus)
+                if t.state != FAR:
+                    t.state = FAR      # 조용히 리셋 (지나갔어/떨어졌어 멘트 없이)
+                continue
             new_state = self._classify(t)
             if new_state != t.state:
                 old = t.state
@@ -130,8 +150,29 @@ class TrafficAnalyzer:
         else:
             state.clear_issue("battle")
 
+    def _is_stopped(self, t: CarTrack, my_speed: float) -> bool:
+        """정지/서행 차량 추정 — 내가 레이싱 속도일 때만 판단 (오탐 방지)."""
+        return (t.speed_est is not None and my_speed >= MY_RACING_SPEED_MS
+                and t.speed_est < STOPPED_SPEED_MS)
+
+    def _check_stopped_hazard(self, t: CarTrack, now: float, bus: EventBus) -> None:
+        """전방의 정지/서행 차량은 배틀 콜 대신 위험 안내 한 번만."""
+        if not (0 < t.gap_m <= HAZARD_AHEAD_M):
+            if t.gap_m < 0:
+                self._hazard_announced.pop(t.cid, None)   # 지나가면 재안내 허용
+            return
+        last = self._hazard_announced.get(t.cid)
+        if last is not None and now - last < 90.0:
+            return
+        self._hazard_announced[t.cid] = now
+        bus.push(Event(
+            type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
+            message="전방에 멈춰 있거나 서행하는 차 있어. 라인 미리 바꿔.",
+            dedup_key=f"hazard_{t.cid}", ttl=8.0, tone="urgent",
+        ))
+
     def _update_track(self, v: dict, me: dict, my_est: float,
-                      track_len: float, now: float) -> CarTrack:
+                      track_len: float, now: float, my_speed: float = 0.0) -> CarTrack:
         t = self.tracks.get(v["id"])
         if t is None:
             t = CarTrack(cid=v["id"], cls=v["cls"], driver=v["driver"])
@@ -143,6 +184,8 @@ class TrafficAnalyzer:
             t.rate = inst if t.rate is None else (0.6 * t.rate + 0.4 * inst)
         elif dt > 3.0:
             t.rate = None      # 오래된 샘플로 미분하지 않는다
+        # 상대 절대속도 추정: gap = 상대위치-내위치 이므로 d(gap)/dt = 상대속도-내속도
+        t.speed_est = (my_speed + t.rate) if t.rate is not None else None
         t.gap_m = gap_m
         t.last_sample_t = now
         t.faster = (v["estimated_lap"] > 0 and my_est > 0

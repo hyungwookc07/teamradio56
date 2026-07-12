@@ -58,6 +58,7 @@ DEFAULTS: dict[str, Any] = {
         "pace_delta_sec": 0.7,        # 평소 대비 랩타임 편차가 이 이상이면 코멘트
         "gap_change_sec_per_lap": 0.4,  # 갭 변화율이 이 이상이면 코멘트
         "traffic_eta_sec": 10.0,      # 접근 예고: 도달 예상 N초 이내 (3~10초 권장)
+        "traffic_race_only": False,   # true면 연습/퀄리(고스트 많음)에선 트래픽 콜 끔
         "proximity_m": 50.0,          # 근접(NEARBY) 진입 거리 (m)
         "alongside_m": 12.0,          # 나란히(ALONGSIDE) 판정 거리 (m)
         "tyre_temp_imbalance": 12.0,  # 좌우/전후 온도 불균형 경고 (C)
