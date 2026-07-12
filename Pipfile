@@ -1,0 +1,18 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pyyaml = ">=6.0"
+edge-tts = ">=6.1"
+pygame = ">=2.5"          # 오디오 재생
+anthropic = ">=0.40"      # 실시간 LLM 멘트
+
+[dev-packages]
+pyinstaller = "*"         # 단일 exe 패키징용 (선택)
+
+# [requires]에 python_version을 고정하지 않음 — 3.11+ 아무 버전이나 허용.
+# 특정 버전을 강제하고 싶으면 아래 주석을 해제:
+# [requires]
+# python_version = "3.12"

@@ -58,6 +58,15 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+pipenv를 쓴다면 (Pipfile 포함되어 있음):
+
+```bat
+pip install pipenv
+cd aicrew
+pipenv install
+pipenv run python main.py        :: 또는 pipenv shell 후 python main.py
+```
+
 ## 3. 설정
 
 ```bat
