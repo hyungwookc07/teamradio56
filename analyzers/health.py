@@ -44,10 +44,21 @@ SLOW_PUNCTURE_DROP_KPA = 25.0
 
 # 프론트 윙 감시 — mFrontWingHeight의 충격 전후 지속적 변화 = 윙 손상.
 # 고속(직선)에서만 샘플링해 코너 자세/연료에 의한 자연 변동을 배제한다.
-# 서스펜션은 손상 필드가 공유 메모리에 없어 페이스 관찰로만 판단한다.
+# LMU 스포츠카(스플리터)에서 이 필드가 유효한지는 실차 검증 필요 —
+# 정적이면 이 감지는 조용히 비활성. 리어 윙은 전용 필드가 없어
+# 리어 존 덴트 + 부품 탈락 + 페이스 관찰로 커버한다.
 WING_SAMPLE_SPEED_KMH = 150.0
 WING_DROP_M = 0.010          # 10mm 이상 지속 하락이면 윙 손상 의심
 WING_EMA_ALPHA = 0.03        # 5Hz 기준 ~7초 시정수
+
+# 얼라인(조향 쏠림) 감시 — 서스펜션/스티어링 지오메트리가 틀어지면
+# 직선에서도 조향을 한쪽으로 유지해야 한다. 고속·저조향 구간의 조향
+# 입력 EMA를 충격 전후로 비교해 '실주행에 문제가 되는' 손상만 잡는다.
+# (트랙 캠버/바람에 의한 상시 오프셋은 전후 비교로 상쇄된다.)
+STEER_SAMPLE_SPEED_KMH = 150.0
+STEER_SAMPLE_MAX = 0.20      # 이 이상 꺾인 샘플은 코너로 보고 제외
+STEER_SHIFT_MIN = 0.03       # 락 대비 3% 이상 오프셋 변화면 얼라인 손상 의심
+STEER_EMA_ALPHA = 0.02       # ~10초 시정수
 
 
 class HealthAnalyzer:
@@ -73,6 +84,9 @@ class HealthAnalyzer:
         self._wing_ema: Optional[float] = None      # 고속 구간 프론트 윙 높이 EMA
         self._pre_impact_wing: Optional[float] = None
         self._wing_warned = False
+        self._steer_ema: Optional[float] = None     # 고속 직선 조향 오프셋 EMA
+        self._pre_impact_steer: Optional[float] = None
+        self._align_warned = False
 
     # -- 5Hz 틱: 충격/부품 탈락 즉시 감지 ---------------------------------------
 
@@ -92,11 +106,15 @@ class HealthAnalyzer:
                 self._wing_ema = None
                 self._pre_impact_wing = None
                 self._wing_warned = False
+                self._steer_ema = None
+                self._pre_impact_steer = None
+                self._align_warned = False
             self._was_in_pitlane = True
         else:
             self._was_in_pitlane = False
 
         self._track_wing(p, state, bus)
+        self._track_alignment(p, state, bus)
 
         impact_et = p.get("last_impact_et", 0.0)
         if impact_et and impact_et > self._last_impact_et + 0.5:
@@ -108,6 +126,8 @@ class HealthAnalyzer:
                 self._pre_pressures = [w.get("pressure", 0.0) for w in wheels[:4]]
                 if self._pre_impact_wing is None:    # 다중 충격 시 최초 기준 유지
                     self._pre_impact_wing = self._wing_ema
+                if self._pre_impact_steer is None:
+                    self._pre_impact_steer = self._steer_ema
                 self._report_due = snap.t + REPORT_DELAY_SEC
                 self._on_impact(mag, prev_dents, state, bus)
 
@@ -227,16 +247,54 @@ class HealthAnalyzer:
             return
         drop = self._pre_impact_wing - self._wing_ema
         if drop >= WING_DROP_M:
-            self._wing_warned = True
-            bus.push(Event(
+            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+            accepted = bus.push(Event(
                 type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
                 message=f"프론트 윙 높이가 충격 전보다 {drop * 1000:.0f}밀리 내려가 있어. "
                         "윙 데미지야. 다운포스 줄었을 테니 고속 코너 조심하고, "
                         "수리 여부는 페이스 보고 정하자.",
                 dedup_key="wing_damage", ttl=20.0, tone="casual",
             ))
+            if not accepted:
+                return
+            self._wing_warned = True
             state.set_issue("damage", f"프론트 윙 손상 (높이 -{drop * 1000:.0f}mm)")
             state.add_narrative("(점검) 프론트 윙 손상 감지")
+
+    def _track_alignment(self, p: dict, state: SessionState, bus: EventBus) -> None:
+        """
+        얼라인 감시 — 고속·저조향(직선) 구간의 조향 입력 평균이 충격 전과
+        비교해 한쪽으로 옮겨가 있으면 지오메트리가 틀어진 것. 드라이버가
+        느끼기 전에(또는 느낀 것을 확증해서) 불러준다.
+        """
+        steer = p.get("steering")
+        if steer is None or p.get("in_pitlane") \
+                or (p.get("speed_kmh", 0.0) or 0.0) < STEER_SAMPLE_SPEED_KMH \
+                or abs(steer) > STEER_SAMPLE_MAX:
+            return
+        if self._steer_ema is None:
+            self._steer_ema = steer
+            return
+        self._steer_ema = (1 - STEER_EMA_ALPHA) * self._steer_ema \
+            + STEER_EMA_ALPHA * steer
+
+        if self._align_warned or self._pre_impact_steer is None:
+            return
+        shift = self._steer_ema - self._pre_impact_steer
+        if abs(shift) >= STEER_SHIFT_MIN:
+            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+            accepted = bus.push(Event(
+                type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
+                message="직선에서 조향이 계속 한쪽으로 가 있어. 아까 충격으로 "
+                        "얼라인 틀어진 것 같아. 차 쏠리는 거 맞지? "
+                        "타이어 한쪽만 갉아먹으니까 페이스 보고 수리 판단하자.",
+                dedup_key="align_damage", ttl=20.0, tone="casual",
+            ))
+            if not accepted:
+                return
+            self._align_warned = True
+            state.set_issue("damage", "얼라인 틀어짐 의심 (직선 조향 오프셋 변화)")
+            state.add_narrative("(점검) 얼라인 틀어짐 감지 — 직선 조향 오프셋 변화")
 
     def _check_slow_puncture(self, p: dict, wheels: list,
                              state: SessionState, bus: EventBus) -> None:

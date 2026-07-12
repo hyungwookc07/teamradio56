@@ -274,6 +274,8 @@ class SharedMemoryTelemetry(TelemetrySource):
                 "last_impact_mag": round(vt.mLastImpactMagnitude, 1),
                 "in_pitlane": vt.mCurrentSector < 0,
                 "speed_limiter": bool(vt.mSpeedLimiter),
+                "steering": round(vt.mUnfilteredSteering, 4),   # -1..1, 얼라인 감지용
+
                 "wheels": [_wheel_to_dict(w) for w in vt.mWheels],  # FL FR RL RR
             }
             break
