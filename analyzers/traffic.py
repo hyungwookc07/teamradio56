@@ -46,7 +46,10 @@ BATTLE_GAP_SEC = 2.0           # 동클래스 ±2초 이내면 배틀 → 긴박
 
 # 정지/서행 차량 판정 — LMU가 고스트 처리하는 차(멈춤/서행/복귀 중)는
 # 공유 메모리에 고스트 플래그가 없어서 속도로 추정해 배틀 콜에서 제외한다.
-STOPPED_SPEED_MS = 12.0        # 이 이하로 움직이는 차는 '정지/서행' 취급 (43km/h)
+# 저속 코너(헤어핀 등)를 도는 정상 주행 차가 순간적으로 임계 아래로 내려가는
+# 오탐이 실차에서 확인돼, '지속 시간' 조건을 함께 요구한다.
+STOPPED_SPEED_MS = 12.0        # 이 이하로 움직이는 차는 '정지/서행' 후보 (43km/h)
+STOPPED_PERSIST_SEC = 4.0      # 이 시간 이상 계속 저속이어야 정지/서행 확정
 MY_RACING_SPEED_MS = 25.0      # 내가 이 이상으로 달릴 때만 위 판정 적용 (피트 오해 방지)
 HAZARD_AHEAD_M = 250.0         # 전방 이 거리 안의 정지 차량은 위험 안내 1회
 
@@ -83,6 +86,7 @@ class CarTrack:
     speed_est: Optional[float] = None  # 상대 절대속도 추정 (m/s) = 내 속도 + rate
     side: Optional[str] = None         # left | right | None
     faster: bool = False               # 상위 클래스인가
+    slow_since: Optional[float] = None  # 저속 상태가 시작된 시각 (정지차 지속 판정)
     last_sample_t: float = 0.0
     announced: dict = field(default_factory=dict)   # state → 마지막 발화 시각
     engaged: bool = False              # 이 차에 대해 뭔가 말한 적 있는가 (서사 연속성)
@@ -140,7 +144,7 @@ class TrafficAnalyzer:
             t = self._update_track(v, me, track_len, now, my_speed)
             # 정지/서행 차량(고스트 처리됐을 가능성 높음): 배틀 콜 제외,
             # 전방이면 위험 안내 1회만
-            if self._is_stopped(t, my_speed):
+            if self._is_stopped(t, my_speed, now):
                 self._check_stopped_hazard(t, now, bus)
                 if t.state != FAR:
                     t.state = FAR      # 조용히 리셋 (지나갔어/떨어졌어 멘트 없이)
@@ -166,10 +170,14 @@ class TrafficAnalyzer:
         else:
             state.clear_issue("battle")
 
-    def _is_stopped(self, t: CarTrack, my_speed: float) -> bool:
-        """정지/서행 차량 추정 — 내가 레이싱 속도일 때만 판단 (오탐 방지)."""
-        return (t.speed_est is not None and my_speed >= MY_RACING_SPEED_MS
-                and t.speed_est < STOPPED_SPEED_MS)
+    def _is_stopped(self, t: CarTrack, my_speed: float, now: float) -> bool:
+        """
+        정지/서행 차량 추정 — 내가 레이싱 속도일 때만, 그리고 저속 상태가
+        일정 시간 지속될 때만. 저속 코너를 정상 통과 중인 차는 잠깐만
+        임계 아래로 내려가므로 지속 조건이 오탐을 걸러준다.
+        """
+        return (t.slow_since is not None and my_speed >= MY_RACING_SPEED_MS
+                and now - t.slow_since >= STOPPED_PERSIST_SEC)
 
     def _check_stopped_hazard(self, t: CarTrack, now: float, bus: EventBus) -> None:
         """전방의 정지/서행 차량은 배틀 콜 대신 위험 안내 한 번만."""
@@ -202,6 +210,12 @@ class TrafficAnalyzer:
             t.rate = None      # 오래된 샘플로 미분하지 않는다
         # 상대 절대속도 추정: gap = 상대위치-내위치 이므로 d(gap)/dt = 상대속도-내속도
         t.speed_est = (my_speed + t.rate) if t.rate is not None else None
+        # 저속 상태 지속 추적 (정지/서행 판정용)
+        if t.speed_est is not None and t.speed_est < STOPPED_SPEED_MS:
+            if t.slow_since is None:
+                t.slow_since = now
+        else:
+            t.slow_since = None
         t.gap_m = gap_m
         t.last_sample_t = now
         # '상위 클래스' 판정: 클래스가 달라야만 한다. 같은 클래스는 아무리

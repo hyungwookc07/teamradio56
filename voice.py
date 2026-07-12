@@ -433,13 +433,18 @@ class VoiceGenerator:
     def _render_gap_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
         rate = d["rate"]
         gap = d["gap"]
+        gap_s = f"{gap:.1f}" if gap < 10 else f"{gap:.0f}"
         if d["who"] == "behind":
-            if rate < 0:
-                return f"뒤차가 랩당 {abs(rate):.1f}초씩 붙고 있어. 갭 {gap:.0f}초. 서두르지 말고 실수만 줄이자."
-            return f"뒤차랑 갭이 {gap:.0f}초로 벌어졌어. 관리 잘 되고 있어."
-        if rate < 0:
-            return f"앞차가 느려지고 있어. 갭 {gap:.0f}초, 랩당 {abs(rate):.1f}초씩 좁혀져. 갈 수 있어."
-        return f"앞차랑 {gap:.0f}초로 벌어지는 중이야. 무리하진 말자."
+            if rate <= -0.15:
+                return f"뒤차가 랩당 {abs(rate):.1f}초씩 붙고 있어. 갭 {gap_s}초. 서두르지 말고 실수만 줄이자."
+            if rate >= 0.15:
+                return f"뒤차랑 갭이 {gap_s}초로 벌어졌어. 관리 잘 되고 있어."
+            return f"뒤차와 {gap_s}초, 갭 유지 중이야. 이 리듬 좋아."
+        if rate <= -0.15:
+            return f"앞차 좁혀지고 있어. 갭 {gap_s}초, 랩당 {abs(rate):.1f}초씩. 갈 수 있어."
+        if rate >= 0.15:
+            return f"앞차랑 {gap_s}초로 벌어지는 중이야. 무리하진 말자."
+        return f"앞차와 {gap_s}초, 갭 그대로야. 리듬 유지하자."
 
 
 def iter_pregen_texts(pool: PhrasePool):

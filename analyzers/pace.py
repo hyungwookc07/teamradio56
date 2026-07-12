@@ -18,11 +18,21 @@ log = logging.getLogger("pace")
 
 MIN_LAPS_FOR_BASELINE = 4
 
+# 배틀 갭 리포트 — 동클래스 앞/뒤차가 이 이내면 '배틀 문맥'으로 보고,
+# 큰 추세(gap_change_sec_per_lap)가 아니어도 주기적으로 갭 상황을 알려준다.
+# 실제 엔지니어처럼 "앞차 2초, 랩당 0.2씩 좁혀지는 중" 식의 리포트.
+BATTLE_REPORT_GAP_SEC = 10.0
+BATTLE_MIN_CHANGE_SEC = 0.3    # 지난 리포트 대비 이만큼은 변해야 다시 말함
+
 
 class PaceAnalyzer:
     def __init__(self, cfg):
         self.pace_delta = cfg.get("thresholds.pace_delta_sec", 0.7)
         self.gap_rate = cfg.get("thresholds.gap_change_sec_per_lap", 0.4)
+        self.reset()
+
+    def reset(self) -> None:
+        self._last_report: dict[str, float] = {}   # who → 마지막 리포트한 갭
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus,
                lap: LapRecord) -> Optional[dict]:
@@ -54,9 +64,10 @@ class PaceAnalyzer:
                 dedup_key=f"pace_{lap.lap_number}",
             ))
 
-        gap_ev = self._gap_trend(valid)
+        gap_ev = self._gap_trend(valid) or self._battle_report(valid)
         if gap_ev is not None:
             result["gap_trend"] = gap_ev
+            self._last_report[gap_ev["who"]] = gap_ev["gap"]
             bus.push(Event(
                 type=EventType.GAP_COMMENT,
                 priority=Priority.NORMAL,
@@ -86,3 +97,35 @@ class PaceAnalyzer:
         if not candidates:
             return None
         return max(candidates, key=lambda c: abs(c["rate"]))
+
+    def _battle_report(self, valid: list[LapRecord]) -> Optional[dict]:
+        """
+        배틀 문맥 갭 리포트 — 동클래스 앞/뒤차가 10초 이내면 큰 추세가 아니어도
+        갭 상황을 알린다. 처음 사정권에 들어왔을 때 한 번, 이후엔 지난 리포트
+        대비 갭이 유의미하게 변했을 때만 (쿨다운은 이벤트 버스가 별도 적용).
+        """
+        if len(valid) < 2:
+            return None
+        prev, cur = valid[-2], valid[-1]
+
+        candidates = []
+        for attr, who in (("gap_ahead", "ahead"), ("gap_behind", "behind")):
+            g = getattr(cur, attr)
+            p = getattr(prev, attr)
+            if not (0 <= g <= BATTLE_REPORT_GAP_SEC) or p < 0:
+                continue
+            last = self._last_report.get(who)
+            if last is not None and abs(g - last) < BATTLE_MIN_CHANGE_SEC:
+                continue    # 지난 리포트와 비슷하면 침묵
+            candidates.append({
+                "who": who,
+                "gap": round(g, 1),
+                "rate": round(g - p, 2),   # 최근 1랩 변화 (+벌어짐 / -좁혀짐)
+            })
+        if not candidates:
+            # 배틀에서 벗어난 쪽은 기억을 지워 다음 배틀 진입 때 다시 리포트
+            for attr, who in (("gap_ahead", "ahead"), ("gap_behind", "behind")):
+                if not (0 <= getattr(cur, attr) <= BATTLE_REPORT_GAP_SEC):
+                    self._last_report.pop(who, None)
+            return None
+        return min(candidates, key=lambda c: c["gap"])   # 더 가까운 쪽 하나만

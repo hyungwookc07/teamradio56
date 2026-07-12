@@ -186,7 +186,7 @@ class CrewChiefApp:
         self.state.reset()
         self.bus.clear()
         for analyzer in (self.traffic, self.racecontrol, self.rivals,
-                         self.health, self.strategy, self.history):
+                         self.health, self.strategy, self.history, self.pace):
             reset = getattr(analyzer, "reset", None)
             if reset:
                 reset()
