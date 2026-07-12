@@ -83,6 +83,10 @@ class TrafficAnalyzer:
         self.tracks: dict[int, CarTrack] = {}
         self._hazard_announced: dict[int, float] = {}
 
+    def reset(self) -> None:
+        self.tracks.clear()
+        self._hazard_announced.clear()
+
     # -- 외부 조회 (브리지 유효성 검사 등에 사용) -----------------------------
 
     def car_state(self, cid: int) -> str:

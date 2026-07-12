@@ -37,6 +37,9 @@ DEFAULT_PIT_LIMIT_KMH = 80.0       # Extended에서 리밋을 못 읽으면 이 
 class RaceControlAnalyzer:
     def __init__(self, cfg):
         self.sector_calls = cfg.get("thresholds.sector_yellow_calls", True)
+        self.reset()
+
+    def reset(self) -> None:
         self._phase: Optional[int] = None
         self._yellow: Optional[int] = None
         self._prev_sector_flags: Optional[list] = None

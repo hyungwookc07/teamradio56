@@ -38,6 +38,9 @@ class HealthAnalyzer:
         self.oil_warn = cfg.get("thresholds.oil_temp_warn", 115.0)
         self.brake_warn = cfg.get("thresholds.brake_temp_warn", 700.0)
         self.impact_mag = cfg.get("thresholds.damage_impact_mag", 500.0)
+        self.reset()
+
+    def reset(self) -> None:
         self._last_impact_et = 0.0
         self._dents: Optional[list] = None
         self._impact_lap: Optional[int] = None

@@ -7,6 +7,7 @@ app:
   log_level: INFO
   save_race_json: true       # 레이스 종료 시 랩 히스토리를 data/에 JSON 저장
   speech_log: true           # 발화 로그 data/speech_log.jsonl (반복감/타이밍 검토)
+  require_realtime: true     # 모니터/메뉴에선 발화 중단 (오작동 시 false)
   data_dir: data
 
 voice:

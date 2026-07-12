@@ -25,9 +25,12 @@ RAIN_DELTA_MIN = 0.15
 
 class StrategyEngine:
     def __init__(self, cfg):
+        self.wet_threshold = cfg.get("thresholds.wetness_crossover", 0.20)
+        self.reset()
+
+    def reset(self) -> None:
         self._pit_needed = False
         self._last_rain: Optional[float] = None
-        self.wet_threshold = cfg.get("thresholds.wetness_crossover", 0.20)
         self._wet = False    # 현재 '슬릭 한계' 상태인가
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus,

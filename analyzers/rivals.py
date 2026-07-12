@@ -29,6 +29,10 @@ class RivalAnalyzer:
         self._in_pits: dict[int, bool] = {}
         self._laps_seen: dict[int, deque] = {}      # cid → 최근 랩타임 3개
 
+    def reset(self) -> None:
+        self._in_pits.clear()
+        self._laps_seen.clear()
+
     # -- 5Hz: 경쟁자 피트 진입 -------------------------------------------------
 
     def on_tick(self, state: SessionState, snap: Snapshot, bus: EventBus) -> None:

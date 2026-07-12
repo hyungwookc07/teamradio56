@@ -73,6 +73,7 @@ class CrewChiefApp:
         self.status_interval = cfg.get("app.console_status_sec", 1.0)
         self._last_status = 0.0
         self._last_waiting_msg = 0.0
+        self._was_in_session = False
         self._running = True
 
         # 상태 + 분석기 + 이벤트 버스 + 보이스 워커
@@ -135,13 +136,34 @@ class CrewChiefApp:
 
         now = time.monotonic()
         if not snap.connected:
+            # 게임이 내려갔으면 진행 중이던 세션도 종료 처리
+            if self._was_in_session:
+                self._on_session_end("게임 연결 끊김")
+                self._was_in_session = False
             if now - self._last_waiting_msg > 5.0:
                 log.info("게임 대기 중... (LMU 실행 + 공유 메모리 플러그인 활성화 필요)")
                 self._last_waiting_msg = now
             return
+
+        # 세션 시작/종료 전이 감지
+        if self._was_in_session and not snap.in_session:
+            self._on_session_end("세션 종료")
+        elif not self._was_in_session and snap.in_session:
+            log.info("세션 시작 감지 (트랙: %s)", snap.session.get("track", "?"))
+        self._was_in_session = snap.in_session
+
         if not snap.in_session:
             if now - self._last_waiting_msg > 5.0:
                 log.info("세션 대기 중... (게임 연결됨, 세션 없음)")
+                self._last_waiting_msg = now
+            return
+
+        # 모니터/가라지/메뉴(mInRealtime=false)에서는 분석·발화 중단.
+        # LMU가 이 필드를 이상하게 채우면 config에서 require_realtime: false
+        if self.cfg.get("app.require_realtime", True) \
+                and not snap.session.get("in_realtime", True):
+            if now - self._last_waiting_msg > 5.0:
+                log.info("모니터/메뉴 상태 — 주행 복귀 대기 중")
                 self._last_waiting_msg = now
             return
 
@@ -150,6 +172,24 @@ class CrewChiefApp:
         if now - self._last_status >= self.status_interval:
             self._last_status = now
             self.print_status(snap)
+
+    def _on_session_end(self, reason: str) -> None:
+        """세션 종료: 디브리핑 + 히스토리 저장 + 전 분석기 상태 리셋."""
+        log.info("%s 감지 → 세션 마무리 (디브리핑/저장/리셋)", reason)
+        try:
+            self.debriefer.run(self.state, self.voice_gen.llm,
+                               self.cfg.get("app.data_dir", "data"))
+        except Exception:
+            log.exception("디브리핑 생성 실패")
+        if self.cfg.get("app.save_race_json", True):
+            self.state.save_json(self.cfg.get("app.data_dir", "data"))
+        self.state.reset()
+        self.bus.clear()
+        for analyzer in (self.traffic, self.racecontrol, self.rivals,
+                         self.health, self.strategy, self.history):
+            reset = getattr(analyzer, "reset", None)
+            if reset:
+                reset()
 
     # -- 훅 (이후 마일스톤에서 확장) -----------------------------------------
 
