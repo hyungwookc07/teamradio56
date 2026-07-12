@@ -38,7 +38,6 @@ THREAT_RANK = {ALONGSIDE: 3, NEARBY_BEHIND: 2, APPROACHING: 1,
                NEARBY_AHEAD: 0, FAR: 0}
 
 GREEN_PHASES = (5, 6)
-FASTER_CLASS_MARGIN = 3.0      # 예상 랩타임 차이가 이보다 크면 상위 클래스
 MIN_CLOSING_MS = 2.0           # m/s — 이 이상 좁혀질 때만 '접근'
 ETA_WINDOW = (0.0, 10.0)       # 접근 예고: 도달 예상 3~10초 (상한만 설정, 하한은 근접콜이 커버)
 SIDE_LAT_MIN = 1.2             # 좌우 판정 최소 횡간격 (m) — 이하면 "옆"으로만
@@ -56,6 +55,21 @@ def wrap_gap(delta_m: float, track_len: float) -> float:
     """lapDist 차이를 [-L/2, L/2) 부호 있는 거리로 보정. +면 내 앞."""
     half = track_len / 2.0
     return (delta_m + half) % track_len - half
+
+
+# 클래스 서열 — LMU는 mEstimatedLapTime을 전 차량 동일한 트랙 기본값으로
+# 채워둬서(실차 진단으로 확인) 랩타임 비교가 불가능하다. 클래스 이름의
+# 서열로 상위 클래스(랩핑 트래픽)를 판정한다. 숫자가 클수록 빠른 클래스.
+CLASS_RANK = [("hyper", 4), ("lmh", 4), ("lmdh", 4),
+              ("lmp2", 3), ("gte", 2), ("gt3", 1)]
+
+
+def class_rank(cls: str) -> int:
+    c = (cls or "").lower()
+    for key, rank in CLASS_RANK:
+        if key in c:
+            return rank
+    return 0    # 서열 불명
 
 
 @dataclass
@@ -115,8 +129,6 @@ class TrafficAnalyzer:
             return
         now = snap.t
         my_speed = (snap.player.get("speed_kmh", 0.0) or 0.0) / 3.6
-        my_est = me["estimated_lap"] if me["estimated_lap"] > 0 else \
-            (state.baseline_lap_time() or 0)
 
         transitions: list[tuple[CarTrack, str]] = []   # (track, old_state)
         seen: set[int] = set()
@@ -125,7 +137,7 @@ class TrafficAnalyzer:
             if v["is_player"] or v["in_pits"] or v["in_garage"] or v["finish_status"] != 0:
                 continue
             seen.add(v["id"])
-            t = self._update_track(v, me, my_est, track_len, now, my_speed)
+            t = self._update_track(v, me, track_len, now, my_speed)
             # 정지/서행 차량(고스트 처리됐을 가능성 높음): 배틀 콜 제외,
             # 전방이면 위험 안내 1회만
             if self._is_stopped(t, my_speed):
@@ -175,7 +187,7 @@ class TrafficAnalyzer:
             dedup_key=f"hazard_{t.cid}", ttl=8.0, tone="urgent",
         ))
 
-    def _update_track(self, v: dict, me: dict, my_est: float,
+    def _update_track(self, v: dict, me: dict,
                       track_len: float, now: float, my_speed: float = 0.0) -> CarTrack:
         t = self.tracks.get(v["id"])
         if t is None:
@@ -194,13 +206,17 @@ class TrafficAnalyzer:
         t.last_sample_t = now
         # '상위 클래스' 판정: 클래스가 달라야만 한다. 같은 클래스는 아무리
         # 빨라도 랩핑 트래픽이 아니라 배틀 상대 (양보 콜 대상 아님).
-        # 예상 랩타임은 LMU에서 부실할 수 있어 보조 신호로만 쓴다.
+        # LMU의 mEstimatedLapTime은 전 차량 동일값이라 쓰지 않고 클래스 서열로 판정.
         if v["cls"] == me["cls"]:
             t.faster = False
-        elif v["estimated_lap"] > 0 and my_est > 0:
-            t.faster = v["estimated_lap"] < my_est - FASTER_CLASS_MARGIN
         else:
-            t.faster = True    # 클래스가 다르고 랩타임 불명 → 접근 예고 대상으로 취급
+            mine, theirs = class_rank(me["cls"]), class_rank(v["cls"])
+            if mine > 0 and theirs > 0:
+                t.faster = theirs > mine
+            else:
+                # 서열 불명인 낯선 클래스명 → 접근 예고 대상으로 취급
+                # (실제 닫힘 속도 조건이 오탐을 걸러준다)
+                t.faster = True
         # 좌우 판정: 나란할 때만 의미 있음
         lat = v.get("path_lat")
         my_lat = me.get("path_lat")
