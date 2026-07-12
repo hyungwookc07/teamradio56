@@ -252,6 +252,14 @@ def main() -> int:
     parser.add_argument("--record", metavar="PATH", help="텔레메트리를 JSONL로 녹화")
     args = parser.parse_args()
 
+    # Windows 콘솔(cp949)에서 이모지/한글 로그가 인코딩 에러 내지 않게
+    if sys.platform == "win32":
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
+
     cfg = load_config(args.config)
     logging.basicConfig(
         level=getattr(logging, cfg.get("app.log_level", "INFO").upper(), logging.INFO),
