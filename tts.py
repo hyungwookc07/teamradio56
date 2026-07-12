@@ -112,20 +112,44 @@ class ElevenLabsEngine(TTSEngine):
             return None
 
 
+class RadioFXEngine(TTSEngine):
+    """내부 엔진 출력에 무전기 효과를 입히는 래퍼. 처리 결과는 파일로 캐시."""
+
+    def __init__(self, inner: TTSEngine, noise: float = 0.004):
+        self.inner = inner
+        self.noise = noise
+
+    def synth(self, text: str) -> Optional[str]:
+        src = self.inner.synth(text)
+        if src is None:
+            return None
+        dst = os.path.splitext(src)[0] + "_rfx.wav"
+        if os.path.exists(dst):
+            return dst
+        import radiofx
+        return radiofx.process(src, dst, noise=self.noise) or src
+
+
 def build_engine(cfg) -> TTSEngine:
     cache_dir = cfg.get("tts.cache_dir", "audio_cache")
     engine = cfg.get("tts.engine", "edge")
-    if engine == "elevenlabs":
-        key = cfg.get("tts.elevenlabs_api_key", "")
-        vid = cfg.get("tts.elevenlabs_voice_id", "")
-        if key and vid:
-            return ElevenLabsEngine(cache_dir, key, vid)
-        log.warning("elevenlabs 설정 미비 — edge로 폴백")
-    return EdgeTTSEngine(
-        cache_dir,
-        cfg.get("tts.edge_voice", "ko-KR-InJoonNeural"),
-        cfg.get("tts.edge_rate", "+10%"),
-    )
+    built: TTSEngine
+    if engine == "elevenlabs" and cfg.get("tts.elevenlabs_api_key", "") \
+            and cfg.get("tts.elevenlabs_voice_id", ""):
+        built = ElevenLabsEngine(cache_dir,
+                                 cfg.get("tts.elevenlabs_api_key", ""),
+                                 cfg.get("tts.elevenlabs_voice_id", ""))
+    else:
+        if engine == "elevenlabs":
+            log.warning("elevenlabs 설정 미비 — edge로 폴백")
+        built = EdgeTTSEngine(
+            cache_dir,
+            cfg.get("tts.edge_voice", "ko-KR-InJoonNeural"),
+            cfg.get("tts.edge_rate", "+10%"),
+        )
+    if cfg.get("tts.radio_fx", True):
+        built = RadioFXEngine(built, noise=cfg.get("tts.radio_noise", 0.004))
+    return built
 
 
 class AudioPlayer:

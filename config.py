@@ -44,6 +44,8 @@ DEFAULTS: dict[str, Any] = {
         "elevenlabs_api_key": "",
         "elevenlabs_voice_id": "",
         "cache_dir": "audio_cache",
+        "radio_fx": True,           # 무전기 효과 (밴드패스+새추레이션+스켈치)
+        "radio_noise": 0.004,       # 무전 배경 노이즈 레벨 (0 = 노이즈 없음)
     },
     "llm": {
         "enabled": True,

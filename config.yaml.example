@@ -22,12 +22,15 @@ voice:
     무전 특유의 짧은 문장을 쓴다.
 
 tts:
-  engine: edge               # edge | elevenlabs
-  edge_voice: ko-KR-InJoonNeural   # ko-KR-SunHiNeural(여성) 등으로 교체 가능
+  engine: edge               # edge | elevenlabs (11labs가 훨씬 자연스러움, 유료)
+  edge_voice: ko-KR-InJoonNeural   # ko-KR-HyunsuMultilingualNeural(더 자연스러운 남성)
+                                   # ko-KR-SunHiNeural(여성) 등으로 교체 가능
   edge_rate: "+10%"          # 말 속도
   elevenlabs_api_key: ""     # engine: elevenlabs 사용 시
   elevenlabs_voice_id: ""
   cache_dir: audio_cache
+  radio_fx: true             # 무전기 효과 — TTS 기계음을 팀라디오 질감으로 가림
+  radio_noise: 0.004         # 무전 배경 노이즈 (0 = 없음, 0.01 = 지직거림 강함)
 
 llm:
   enabled: true
