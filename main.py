@@ -39,6 +39,7 @@ from analyzers.racecontrol import RaceControlAnalyzer
 from analyzers.rivals import RivalAnalyzer
 from analyzers.health import HealthAnalyzer
 from training import LapCoach, TrackHistory, Debriefer
+from resttelemetry import RestTelemetry
 from voice import VoiceGenerator
 from tts import AudioPlayer, SpeechLogger, VoiceWorker, build_engine
 
@@ -93,6 +94,15 @@ class CrewChiefApp:
         self.coach = LapCoach()
         self.history = TrackHistory(cfg.get("app.data_dir", "data"))
         self.debriefer = Debriefer()
+
+        # LMU 내장 REST API 보조 소스 — 공유 메모리에 없는 정보(가상 에너지/
+        # 날씨 예보/피트 전략)를 저주파로 보충. 미지원 환경이면 자동 비활성.
+        # 리플레이 모드에선 의미 없으므로 시작하지 않는다.
+        # TODO(REST): tools/probe_rest.py로 실제 응답 확보 후 fuel(가상 에너지),
+        #             strategy(날씨 예보), 피트 전 브리핑(피트 전략)에 연결.
+        self.rest = RestTelemetry(cfg)
+        if not isinstance(source, ReplayTelemetry):
+            self.rest.start()
         self.voice_gen = VoiceGenerator(cfg, self.state)
         speech_log_path = None
         if cfg.get("app.speech_log", True):
@@ -331,6 +341,7 @@ class CrewChiefApp:
         except Exception:
             log.exception("디브리핑 생성 실패")
         self.worker.stop()
+        self.rest.stop()
         if self.cfg.get("app.save_race_json", True):
             self.state.save_json(self.cfg.get("app.data_dir", "data"))
         if self.recorder is not None:

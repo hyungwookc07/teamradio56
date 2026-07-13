@@ -47,6 +47,11 @@ DEFAULTS: dict[str, Any] = {
         "radio_fx": True,           # 무전기 효과 (밴드패스+새추레이션+스켈치)
         "radio_noise": 0.004,       # 무전 배경 노이즈 레벨 (0 = 노이즈 없음)
     },
+    "rest": {                       # LMU 내장 REST API 보조 소스 (스캐폴딩)
+        "enabled": True,            # 미지원 환경이면 자동 비활성 — 꺼도 무방
+        "base_url": "http://localhost:6397",
+        "poll_sec": 3.0,            # 저주파 폴링 (전략 정보라 3초면 충분)
+    },
     "llm": {
         "enabled": True,
         "model": "claude-haiku-4-5",
