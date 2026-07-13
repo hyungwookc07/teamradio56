@@ -49,6 +49,8 @@ class EventType:
     LAP_ANALYSIS = "lap_analysis"       # LLM 판단형 멘트 (v0.4)
     STINT_BRIEFING = "stint_briefing"   # LLM (v0.4)
     SESSION_BRIEFING = "session_briefing"  # 세션 시작 브리핑 (세션당 1회)
+    LAP_TIME_REPORT = "lap_time_report"    # HUD 대체: 매 랩 랩타임 콜 (옵션)
+    STATUS_REPORT = "status_report"        # HUD 대체: N랩마다 상황 리포트 (옵션)
     RACE_START = "race_start"
     RACE_END = "race_end"
     LAP_FEEDBACK = "lap_feedback"       # 트레이닝: 섹터 델타 피드백

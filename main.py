@@ -38,6 +38,7 @@ from analyzers.strategy import StrategyEngine
 from analyzers.racecontrol import RaceControlAnalyzer
 from analyzers.rivals import RivalAnalyzer
 from analyzers.health import HealthAnalyzer
+from analyzers.reporter import StatusReporter
 from training import LapCoach, TrackHistory, Debriefer
 from resttelemetry import RestTelemetry
 from voice import VoiceGenerator
@@ -91,6 +92,7 @@ class CrewChiefApp:
         self.racecontrol = RaceControlAnalyzer(cfg)
         self.rivals = RivalAnalyzer(cfg)
         self.health = HealthAnalyzer(cfg)
+        self.reporter = StatusReporter(cfg)   # HUD 대체 정기 무전 (기본 꺼짐)
         self.coach = LapCoach()
         self.history = TrackHistory(cfg.get("app.data_dir", "data"))
         self.debriefer = Debriefer()
@@ -198,7 +200,8 @@ class CrewChiefApp:
         self.state.reset()
         self.bus.clear()
         for analyzer in (self.traffic, self.racecontrol, self.rivals,
-                         self.health, self.strategy, self.history, self.pace):
+                         self.health, self.strategy, self.history, self.pace,
+                         self.reporter):
             reset = getattr(analyzer, "reset", None)
             if reset:
                 reset()
@@ -292,6 +295,9 @@ class CrewChiefApp:
             ))
         # 전략 엔진: 판단이 필요한 전이 시점에만 LLM 전략 멘트 트리거
         self.strategy.on_lap(self.state, snap, self.bus, fuel_status, tyre_status)
+
+        # HUD 대체 정기 무전 (reports 설정으로 켜짐)
+        self.reporter.on_lap(self.state, snap, self.bus, fuel_status, tyre_status)
 
         # 클래스 순위 변동 / 라이벌 페이스 인텔 / 차량 컨디션
         self.racecontrol.on_lap(self.state, snap, self.bus)

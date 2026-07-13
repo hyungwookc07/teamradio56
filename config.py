@@ -47,6 +47,10 @@ DEFAULTS: dict[str, Any] = {
         "radio_fx": True,           # 무전기 효과 (밴드패스+새추레이션+스켈치)
         "radio_noise": 0.004,       # 무전 배경 노이즈 레벨 (0 = 노이즈 없음)
     },
+    "reports": {                    # HUD 대체용 정기 무전 (기본 꺼짐 — 침묵 철학의 예외)
+        "laptime_every_lap": False,  # 매 랩 랩타임 콜
+        "status_every_laps": 0,      # N랩마다 순위/갭/연료/타이어 리포트 (0=끔)
+    },
     "rest": {                       # LMU 내장 REST API 보조 소스 (스캐폴딩)
         "enabled": True,            # 미지원 환경이면 자동 비활성 — 꺼도 무방
         "base_url": "http://localhost:6397",
@@ -104,6 +108,8 @@ DEFAULTS: dict[str, Any] = {
         "sector_yellow": 45,
         "blue_flag": 45,         # 랩핑 트레인 통과 중 반복 억제
         "race_milestone": 60,
+        "lap_time_report": 25,   # HUD 대체: 매 랩 랩타임 (짧은 트랙 대응)
+        "status_report": 60,     # HUD 대체: 상황 리포트
         "position_change": 45,
         "rival_pit": 90,
         "rival_pace": 240,
