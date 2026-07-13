@@ -235,6 +235,9 @@ class SharedMemoryTelemetry(TelemetrySource):
             "track_temp": round(info.mTrackTemp, 1),
             "avg_wetness": round(info.mAvgPathWetness, 3),
             "num_vehicles": num,
+            # 게임 메시지 센터 (Extended) — 패널티 종류/사유 파싱 등에 사용
+            "status_message": cbytes_to_str(ext.mStatusMessage) if ext else "",
+            "history_message": cbytes_to_str(ext.mLastHistoryMessage) if ext else "",
         }
         snap.vehicles = [_vehicle_scoring_to_dict(scor.mVehicles[i]) for i in range(num)]
 

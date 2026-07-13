@@ -30,6 +30,42 @@ Y_PIT_LEAD_LAP = 3
 Y_PIT_OPEN = 4
 
 MILESTONES_MIN = (60, 30, 10)      # 남은 시간 안내 시점 (분)
+
+
+def _parse_penalty(text: str) -> Optional[tuple]:
+    """
+    게임 메시지에서 패널티 종류/사유 추출 → (종류, 사유) 또는 None.
+    LMU/rF2 메시지는 영어 ("Drive Thru Penalty: Pit Lane Speeding" 등).
+    키워드 매칭이라 새 문구가 나오면 여기에 추가한다.
+    """
+    tl = text.lower()
+    if not any(k in tl for k in ("penalty", "drive thru", "drive-thru",
+                                 "drive through", "stop/go", "stop go")):
+        return None
+    if "drive" in tl:
+        kind = "드라이브 스루"
+    elif "stop" in tl:
+        kind = "스탑고"
+    elif "second" in tl or "sec " in tl or "time" in tl:
+        kind = "타임 패널티"
+    else:
+        kind = "패널티"
+    reason = ""
+    if "pit" in tl and ("speed" in tl or "spd" in tl):
+        reason = "피트레인 속도위반"
+    elif "cut" in tl or "track limit" in tl or "boundar" in tl:
+        reason = "트랙 리밋"
+    elif "yellow" in tl or "full course" in tl or "caution" in tl:
+        reason = "옐로 구간 위반"
+    elif "false start" in tl or "jump" in tl:
+        reason = "스타트 위반"
+    elif "contact" in tl or "avoidable" in tl:
+        reason = "접촉"
+    elif "blocking" in tl:
+        reason = "블로킹"
+    elif "rejoin" in tl:
+        reason = "위험한 복귀"
+    return (kind, reason)
 PIT_LIMIT_MARGIN_KMH = 5.0         # 리밋 + 이 이상 넘으면 경고
 DEFAULT_PIT_LIMIT_KMH = 80.0       # Extended에서 리밋을 못 읽으면 이 값 사용
 
@@ -52,6 +88,10 @@ class RaceControlAnalyzer:
         self._limiter_warned_t = 0.0
         self._blue_flag = False
         self._penalties: Optional[int] = None   # 미소화 패널티 수 (None=기준 미확보)
+        self._recent_msgs: list = []            # (t, text) — 최근 게임 메시지
+        self._last_msgs = {"status": "", "history": ""}
+        self._pen_due: Optional[float] = None   # 패널티 콜 예정 시각 (메시지 대기)
+        self._pen_count = 0
 
     # -- 5Hz 틱: 코스 상태 전이 ------------------------------------------------
 
@@ -74,7 +114,8 @@ class RaceControlAnalyzer:
         self._check_sector_yellow(ses, me, snap.t, bus)
         self._check_pit_limiter(ses, snap, bus)
         self._check_blue_flag(me, state, bus)
-        self._check_penalties(me, state, bus)
+        self._collect_messages(ses, snap.t)
+        self._check_penalties(me, snap.t, state, bus)
         if state.is_race and phase == PHASE_GREEN:
             self._check_time_milestones(state, ses, bus)
 
@@ -175,13 +216,26 @@ class RaceControlAnalyzer:
             state.add_narrative("(이벤트) 블루 플래그 — 랩 앞선 차에 양보")
         self._blue_flag = blue
 
-    def _check_penalties(self, me: dict, state: SessionState,
+    def _collect_messages(self, ses: dict, now: float) -> None:
+        """게임 메시지 센터(Extended) 변화를 최근 목록에 쌓는다 (패널티 사유 파싱용)."""
+        for key, field in (("status", "status_message"),
+                           ("history", "history_message")):
+            text = (ses.get(field) or "").strip()
+            if text and text != self._last_msgs[key]:
+                self._last_msgs[key] = text
+                self._recent_msgs.append((now, text))
+        # 10초 지난 메시지는 버린다
+        self._recent_msgs = [(t, m) for t, m in self._recent_msgs if now - t <= 10.0]
+
+    PENALTY_WAIT_SEC = 1.5    # 카운트 증가 후 종류 메시지가 뜰 시간을 기다림
+
+    def _check_penalties(self, me: dict, now: float, state: SessionState,
                          bus: EventBus) -> None:
         """
         미소화 패널티 수(mNumPenalties) 변화 감시.
-          - 증가 → 패널티 부여 콜 (긴급 풀) + 이슈 등록 (LLM 전략 문맥에 반영)
+          - 증가 → 게임 메시지에서 종류/사유를 파싱해 구체적으로 콜
+            (메시지가 못 잡히면 일반 긴급 풀로 폴백)
           - 0으로 감소 → 소화 완료 안심 멘트 + 이슈 해제
-        공유 메모리엔 패널티 종류(드라이브스루/스탑고)가 없어 개수만 다룬다.
         세션 중간 합류 시 첫 관측값은 기준으로만 쓰고 콜하지 않는다.
         """
         n = int(me.get("num_penalties", 0) or 0)
@@ -191,16 +245,12 @@ class RaceControlAnalyzer:
                 state.set_issue("penalty", f"미소화 패널티 {n}건")
             return
         if n > self._penalties:
-            bus.push(Event(
-                type=EventType.PENALTY, priority=Priority.CRITICAL,
-                data={"pool": "penalty"}, dedup_key=f"pen_{n}",
-                tone="urgent", ttl=10.0,
-                bridge={"topic": f"방금 패널티가 부여됐다 (미소화 {n}건). "
-                                 "다음 피트와 엮어 언제 소화할지 판단을 짧게."},
-            ))
+            # 종류 메시지가 카운트보다 늦게 뜰 수 있어 잠깐 기다렸다 콜
+            self._pen_due = now + self.PENALTY_WAIT_SEC
+            self._pen_count = n
             state.set_issue("penalty", f"미소화 패널티 {n}건")
-            state.add_narrative(f"(이벤트) 패널티 부여 (미소화 {n}건)")
         elif n < self._penalties and n == 0:
+            self._pen_due = None
             bus.push(Event(
                 type=EventType.PENALTY, priority=Priority.NORMAL,
                 message="패널티 클리어. 이제 깨끗해, 다시 니 레이스 하자.",
@@ -209,6 +259,43 @@ class RaceControlAnalyzer:
             state.clear_issue("penalty")
             state.add_narrative("(이벤트) 패널티 소화 완료")
         self._penalties = n
+
+        if self._pen_due is not None and now >= self._pen_due:
+            self._pen_due = None
+            self._emit_penalty(self._pen_count, now, state, bus)
+
+    def _emit_penalty(self, n: int, now: float, state: SessionState,
+                      bus: EventBus) -> None:
+        detail = None
+        for t, msg in reversed(self._recent_msgs):
+            detail = _parse_penalty(msg)
+            if detail:
+                break
+        if detail:
+            kind, reason = detail
+            head = f"패널티야 — {kind}" + (f", {reason}" if reason else "")
+            advice = {
+                "드라이브 스루": "다음 랩에 피트 통과하자, 리미터 잊지 마.",
+                "스탑고": "박스에서 정지 시간 지키면 돼, 침착하게.",
+                "타임 패널티": "결과에 더해지는 거니까 페이스로 만회하자.",
+            }.get(kind, "처리 타이밍은 내가 계산해서 불러줄게.")
+            message = f"{head}. {advice}"
+            issue = f"미소화 패널티 {n}건 ({kind}{', ' + reason if reason else ''})"
+            topic = f"방금 패널티가 부여됐다: {kind}, 사유 {reason or '불명'}. " \
+                    "다음 피트와 엮어 언제 소화할지 판단을 짧게."
+        else:
+            message = None                     # 일반 풀로 폴백
+            issue = f"미소화 패널티 {n}건"
+            topic = f"방금 패널티가 부여됐다 (미소화 {n}건). " \
+                    "다음 피트와 엮어 언제 소화할지 판단을 짧게."
+        bus.push(Event(
+            type=EventType.PENALTY, priority=Priority.CRITICAL,
+            data={"pool": "penalty"}, message=message,
+            dedup_key=f"pen_{n}", tone="urgent", ttl=10.0,
+            bridge={"topic": topic},
+        ))
+        state.set_issue("penalty", issue)
+        state.add_narrative(f"(이벤트) 패널티 부여 — {issue}")
 
     def _check_pit_limiter(self, ses: dict, snap: Snapshot, bus: EventBus) -> None:
         p = snap.player
