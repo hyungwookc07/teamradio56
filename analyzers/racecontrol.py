@@ -51,6 +51,7 @@ class RaceControlAnalyzer:
         self._class_place: Optional[int] = None
         self._limiter_warned_t = 0.0
         self._blue_flag = False
+        self._penalties: Optional[int] = None   # 미소화 패널티 수 (None=기준 미확보)
 
     # -- 5Hz 틱: 코스 상태 전이 ------------------------------------------------
 
@@ -73,6 +74,7 @@ class RaceControlAnalyzer:
         self._check_sector_yellow(ses, me, snap.t, bus)
         self._check_pit_limiter(ses, snap, bus)
         self._check_blue_flag(me, state, bus)
+        self._check_penalties(me, state, bus)
         if state.is_race and phase == PHASE_GREEN:
             self._check_time_milestones(state, ses, bus)
 
@@ -172,6 +174,41 @@ class RaceControlAnalyzer:
             ))
             state.add_narrative("(이벤트) 블루 플래그 — 랩 앞선 차에 양보")
         self._blue_flag = blue
+
+    def _check_penalties(self, me: dict, state: SessionState,
+                         bus: EventBus) -> None:
+        """
+        미소화 패널티 수(mNumPenalties) 변화 감시.
+          - 증가 → 패널티 부여 콜 (긴급 풀) + 이슈 등록 (LLM 전략 문맥에 반영)
+          - 0으로 감소 → 소화 완료 안심 멘트 + 이슈 해제
+        공유 메모리엔 패널티 종류(드라이브스루/스탑고)가 없어 개수만 다룬다.
+        세션 중간 합류 시 첫 관측값은 기준으로만 쓰고 콜하지 않는다.
+        """
+        n = int(me.get("num_penalties", 0) or 0)
+        if self._penalties is None:
+            self._penalties = n
+            if n > 0:
+                state.set_issue("penalty", f"미소화 패널티 {n}건")
+            return
+        if n > self._penalties:
+            bus.push(Event(
+                type=EventType.PENALTY, priority=Priority.CRITICAL,
+                data={"pool": "penalty"}, dedup_key=f"pen_{n}",
+                tone="urgent", ttl=10.0,
+                bridge={"topic": f"방금 패널티가 부여됐다 (미소화 {n}건). "
+                                 "다음 피트와 엮어 언제 소화할지 판단을 짧게."},
+            ))
+            state.set_issue("penalty", f"미소화 패널티 {n}건")
+            state.add_narrative(f"(이벤트) 패널티 부여 (미소화 {n}건)")
+        elif n < self._penalties and n == 0:
+            bus.push(Event(
+                type=EventType.PENALTY, priority=Priority.NORMAL,
+                message="패널티 클리어. 이제 깨끗해, 다시 니 레이스 하자.",
+                dedup_key="pen_clear", ttl=20.0, tone="casual",
+            ))
+            state.clear_issue("penalty")
+            state.add_narrative("(이벤트) 패널티 소화 완료")
+        self._penalties = n
 
     def _check_pit_limiter(self, ses: dict, snap: Snapshot, bus: EventBus) -> None:
         p = snap.player
