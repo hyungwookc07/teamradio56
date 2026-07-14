@@ -439,7 +439,7 @@ class TrafficAnalyzer:
                 side = {"left": "왼쪽에", "right": "오른쪽에"}.get(cars[0].side, "옆에")
                 clauses.append(f"{side} {class_ko(cars[0].cls)} 나란히")
             elif st == NEARBY_BEHIND:
-                clauses.append(f"뒤로 {names_of(cars)} 붙는다")
+                clauses.append(f"뒤에 {names_of(cars)} 붙는다")
             else:
                 clauses.append(f"{names_of(cars)} 접근 중")
         if not clauses:
