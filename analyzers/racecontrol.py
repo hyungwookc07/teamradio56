@@ -34,7 +34,7 @@ MILESTONES_MIN = (60, 30, 10)      # 남은 시간 안내 시점 (분)
 
 def _parse_penalty(text: str) -> Optional[tuple]:
     """
-    게임 메시지에서 패널티 종류/사유 추출 → (종류, 사유) 또는 None.
+    게임 메시지에서 페널티 종류/사유 추출 → (종류, 사유) 또는 None.
     LMU/rF2 메시지는 영어 ("Drive Thru Penalty: Pit Lane Speeding" 등).
     키워드 매칭이라 새 문구가 나오면 여기에 추가한다.
     """
@@ -47,9 +47,9 @@ def _parse_penalty(text: str) -> Optional[tuple]:
     elif "stop" in tl:
         kind = "스탑고"
     elif "second" in tl or "sec " in tl or "time" in tl:
-        kind = "타임 패널티"
+        kind = "타임 페널티"
     else:
-        kind = "패널티"
+        kind = "페널티"
     reason = ""
     if "pit" in tl and ("speed" in tl or "spd" in tl):
         reason = "피트레인 속도위반"
@@ -87,10 +87,10 @@ class RaceControlAnalyzer:
         self._class_place: Optional[int] = None
         self._limiter_warned_t = 0.0
         self._blue_flag = False
-        self._penalties: Optional[int] = None   # 미소화 패널티 수 (None=기준 미확보)
+        self._penalties: Optional[int] = None   # 미소화 페널티 수 (None=기준 미확보)
         self._recent_msgs: list = []            # (t, text) — 최근 게임 메시지
         self._last_msgs = {"status": "", "history": ""}
-        self._pen_due: Optional[float] = None   # 패널티 콜 예정 시각 (메시지 대기)
+        self._pen_due: Optional[float] = None   # 페널티 콜 예정 시각 (메시지 대기)
         self._pen_count = 0
 
     # -- 5Hz 틱: 코스 상태 전이 ------------------------------------------------
@@ -217,7 +217,7 @@ class RaceControlAnalyzer:
         self._blue_flag = blue
 
     def _collect_messages(self, ses: dict, now: float) -> None:
-        """게임 메시지 센터(Extended) 변화를 최근 목록에 쌓는다 (패널티 사유 파싱용)."""
+        """게임 메시지 센터(Extended) 변화를 최근 목록에 쌓는다 (페널티 사유 파싱용)."""
         for key, field in (("status", "status_message"),
                            ("history", "history_message")):
             text = (ses.get(field) or "").strip()
@@ -232,7 +232,7 @@ class RaceControlAnalyzer:
     def _check_penalties(self, me: dict, now: float, state: SessionState,
                          bus: EventBus) -> None:
         """
-        미소화 패널티 수(mNumPenalties) 변화 감시.
+        미소화 페널티 수(mNumPenalties) 변화 감시.
           - 증가 → 게임 메시지에서 종류/사유를 파싱해 구체적으로 콜
             (메시지가 못 잡히면 일반 긴급 풀로 폴백)
           - 0으로 감소 → 소화 완료 안심 멘트 + 이슈 해제
@@ -242,22 +242,22 @@ class RaceControlAnalyzer:
         if self._penalties is None:
             self._penalties = n
             if n > 0:
-                state.set_issue("penalty", f"미소화 패널티 {n}건")
+                state.set_issue("penalty", f"미소화 페널티 {n}건")
             return
         if n > self._penalties:
             # 종류 메시지가 카운트보다 늦게 뜰 수 있어 잠깐 기다렸다 콜
             self._pen_due = now + self.PENALTY_WAIT_SEC
             self._pen_count = n
-            state.set_issue("penalty", f"미소화 패널티 {n}건")
+            state.set_issue("penalty", f"미소화 페널티 {n}건")
         elif n < self._penalties and n == 0:
             self._pen_due = None
             bus.push(Event(
                 type=EventType.PENALTY, priority=Priority.NORMAL,
-                message="패널티 클리어. 이제 깨끗해, 다시 니 레이스 하자.",
+                message="페널티 클리어. 이제 깨끗해, 다시 니 레이스 하자.",
                 dedup_key="pen_clear", ttl=20.0, tone="casual",
             ))
             state.clear_issue("penalty")
-            state.add_narrative("(이벤트) 패널티 소화 완료")
+            state.add_narrative("(이벤트) 페널티 소화 완료")
         self._penalties = n
 
         if self._pen_due is not None and now >= self._pen_due:
@@ -273,20 +273,20 @@ class RaceControlAnalyzer:
                 break
         if detail:
             kind, reason = detail
-            head = f"패널티야 — {kind}" + (f", {reason}" if reason else "")
+            head = f"페널티야 — {kind}" + (f", {reason}" if reason else "")
             advice = {
                 "드라이브 스루": "다음 랩에 피트 통과하자, 리미터 잊지 마.",
                 "스탑고": "박스에서 정지 시간 지키면 돼, 침착하게.",
-                "타임 패널티": "결과에 더해지는 거니까 페이스로 만회하자.",
+                "타임 페널티": "결과에 더해지는 거니까 페이스로 만회하자.",
             }.get(kind, "처리 타이밍은 내가 계산해서 불러줄게.")
             message = f"{head}. {advice}"
-            issue = f"미소화 패널티 {n}건 ({kind}{', ' + reason if reason else ''})"
-            topic = f"방금 패널티가 부여됐다: {kind}, 사유 {reason or '불명'}. " \
+            issue = f"미소화 페널티 {n}건 ({kind}{', ' + reason if reason else ''})"
+            topic = f"방금 페널티가 부여됐다: {kind}, 사유 {reason or '불명'}. " \
                     "다음 피트와 엮어 언제 소화할지 판단을 짧게."
         else:
             message = None                     # 일반 풀로 폴백
-            issue = f"미소화 패널티 {n}건"
-            topic = f"방금 패널티가 부여됐다 (미소화 {n}건). " \
+            issue = f"미소화 페널티 {n}건"
+            topic = f"방금 페널티가 부여됐다 (미소화 {n}건). " \
                     "다음 피트와 엮어 언제 소화할지 판단을 짧게."
         bus.push(Event(
             type=EventType.PENALTY, priority=Priority.CRITICAL,
@@ -295,7 +295,7 @@ class RaceControlAnalyzer:
             bridge={"topic": topic},
         ))
         state.set_issue("penalty", issue)
-        state.add_narrative(f"(이벤트) 패널티 부여 — {issue}")
+        state.add_narrative(f"(이벤트) 페널티 부여 — {issue}")
 
     def _check_pit_limiter(self, ses: dict, snap: Snapshot, bus: EventBus) -> None:
         p = snap.player

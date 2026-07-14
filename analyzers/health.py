@@ -248,7 +248,7 @@ class HealthAnalyzer:
         heavy_zones = [DENT_ZONES[i] for i, s in enumerate(dents) if s >= 2]
         light = any(s == 1 for s in dents)
         if heavy_zones:
-            problems.append(f"{'/'.join(heavy_zones)} 보디 손상 큼")
+            problems.append(f"{'/'.join(heavy_zones)} 보디 손상 심각")
 
         if problems:
             need_box = bool(detached or flats)
@@ -342,9 +342,9 @@ class HealthAnalyzer:
         # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
         accepted = bus.push(Event(
             type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
-            message="직선에서 조향이 계속 한쪽으로 가 있어. 아까 충격으로 "
-                    "얼라인 틀어진 것 같아. 차 쏠리는 거 맞지? "
-                    "타이어 한쪽만 갉아먹으니까 페이스 보고 수리 판단하자.",
+            message="직선에서도 핸들이 한쪽으로 쏠려 있어. 아까 충격으로 "
+                    "얼라인 틀어진 것 같아. 타이어 한쪽만 갉아먹으니까 "
+                    "페이스 보고 수리 판단하자.",
             dedup_key="align_damage", ttl=20.0, tone="casual",
         ))
         if not accepted:
@@ -378,7 +378,7 @@ class HealthAnalyzer:
         self._instab_called = True
         bus.push(Event(
             type=EventType.DAMAGE_REPORT, priority=Priority.CRITICAL,
-            message="리어가 안 잡힌다, 차가 계속 돌아. 리어 에어로 죽은 거야. "
+            message="리어가 안 잡혀, 차가 계속 돌아. 리어 에어로 죽은 거야. "
                     "이대로는 사고 나. 무리하지 말고 박스, 수리하자.",
             dedup_key="rear_instab", tone="urgent", ttl=15.0,
         ))

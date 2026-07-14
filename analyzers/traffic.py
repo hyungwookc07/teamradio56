@@ -446,4 +446,5 @@ class TrafficAnalyzer:
             return None
         ahead_free = not any(t.state == NEARBY_AHEAD for t in active)
         tail = " 앞은 여유." if ahead_free and len(clauses) >= 2 else ""
-        return ", ".join(clauses) + "." + tail
+        # 절 안에 쉼표(클래스 나열)가 있어 절 사이는 마침표로 끊는다
+        return ". ".join(clauses) + "." + tail

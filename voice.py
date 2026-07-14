@@ -406,16 +406,18 @@ class VoiceGenerator:
         return "새 스틴트야. 첫 랩은 타이어 아끼고, 리듬부터 찾자."
 
     def _render_rival_pit(self, d: dict, tone: str = "casual") -> Optional[str]:
-        base = f"클래스 {d['rel']} P{d['their_class_place']} {d['driver']}, 방금 피트 들어갔어."
+        # 영어 드라이버 이름은 TTS가 어색해 순위로만 특정한다
+        base = f"클래스 {d['rel']} P{d['their_class_place']} 차, 방금 피트 들어갔어."
         if d.get("undercut_risk"):
             return base + " 언더컷 노리는 거야. 우리 타이밍도 앞당길지 판단할게."
         return base + " 나오면 갭 다시 계산해서 불러줄게."
 
     def _render_rival_pace(self, d: dict, tone: str = "casual") -> Optional[str]:
+        # 드라이버 이름은 영어라 조사가 안 맞고 TTS도 어색 — 앞차/뒤차로 부른다
         if d["mode"] == "catch":
-            return (f"앞 {d['driver']}가 랩당 {d['diff']:.1f}초 느려. "
+            return (f"클래스 앞차가 랩당 {d['diff']:.1f}초 느려. "
                     f"이 페이스면 {d['laps']}랩 안에 잡는다.")
-        return (f"뒤 {d['driver']}가 랩당 {d['diff']:.1f}초 빨라. "
+        return (f"클래스 뒤차가 랩당 {d['diff']:.1f}초 빨라. "
                 f"{d['laps']}랩쯤 뒤에 온다. 미리 준비하자.")
 
     def _render_tyre_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
@@ -440,12 +442,12 @@ class VoiceGenerator:
                 return f"뒤차가 랩당 {abs(rate):.1f}초씩 붙고 있어. 갭 {gap_s}초. 서두르지 말고 실수만 줄이자."
             if rate >= 0.15:
                 return f"뒤차랑 갭이 {gap_s}초로 벌어졌어. 관리 잘 되고 있어."
-            return f"뒤차와 {gap_s}초, 갭 유지 중이야. 이 리듬 좋아."
+            return f"뒤차랑 {gap_s}초, 갭 유지 중이야. 이 리듬 좋아."
         if rate <= -0.15:
-            return f"앞차 좁혀지고 있어. 갭 {gap_s}초, 랩당 {abs(rate):.1f}초씩. 갈 수 있어."
+            return f"앞차랑 갭 줄고 있어. {gap_s}초, 랩당 {abs(rate):.1f}초씩. 갈 수 있어."
         if rate >= 0.15:
             return f"앞차랑 {gap_s}초로 벌어지는 중이야. 무리하진 말자."
-        return f"앞차와 {gap_s}초, 갭 그대로야. 리듬 유지하자."
+        return f"앞차랑 {gap_s}초, 갭 그대로야. 리듬 유지하자."
 
 
 def iter_pregen_texts(pool: PhrasePool):
