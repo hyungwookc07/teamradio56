@@ -73,7 +73,9 @@ DEFAULTS: dict[str, Any] = {
         "traffic_race_only": False,   # true면 연습/퀄리(고스트 많음)에선 트래픽 콜 끔
         "sector_yellow_calls": True,  # LMU가 mSectorFlag를 이상하게 채우면 false로
         "proximity_m": 50.0,          # 근접(NEARBY) 진입 거리 (m)
-        "alongside_m": 12.0,          # 나란히(ALONGSIDE) 판정 거리 (m)
+        "alongside_m": 5.5,           # 나란히(ALONGSIDE) 판정 거리 (m) — 차체가
+                                      # 실제로 겹치는 오버랩 기준 (차 한 대 길이 남짓).
+                                      # 크게 잡으면 아직 뒤에 있는 차에 '옆' 콜이 나간다
         "side_invert": False,         # 좌우 콜이 반대로 나오면 true (mPathLateral 부호)
         "start_quiet_sec": 30.0,      # 레이스 스타트 후 트래픽 콜 정지 시간 (혼전)
         "tyre_temp_imbalance": 12.0,  # 좌우/전후 온도 불균형 경고 (C)
