@@ -39,6 +39,11 @@ THREAT_RANK = {ALONGSIDE: 3, NEARBY_BEHIND: 2, APPROACHING: 1,
 
 GREEN_PHASES = (5, 6)
 MIN_CLOSING_MS = 2.0           # m/s — 이 이상 좁혀질 때만 '접근'
+# 나란히 콜 리드 보정: 판정~재생까지의 지연(5Hz 샘플 + 큐 + 재생 시작)만큼
+# 상대 접근 속도에 비례해 창을 미리 연다. 콜이 '들리는 순간'에 실제로
+# 오버랩이 되도록. 느리게 머무는 차는 보정 0에 수렴.
+CALL_LATENCY_SEC = 0.5
+ALONGSIDE_LEAD_MAX_M = 5.0     # 리드 보정 상한 (과속 접근으로 창이 과도해지는 것 방지)
 ETA_WINDOW = (0.0, 10.0)       # 접근 예고: 도달 예상 3~10초 (상한만 설정, 하한은 근접콜이 커버)
 SIDE_LAT_MIN = 1.2             # 좌우 판정 최소 횡간격 (m) — 이하면 "옆"으로만
 STATE_REANNOUNCE_SEC = 45.0    # 같은 차·같은 상태 재발화 최소 간격
@@ -288,7 +293,9 @@ class TrafficAnalyzer:
 
     def _classify(self, t: CarTrack) -> str:
         g = t.gap_m
-        if abs(g) <= self.alongside_m:
+        # 나란히: 기준은 실제 차체 오버랩(차 길이), 접근 속도만큼 리드 보정
+        lead = min(abs(t.rate or 0.0) * CALL_LATENCY_SEC, ALONGSIDE_LEAD_MAX_M)
+        if abs(g) <= self.alongside_m + lead:
             return ALONGSIDE
         if -self.proximity_m <= g < 0:
             return NEARBY_BEHIND
