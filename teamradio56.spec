@@ -1,11 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller 스펙 — 단일 exe 패키징 (Windows)
 #
-#   venv\Scripts\activate
-#   pip install pyinstaller
-#   pyinstaller lmu-crewchief.spec
+#   pipenv install --dev
+#   pipenv run pyinstaller teamradio56.spec
 #
-# 결과물: dist\lmu-crewchief.exe
+# 결과물: dist\teamradio56.exe
 # config.yaml, audio_cache/, data/ 는 exe 옆(실행 위치)에 둔다.
 
 a = Analysis(
@@ -19,6 +18,8 @@ a = Analysis(
         'edge_tts',
         'anthropic',
         'pygame',
+        'numpy',          # 무전기 효과 (radiofx)
+        'soundfile',      # mp3/wav 디코드 (radiofx)
     ],
     hookspath=[],
     runtime_hooks=[],
@@ -34,7 +35,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='lmu-crewchief',
+    name='teamradio56',
     debug=False,
     strip=False,
     upx=False,

@@ -51,20 +51,20 @@ Le Mans Ultimate는 rFactor 2 엔진 기반이라 The Iron Wolf가 만든
 요구사항: **Windows 10/11, Python 3.11 이상**
 
 ```bat
-git clone <이 저장소>
-cd aicrew
+git clone https://github.com/hyungwookc07/teamradio56.git
+cd teamradio56
+pip install pipenv
+pipenv install
+pipenv run python main.py        :: 또는 pipenv shell 후 python main.py
+```
+
+pipenv 대신 venv를 쓴다면:
+
+```bat
+cd teamradio56
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-pipenv를 쓴다면 (Pipfile 포함되어 있음):
-
-```bat
-pip install pipenv
-cd aicrew
-pipenv install
-pipenv run python main.py        :: 또는 pipenv shell 후 python main.py
 ```
 
 ## 3. 설정
@@ -111,12 +111,11 @@ python main.py --replay data\test.jsonl --speed 5
 파이썬 없이 배포하고 싶다면 PyInstaller로 단일 실행 파일을 만들 수 있습니다.
 
 ```bat
-venv\Scripts\activate
-pip install pyinstaller
-pyinstaller lmu-crewchief.spec
+pipenv install --dev
+pipenv run pyinstaller teamradio56.spec
 ```
 
-- 결과물: `dist\lmu-crewchief.exe`
+- 결과물: `dist\teamradio56.exe`
 - `config.yaml`을 exe와 같은 폴더에 두고 실행하세요. `audio_cache\`, `data\`도
   실행 위치 기준으로 생성됩니다.
 - 사전 생성 오디오 캐시(`python tools\pregen_audio.py`)를 미리 만들어

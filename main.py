@@ -1,5 +1,5 @@
 """
-LMU AI 크루치프 — 메인 루프.
+teamradio56 (LMU AI 크루치프) — 메인 루프.
 
 5Hz로 공유 메모리를 폴링하고, 랩 완료 시 분석기(연료/페이스)를 돌려
 이벤트 큐에 넣는다. 멘트 생성/TTS는 보이스 워커 스레드가 처리하므로
@@ -124,7 +124,7 @@ class CrewChiefApp:
     # -- 메인 루프 ----------------------------------------------------------
 
     def run(self) -> None:
-        log.info("LMU AI 크루치프 시작 (폴링 %.0fHz)", 1.0 / self.poll_interval)
+        log.info("teamradio56 크루치프 시작 (폴링 %.0fHz)", 1.0 / self.poll_interval)
         try:
             while self._running:
                 cycle_start = time.monotonic()
@@ -365,7 +365,7 @@ def build_source(args) -> tuple[TelemetrySource, SnapshotRecorder | None]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="LMU AI 크루치프")
+    parser = argparse.ArgumentParser(description="teamradio56 — LMU AI 크루치프")
     parser.add_argument("--config", default="config.yaml", help="설정 파일 경로")
     parser.add_argument("--replay", metavar="PATH", help="녹화된 텔레메트리 JSONL 재생 (mock 모드)")
     parser.add_argument("--speed", type=float, default=1.0, help="리플레이 배속 (기본 1.0)")

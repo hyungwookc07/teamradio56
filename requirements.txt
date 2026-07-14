@@ -1,4 +1,4 @@
-# LMU AI 크루치프 — Windows / Python 3.11+
+# teamradio56 (LMU AI 크루치프) — Windows / Python 3.11+
 PyYAML>=6.0
 edge-tts>=6.1
 pygame>=2.5          # 오디오 재생
