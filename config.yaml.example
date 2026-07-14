@@ -64,6 +64,8 @@ thresholds:
   sector_yellow_calls: true    # 섹터 옐로 콜이 이상하게 반복되면 false
   proximity_m: 50.0            # 근접(NEARBY) 진입 거리 (m)
   alongside_m: 12.0            # 나란히(ALONGSIDE) 판정 거리 (m)
+  side_invert: false           # "왼쪽/오른쪽" 콜이 반대로 나오면 true
+  start_quiet_sec: 30.0        # 레이스 스타트 후 트래픽 콜 정지 (첫 코너 혼전)
   tyre_temp_imbalance: 12.0    # 좌우/전후 타이어 온도 불균형 (°C)
   tyre_wear_warn: 0.35         # 남은 수명 비율 경고선
   damage_impact_mag: 500.0     # 충격 크기 임계값

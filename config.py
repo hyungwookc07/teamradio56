@@ -74,6 +74,8 @@ DEFAULTS: dict[str, Any] = {
         "sector_yellow_calls": True,  # LMU가 mSectorFlag를 이상하게 채우면 false로
         "proximity_m": 50.0,          # 근접(NEARBY) 진입 거리 (m)
         "alongside_m": 12.0,          # 나란히(ALONGSIDE) 판정 거리 (m)
+        "side_invert": False,         # 좌우 콜이 반대로 나오면 true (mPathLateral 부호)
+        "start_quiet_sec": 30.0,      # 레이스 스타트 후 트래픽 콜 정지 시간 (혼전)
         "tyre_temp_imbalance": 12.0,  # 좌우/전후 온도 불균형 경고 (C)
         "tyre_wear_warn": 0.35,       # 남은 수명 비율이 이 이하로 예상되면 경고
         "damage_impact_mag": 500.0,   # 이 이상 충격이면 데미지 체크 콜

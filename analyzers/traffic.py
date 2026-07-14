@@ -90,6 +90,7 @@ class CarTrack:
     lapping: bool = False              # 동클래스인데 나를 랩 돌리러 오는 중
     backmarker: bool = False           # 내가 랩 돌리는(또는 하위 클래스) 트래픽
     slow_since: Optional[float] = None  # 저속 상태가 시작된 시각 (정지차 지속 판정)
+    seen: bool = False                 # 첫 관측을 마쳤는가 (첫 분류는 무발화)
     last_sample_t: float = 0.0
     announced: dict = field(default_factory=dict)   # state → 마지막 발화 시각
     engaged: bool = False              # 이 차에 대해 뭔가 말한 적 있는가 (서사 연속성)
@@ -101,12 +102,21 @@ class TrafficAnalyzer:
         self.alongside_m = cfg.get("thresholds.alongside_m", 12.0)
         self.eta_warn = cfg.get("thresholds.traffic_eta_sec", 10.0)
         self.race_only = cfg.get("thresholds.traffic_race_only", False)
+        # LMU의 mPathLateral 부호 방향이 가정과 반대면 true로 (좌우 콜 반전)
+        self.side_invert = bool(cfg.get("thresholds.side_invert", False))
+        # 스타트 직후 혼전 구간: 전 차량이 붙어 있고 상황이 말보다 빨리
+        # 변해서 개별 콜이 전부 뒷북이 된다 → 이 시간 동안 트래픽 콜 정지
+        self.start_quiet_sec = float(cfg.get("thresholds.start_quiet_sec", 30.0))
         self.tracks: dict[int, CarTrack] = {}
         self._hazard_announced: dict[int, float] = {}
+        self._green_t: Optional[float] = None
+        self._prev_phase: Optional[int] = None
 
     def reset(self) -> None:
         self.tracks.clear()
         self._hazard_announced.clear()
+        self._green_t = None
+        self._prev_phase = None
 
     # -- 외부 조회 (브리지 유효성 검사 등에 사용) -----------------------------
 
@@ -127,7 +137,12 @@ class TrafficAnalyzer:
         if me is None or me["in_pits"] or me["in_garage"]:
             self.tracks.clear()
             return
-        if snap.session["game_phase"] not in GREEN_PHASES:
+        phase = snap.session["game_phase"]
+        # 레이스 스타트(그린 전이) 감지 → 혼전 정숙 구간 시작
+        if self._prev_phase in (3, 4) and phase == 5 and state.is_race:
+            self._green_t = snap.t
+        self._prev_phase = phase
+        if phase not in GREEN_PHASES:
             return
         # 연습/퀄리는 고스트 차가 많아 트래픽 콜이 소음이 되기 쉬움 — 옵션으로 차단
         if self.race_only and not state.is_race:
@@ -136,6 +151,9 @@ class TrafficAnalyzer:
         if track_len <= 0:
             return
         now = snap.t
+        # 스타트 직후엔 상태 추적만 하고 발화하지 않는다 (첫 코너 혼전)
+        quiet = (self._green_t is not None
+                 and now - self._green_t < self.start_quiet_sec)
         my_speed = (snap.player.get("speed_kmh", 0.0) or 0.0) / 3.6
 
         transitions: list[tuple[CarTrack, str]] = []   # (track, old_state)
@@ -154,6 +172,12 @@ class TrafficAnalyzer:
                     t.state = FAR      # 조용히 리셋 (지나갔어/떨어졌어 멘트 없이)
                 continue
             new_state = self._classify(t)
+            if not t.seen:
+                # 첫 관측: 현재 상태로 조용히 진입 (스타트 그리드/앱 중간 시작
+                # 시점에 이미 근처인 차들을 '전이'로 오인해 쏟아내지 않는다)
+                t.seen = True
+                t.state = new_state
+                continue
             if new_state != t.state:
                 old = t.state
                 t.state = new_state
@@ -163,7 +187,7 @@ class TrafficAnalyzer:
             if cid not in seen:
                 del self.tracks[cid]
 
-        if transitions:
+        if transitions and not quiet:
             self._emit(transitions, now, bus)
 
         # 레이스 서사 이슈: 동클래스 배틀 여부 (LLM 문맥 연속성용).
@@ -249,11 +273,15 @@ class TrafficAnalyzer:
         # 내가 잡는 트래픽: 한 랩 이상 뒤졌거나 하위 클래스
         t.backmarker = (t.lap_delta <= -0.9
                         or (0 < theirs < mine))
-        # 좌우 판정: 나란할 때만 의미 있음
+        # 좌우 판정: 나란할 때만 의미 있음. mPathLateral 부호 방향은 근사라
+        # 실차에서 반대로 나오면 config의 side_invert로 뒤집는다.
         lat = v.get("path_lat")
         my_lat = me.get("path_lat")
         if lat is not None and my_lat is not None and abs(lat - my_lat) >= SIDE_LAT_MIN:
-            t.side = "left" if lat < my_lat else "right"   # rF2 pathLateral: +가 오른쪽 계열이나 트랙마다 달라 근사
+            side = "left" if lat < my_lat else "right"
+            if self.side_invert:
+                side = "right" if side == "left" else "left"
+            t.side = side
         else:
             t.side = None
         return t

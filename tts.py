@@ -176,12 +176,15 @@ class AudioPlayer:
             self._init_failed = True
             return False
 
-    def play(self, path: str, should_interrupt: Callable[[], bool]) -> bool:
-        """재생 완료 시 True, 중단됐으면 False."""
+    def play(self, path: str, should_interrupt: Callable[[], bool],
+             urgent: bool = False) -> bool:
+        """재생 완료 시 True, 중단됐으면 False. urgent면 지연 없이 즉시."""
         if not self._ensure_mixer():
             return True
-        # 미세 랜덤화: 기계적인 즉답 느낌 제거 (0~300ms 지연, 볼륨 ±5%)
-        time.sleep(random.uniform(0.0, 0.3))
+        # 미세 랜덤화: 기계적인 즉답 느낌 제거 (0~300ms 지연, 볼륨 ±5%).
+        # 긴급 콜(나란히/충격 등)은 안전 정보라 지연 없이 바로 내보낸다.
+        if not urgent:
+            time.sleep(random.uniform(0.0, 0.3))
         try:
             self._mixer.music.set_volume(
                 max(min(self.volume * random.uniform(0.95, 1.05), 1.0), 0.0))
@@ -297,7 +300,8 @@ class VoiceWorker(threading.Thread):
             should_interrupt = lambda: False
         else:
             should_interrupt = self.bus.urgent_pending.is_set
-        self.player.play(path, should_interrupt)
+        self.player.play(path, should_interrupt,
+                         urgent=(ev.priority == Priority.CRITICAL))
 
     def _maybe_bridge(self, ev) -> None:
         """
