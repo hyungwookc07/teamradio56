@@ -342,6 +342,10 @@ class VoiceGenerator:
     _render_pit_limiter = _render_race_start
     _render_blue_flag = _render_race_start
 
+    def _render_spotter(self, d: dict, tone: str = "urgent") -> Optional[str]:
+        # 스포터 콜: alongside_left/right/both(슬롯 없음), side_clear({side})
+        return self.pool.pick(d["pool"], {"side": d.get("side", "")}, tone)
+
     def _render_race_end(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("race_end", {
             "place": int(min(max(d.get("class_place", 1), 1), 8)),
@@ -467,6 +471,8 @@ def iter_pregen_texts(pool: PhrasePool):
         "dropped": [{"cls": c} for c in CLASSES],
         "backmarker_ahead": [{"cls": c} for c in CLASSES],
         "blue_flag": [{}],
+        "alongside_both": [{}],
+        "side_clear": [{"side": s} for s in ("왼쪽", "오른쪽")],
         "fuel_warning": [{"fuel_laps": n} for n in range(1, 5)],
         "fuel_critical": [{"fuel_laps": n} for n in range(1, 5)],
         "pit_call": [{}],

@@ -109,19 +109,24 @@ class TrafficAnalyzer:
         self.race_only = cfg.get("thresholds.traffic_race_only", False)
         # LMU의 mPathLateral 부호 방향이 가정과 반대면 true로 (좌우 콜 반전)
         self.side_invert = bool(cfg.get("thresholds.side_invert", False))
-        # 스타트 직후 혼전 구간: 전 차량이 붙어 있고 상황이 말보다 빨리
-        # 변해서 개별 콜이 전부 뒷북이 된다 → 이 시간 동안 트래픽 콜 정지
-        self.start_quiet_sec = float(cfg.get("thresholds.start_quiet_sec", 30.0))
+        # 스타트 직후 혼전 구간: 서사형 콜(접근/배틀/종합)은 전부 뒷북이 되므로
+        # 끄고, 대신 '스포터 모드'로 좌우 점유 변화만 즉시 콜한다
+        # ("왼쪽!", "양쪽에 차 있어", "왼쪽 클리어").
+        self.start_spotter_sec = float(cfg.get("thresholds.start_spotter_sec", 45.0))
         self.tracks: dict[int, CarTrack] = {}
         self._hazard_announced: dict[int, float] = {}
         self._green_t: Optional[float] = None
         self._prev_phase: Optional[int] = None
+        self._spot: Optional[dict] = None            # 스포터: 발화된 좌우 점유 상태
+        self._spot_clear_since = {"left": None, "right": None}
 
     def reset(self) -> None:
         self.tracks.clear()
         self._hazard_announced.clear()
         self._green_t = None
         self._prev_phase = None
+        self._spot = None
+        self._spot_clear_since = {"left": None, "right": None}
 
     # -- 외부 조회 (브리지 유효성 검사 등에 사용) -----------------------------
 
@@ -156,9 +161,9 @@ class TrafficAnalyzer:
         if track_len <= 0:
             return
         now = snap.t
-        # 스타트 직후엔 상태 추적만 하고 발화하지 않는다 (첫 코너 혼전)
-        quiet = (self._green_t is not None
-                 and now - self._green_t < self.start_quiet_sec)
+        # 스타트 직후 혼전: 서사형 콜 대신 스포터 모드 (좌우 점유만 즉시 콜)
+        spotter_mode = (self._green_t is not None
+                        and now - self._green_t < self.start_spotter_sec)
         my_speed = (snap.player.get("speed_kmh", 0.0) or 0.0) / 3.6
 
         transitions: list[tuple[CarTrack, str]] = []   # (track, old_state)
@@ -192,7 +197,10 @@ class TrafficAnalyzer:
             if cid not in seen:
                 del self.tracks[cid]
 
-        if transitions and not quiet:
+        if spotter_mode:
+            self._spotter_tick(now, bus)
+        elif transitions:
+            self._spot = None    # 스포터 모드 종료 → 기준 리셋
             self._emit(transitions, now, bus)
 
         # 레이스 서사 이슈: 동클래스 배틀 여부 (LLM 문맥 연속성용).
@@ -204,6 +212,58 @@ class TrafficAnalyzer:
             state.set_issue("battle", f"{battler.cls} ({battler.driver})와 포지션 배틀 중")
         else:
             state.clear_issue("battle")
+
+    # -- 스포터 모드 (스타트 혼전) --------------------------------------------
+
+    SPOT_CLEAR_HOLD_SEC = 1.2    # 이 시간 이상 비어 있어야 '클리어' 콜 (깜빡임 방지)
+
+    def _spotter_tick(self, now: float, bus: EventBus) -> None:
+        """
+        좌우 점유 변화만 즉시 콜하는 스포터 모드 — 첫 코너처럼 상황이 말보다
+        빨리 변하는 구간용. 서사 대신 "왼쪽!" / "양쪽에 차 있어" / "왼쪽 클리어".
+        창 시작 시점의 점유(그리드 옆 차)는 기준으로만 쓰고 콜하지 않는다.
+        """
+        occ = {"left": False, "right": False}
+        for t in self.tracks.values():
+            if t.state == ALONGSIDE and t.side in occ:
+                occ[t.side] = True
+
+        if self._spot is None:
+            self._spot = dict(occ)
+            return
+
+        # 양쪽 동시 점유로 전이 → 한 번에 "양쪽" 콜
+        if occ["left"] and occ["right"] \
+                and not (self._spot["left"] and self._spot["right"]):
+            if bus.push(Event(
+                    type=EventType.SPOTTER, priority=Priority.CRITICAL,
+                    data={"pool": "alongside_both"}, dedup_key="spot_both",
+                    tone="urgent", ttl=2.5)):
+                self._spot = {"left": True, "right": True}
+                self._spot_clear_since = {"left": None, "right": None}
+            return
+
+        for side in ("left", "right"):
+            if occ[side]:
+                self._spot_clear_since[side] = None
+                if not self._spot[side]:
+                    if bus.push(Event(
+                            type=EventType.SPOTTER, priority=Priority.CRITICAL,
+                            data={"pool": f"alongside_{side}"},
+                            dedup_key=f"spot_{side}", tone="urgent", ttl=2.5)):
+                        self._spot[side] = True
+            elif self._spot[side]:
+                since = self._spot_clear_since[side]
+                if since is None:
+                    self._spot_clear_since[side] = now
+                elif now - since >= self.SPOT_CLEAR_HOLD_SEC:
+                    name = "왼쪽" if side == "left" else "오른쪽"
+                    if bus.push(Event(
+                            type=EventType.SPOTTER, priority=Priority.HIGH,
+                            data={"pool": "side_clear", "side": name},
+                            dedup_key=f"spotclr_{side}", tone="casual", ttl=3.0)):
+                        self._spot[side] = False
+                        self._spot_clear_since[side] = None
 
     def _is_stopped(self, t: CarTrack, my_speed: float, now: float) -> bool:
         """

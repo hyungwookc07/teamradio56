@@ -66,7 +66,8 @@ thresholds:
   alongside_m: 4.6             # 나란히 기준 (m) = 차 한 대 길이 (실제 오버랩).
                                # 접근 속도 비례 리드 보정 자동 (빠르면 일찍 들림)
   side_invert: false           # "왼쪽/오른쪽" 콜이 반대로 나오면 true
-  start_quiet_sec: 30.0        # 레이스 스타트 후 트래픽 콜 정지 (첫 코너 혼전)
+  start_spotter_sec: 45.0      # 스타트 후 스포터 모드 — 서사 콜 대신 좌우 점유만
+                               # 즉시 콜 ("왼쪽!"/"양쪽에 차 있어"/"왼쪽 클리어")
   tyre_temp_imbalance: 12.0    # 좌우/전후 타이어 온도 불균형 (°C)
   tyre_wear_warn: 0.35         # 남은 수명 비율 경고선
   damage_impact_mag: 500.0     # 충격 크기 임계값

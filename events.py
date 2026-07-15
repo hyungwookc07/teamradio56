@@ -37,6 +37,7 @@ class EventType:
     TRAFFIC_CLOSE = "traffic_close"
     TRAFFIC_UPDATE = "traffic_update"       # 상태 전이 후속 (지나감/떨어짐)
     TRAFFIC_MULTI = "traffic_multi"         # 다중 차량 종합 한 문장
+    SPOTTER = "spotter"                     # 스타트 혼전 좌우 점유 콜 (짧은 쿨다운)
     BRIDGE_FOLLOWUP = "bridge_followup"     # 긴급 콜 뒤 LLM 후속 설명
     DAMAGE = "damage"
     DAMAGE_REPORT = "damage_report"     # 충격 후 자동 점검 결과 (전용 버킷)
@@ -78,6 +79,7 @@ COOLDOWN_KEY = {
     EventType.TRAFFIC_CLOSE: "traffic_close",
     EventType.TRAFFIC_UPDATE: "traffic_update",
     EventType.TRAFFIC_MULTI: "traffic_multi",
+    EventType.SPOTTER: "spotter",
     EventType.BRIDGE_FOLLOWUP: "bridge",
     EventType.PACE_COMMENT: "pace_comment",
     EventType.GAP_COMMENT: "gap_comment",

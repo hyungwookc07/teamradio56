@@ -77,7 +77,7 @@ DEFAULTS: dict[str, Any] = {
                                       # 접근 속도 × 0.5초 리드 보정이 자동으로 붙어
                                       # 빠르게 파고드는 차는 그만큼 일찍 콜이 나간다
         "side_invert": False,         # 좌우 콜이 반대로 나오면 true (mPathLateral 부호)
-        "start_quiet_sec": 30.0,      # 레이스 스타트 후 트래픽 콜 정지 시간 (혼전)
+        "start_spotter_sec": 45.0,    # 스타트 후 스포터 모드 시간 (좌우 점유만 즉시 콜)
         "tyre_temp_imbalance": 12.0,  # 좌우/전후 온도 불균형 경고 (C)
         "tyre_wear_warn": 0.35,       # 남은 수명 비율이 이 이하로 예상되면 경고
         "damage_impact_mag": 500.0,   # 이 이상 충격이면 데미지 체크 콜
@@ -94,6 +94,7 @@ DEFAULTS: dict[str, Any] = {
         "traffic_close": 8,           # 근접/나란히 긴급 콜 (짧게 — 안전 콜)
         "traffic_update": 15,         # 지나감/떨어짐 후속
         "traffic_multi": 25,          # 다중 차량 종합
+        "spotter": 1,                 # 스타트 혼전 좌우 점유 콜 (즉답성 우선)
         "bridge": 20,                 # 긴급 콜 뒤 LLM 후속
         "pace_comment": 120,
         "gap_comment": 90,

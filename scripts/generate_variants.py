@@ -83,6 +83,16 @@ POOL_SPECS: dict[str, dict] = {
         "slots": ["cls"], "required": [],
         "tones": {"casual": "칭찬+차분한 톤."},
     },
+    "alongside_both": {
+        "situation": "스타트 직후 혼전에서 양쪽에 동시에 차가 붙었다 (쓰리 와이드 가운데). 극도로 짧게, 공간 유지 지시.",
+        "slots": [], "required": [],
+        "tones": {"urgent": "스포터처럼 즉각적이고 짧게."},
+    },
+    "side_clear": {
+        "situation": "옆에 붙어 있던 차가 빠져서 {side}(왼쪽/오른쪽)이 비었다. 짧은 클리어 콜.",
+        "slots": ["side"], "required": ["side"],
+        "tones": {"casual": "짧고 차분하게."},
+    },
     "backmarker_ahead": {
         "situation": "전방에 백마커(랩 뒤진 차 또는 하위 클래스 트래픽)를 잡았다. 배틀이 아니므로 리듬을 유지하며 안전하게 추월하라는 조언. {cls} 생략 가능.",
         "slots": ["cls"], "required": [],
