@@ -82,7 +82,7 @@ class TyreAnalyzer:
                     type=EventType.DAMAGE, priority=Priority.CRITICAL,
                     data={"wheel": WHEEL_NAMES[i]},
                     dedup_key=f"flat_{i}",
-                    message=f"{WHEEL_NAMES[i]} 타이어 문제야. 바로 박스, 무리하지 마.",
+                    message=f"{WHEEL_NAMES[i]} 펑크! 바로 박스. 무리하지 마.",
                 ))
 
         # 온도 불균형 경고

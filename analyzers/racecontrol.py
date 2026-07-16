@@ -195,7 +195,7 @@ class RaceControlAnalyzer:
             self._sector_yellow_announced[i] = now
             bus.push(Event(
                 type=EventType.SECTOR_YELLOW, priority=Priority.HIGH,
-                message=f"섹터{i + 1} 옐로야. 사고 지점 지날 때 추월 금지, 감속 준비.",
+                message=f"섹터{i + 1} 옐로. 추월 금지, 감속 준비.",
                 dedup_key=f"syellow_{i}", ttl=15.0, tone="urgent",
             ))
 
@@ -253,7 +253,7 @@ class RaceControlAnalyzer:
             self._pen_due = None
             bus.push(Event(
                 type=EventType.PENALTY, priority=Priority.NORMAL,
-                message="페널티 클리어. 이제 깨끗해, 다시 니 레이스 하자.",
+                message="페널티 클리어. 다시 니 레이스.",
                 dedup_key="pen_clear", ttl=20.0, tone="casual",
             ))
             state.clear_issue("penalty")
@@ -273,12 +273,12 @@ class RaceControlAnalyzer:
                 break
         if detail:
             kind, reason = detail
-            head = f"페널티야 — {kind}" + (f", {reason}" if reason else "")
+            head = f"페널티 — {kind}" + (f", {reason}" if reason else "")
             advice = {
-                "드라이브 스루": "다음 랩에 피트 통과하자, 리미터 잊지 마.",
-                "스탑고": "박스에서 정지 시간 지키면 돼, 침착하게.",
-                "타임 페널티": "결과에 더해지는 거니까 페이스로 만회하자.",
-            }.get(kind, "처리 타이밍은 내가 계산해서 불러줄게.")
+                "드라이브 스루": "다음 랩 피트 통과. 리미터 주의.",
+                "스탑고": "박스 정지 시간 준수. 침착하게.",
+                "타임 페널티": "결과에 가산. 페이스로 만회.",
+            }.get(kind, "처리 타이밍은 내가 불러줄게.")
             message = f"{head}. {advice}"
             issue = f"미소화 페널티 {n}건 ({kind}{', ' + reason if reason else ''})"
             topic = f"방금 페널티가 부여됐다: {kind}, 사유 {reason or '불명'}. " \
@@ -344,7 +344,7 @@ class RaceControlAnalyzer:
             self._final_lap_done = True
             bus.push(Event(
                 type=EventType.RACE_MILESTONE, priority=Priority.HIGH,
-                data={"final_lap": True}, message="이번이 마지막 랩이야. 다 쏟아붓자.",
+                data={"final_lap": True}, message="마지막 랩. 다 쏟아붓자.",
                 dedup_key="final_lap", ttl=30.0,
             ))
             state.add_narrative("(이벤트) 마지막 랩")

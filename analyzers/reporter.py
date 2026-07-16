@@ -52,7 +52,7 @@ class StatusReporter:
             is_best = len(valid_times) >= 2 and lap.lap_time <= min(valid_times)
             text = f"이번 랩 {_fmt_laptime(lap.lap_time)}."
             if is_best:
-                text += " 베스트야."
+                text += " 베스트."
             bus.push(Event(
                 type=EventType.LAP_TIME_REPORT, priority=Priority.NORMAL,
                 message=text, dedup_key=f"laptime_{lap.lap_number}",
@@ -88,9 +88,9 @@ class StatusReporter:
         if tyre_status and tyre_status.get("worst"):
             left = tyre_status["worst"].get("laps_left")
             if left is not None and left <= 20:
-                parts.append(f"타이어 {left:.0f}랩 남았어.")
+                parts.append(f"타이어 {left:.0f}랩.")
             else:
-                parts.append("타이어 아직 좋아.")
+                parts.append("타이어 양호.")
         if not parts:
             return None
         return " ".join(parts)

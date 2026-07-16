@@ -270,8 +270,8 @@ class CrewChiefApp:
         if fuel:
             parts.append(f"연료 {fuel:.0f}리터.")
 
-        parts.append("이대로 가자." if mid_join
-                     else "첫 랩 침착하게 가자." if is_race
+        parts.append("이대로 간다." if mid_join
+                     else "첫 랩 침착하게." if is_race
                      else "준비되면 나가자.")
         self.bus.push(Event(
             type=EventType.SESSION_BRIEFING, priority=Priority.NORMAL,

@@ -31,6 +31,8 @@ LLM_RULES = """
 출력 규칙:
 - 팀 무전으로 드라이버에게 하는 말 한 줄만 출력한다. 따옴표, 설명, 머리말 금지.
 - 한국어 반말, 1~2문장, 짧게. 무전 특유의 간결한 호흡.
+- 단어 위주로 끊어 말하고 어미를 아껴라. "타이어가 많이 닳았으니까 관리해야 해"
+  대신 "타이어 한계 근접. 관리 모드." 실제 팀라디오 스타일.
 - 숫자를 나열하지 말고 판단을 말한다. 꼭 필요한 숫자만 한두 개.
 - 여러 데이터를 엮어서 결론을 내라. (예: 연료는 10랩인데 타이어가 8랩쯤 한계면
   "9랩째 들어와서 같이 해결하자"처럼)
@@ -361,8 +363,8 @@ class VoiceGenerator:
         if m is None:
             return None
         if m >= 60:
-            return f"남은 시간 {m // 60}시간. 지금 페이스면 계획대로야."
-        return f"{m}분 남았어. 연료·타이어 계산 다시 돌리고 있어."
+            return f"남은 시간 {m // 60}시간. 계획대로."
+        return f"{m}분 남았어. 연료, 타이어 재계산 중."
 
     def _render_damage(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("damage", {}, tone)
@@ -403,7 +405,7 @@ class VoiceGenerator:
     def _render_lap_analysis(self, d: dict, tone: str = "casual") -> Optional[str]:
         # 템플릿 폴백: 판단형 최소 멘트
         if d.get("pit_window_laps") is not None:
-            return f"피트 윈도우 계산 중이야. 늦어도 {d['pit_window_laps']}랩 안엔 들어와야 해."
+            return f"피트 윈도우 오픈. 늦어도 {d['pit_window_laps']}랩 안에 박스."
         return None
 
     def _render_stint_briefing(self, d: dict, tone: str = "casual") -> Optional[str]:
@@ -419,23 +421,23 @@ class VoiceGenerator:
     def _render_rival_pace(self, d: dict, tone: str = "casual") -> Optional[str]:
         # 드라이버 이름은 영어라 조사가 안 맞고 TTS도 어색 — 앞차/뒤차로 부른다
         if d["mode"] == "catch":
-            return (f"클래스 앞차가 랩당 {d['diff']:.1f}초 느려. "
-                    f"이 페이스면 {d['laps']}랩 안에 잡는다.")
-        return (f"클래스 뒤차가 랩당 {d['diff']:.1f}초 빨라. "
-                f"{d['laps']}랩쯤 뒤에 온다. 미리 준비하자.")
+            return (f"클래스 앞차, 랩당 {d['diff']:.1f}초 느림. "
+                    f"{d['laps']}랩 안에 잡는다.")
+        return (f"클래스 뒤차, 랩당 {d['diff']:.1f}초 빠름. "
+                f"{d['laps']}랩 뒤 도착. 준비.")
 
     def _render_tyre_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
         if d.get("kind") == "temp_imbalance":
-            return f"{d['hot_wheel']} 타이어가 {d['delta']:.0f}도 더 뜨거워. 그쪽 코너 조금만 아껴줘."
+            return f"{d['hot_wheel']} 타이어 {d['delta']:.0f}도 높음. 그쪽 코너 아껴."
         if d.get("kind") == "wear":
-            return f"{d['wheel']} 타이어 수명이 {d['laps_left']:.0f}랩쯤 남았어. 피트 계획에 반영할게."
+            return f"{d['wheel']} 타이어 수명 {d['laps_left']:.0f}랩. 피트 계획 반영."
         return None
 
     def _render_pace_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
         delta = abs(d["delta"])
         if d.get("direction") == "slower":
-            return f"방금 랩, 평소보다 {delta:.1f}초 느렸어. 어디서 잃었는지 확인해봐."
-        return f"좋아, 평소보다 {delta:.1f}초 빨라. 이 리듬 유지하자."
+            return f"방금 랩 {delta:.1f}초 손실. 원인 체크."
+        return f"{delta:.1f}초 빠름. 리듬 유지."
 
     def _render_gap_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
         rate = d["rate"]
@@ -443,15 +445,15 @@ class VoiceGenerator:
         gap_s = f"{gap:.1f}" if gap < 10 else f"{gap:.0f}"
         if d["who"] == "behind":
             if rate <= -0.15:
-                return f"뒤차가 랩당 {abs(rate):.1f}초씩 붙고 있어. 갭 {gap_s}초. 서두르지 말고 실수만 줄이자."
+                return f"뒤차 랩당 {abs(rate):.1f}초씩 접근. 갭 {gap_s}초. 실수만 줄이자."
             if rate >= 0.15:
-                return f"뒤차랑 갭이 {gap_s}초로 벌어졌어. 관리 잘 되고 있어."
-            return f"뒤차랑 {gap_s}초, 갭 유지 중이야. 이 리듬 좋아."
+                return f"뒤차 갭 {gap_s}초. 벌어지는 중, 좋아."
+            return f"뒤차 {gap_s}초. 유지 중. 리듬 좋아."
         if rate <= -0.15:
-            return f"앞차랑 갭 줄고 있어. {gap_s}초, 랩당 {abs(rate):.1f}초씩. 갈 수 있어."
+            return f"앞차 갭 {gap_s}초. 랩당 {abs(rate):.1f}초씩 접근 중. 갈 수 있어."
         if rate >= 0.15:
-            return f"앞차랑 {gap_s}초로 벌어지는 중이야. 무리하진 말자."
-        return f"앞차랑 {gap_s}초, 갭 그대로야. 리듬 유지하자."
+            return f"앞차 {gap_s}초. 벌어지는 중. 무리 금지."
+        return f"앞차 {gap_s}초. 갭 유지. 리듬 그대로."
 
 
 def iter_pregen_texts(pool: PhrasePool):

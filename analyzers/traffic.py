@@ -286,7 +286,7 @@ class TrafficAnalyzer:
         self._hazard_announced[t.cid] = now
         bus.push(Event(
             type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
-            message="전방에 멈춰 있거나 서행하는 차 있어. 라인 미리 바꿔.",
+            message="전방 정지 차량. 라인 미리 바꿔.",
             dedup_key=f"hazard_{t.cid}", ttl=8.0, tone="urgent",
         ))
 

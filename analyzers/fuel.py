@@ -111,7 +111,6 @@ class FuelAnalyzer:
             type=EventType.FUEL_SAVE, priority=Priority.NORMAL,
             data={"target": round(target, 2), "delta": round(delta, 2),
                   "laps_left": left},
-            message=(f"노피트로 가려면 랩당 {target:.1f}리터야. "
-                     f"지금보다 {delta:.1f}리터씩 아껴줘 — 리프트 앤 코스트, "
-                     "숏시프트 섞자."),
+            message=(f"노피트 목표 랩당 {target:.1f}리터. "
+                     f"{delta:.1f}리터씩 세이브 — 리프트 앤 코스트, 숏시프트."),
         ))
