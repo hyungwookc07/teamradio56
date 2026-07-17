@@ -63,15 +63,15 @@ STEER_EMA_ALPHA = 0.02       # ~10초 시정수
 STEER_JUDGE_SAMPLES = 75     # 충격 후 고속 샘플이 이만큼 쌓여 EMA가 안정된
                              # 뒤에 판정 (수렴 중 경미 단계를 스치는 오판 방지)
 
-# 리어 불안정(오버스티어) 감시 — 리어 윙/서스가 죽으면 코너마다 차가
-# 조향량보다 많이 돈다. 요레이트가 높은데 조향이 거의 없는 순간
-# (= 슬라이드/스핀 카운터 상황)을 세서, 손상 이벤트 후 반복되면
-# 페이스 관찰을 기다리지 않고 즉시 박스를 부른다.
+# 리어 불안정(오버스티어) 감시 — 리어 윙/서스가 죽으면 코너마다 미끄러진다.
+# 판정은 '횡방향 속도'(mLocalVel.x): 정상 코너링은 1~2m/s, 진짜 슬라이드는
+# 4m/s 이상. (요레이트+저조향 조합은 고속 코너를 슬라이드로 오인하고,
+# 카운터 중엔 조향이 커져 진짜 슬라이드를 놓침 — 실차에서 확인된 오탐.)
 # 오탐 방지: 손상(리어 존 충격/부품 탈락/큰 충격) 이후에만 감시 활성.
 INSTAB_WATCH_SEC = 180.0     # 손상 후 감시 시간
 INSTAB_SPEED_KMH = 80.0
-INSTAB_YAW_RAD_S = 0.55      # |요레이트| 이 이상 (약 31도/초)
-INSTAB_STEER_MAX = 0.12      # 인데 조향은 거의 없음 → 의도치 않은 회전
+INSTAB_YAW_RAD_S = 0.55      # |요레이트| 동반 조건 (직선 휠스핀 배제)
+INSTAB_LAT_SLIP_MS = 4.0     # |횡속도| 이 이상 = 실제 슬라이드
 INSTAB_COUNT = 2             # 이 횟수 반복되면 박스 콜
 INSTAB_GAP_SEC = 3.0         # 같은 슬라이드를 중복 카운트하지 않는 간격
 
@@ -205,6 +205,7 @@ class HealthAnalyzer:
         # 리어 쪽 충격이나 큰 충격이면 리어 불안정 감시 시작
         if heavy or (zone and "리어" in zone):
             self._instab_until = now + INSTAB_WATCH_SEC
+            log.info("리어 불안정 감시 시작 (%s, 충격 %.0f)", where, mag)
         bus.push(Event(
             type=EventType.DAMAGE, priority=Priority.CRITICAL,
             data={"pool": "damage", "zone": zone or "", "mag": round(mag)},
@@ -354,34 +355,37 @@ class HealthAnalyzer:
     def _check_instability(self, p: dict, now: float,
                            state: SessionState, bus: EventBus) -> None:
         """
-        손상 후 리어 불안정 감시 — 조향은 거의 없는데 차가 크게 회전하는
-        순간(슬라이드/카운터 상황)이 반복되면 리어 에어로/서스가 죽은 것.
-        페이스 관찰(2랩)을 기다리지 않고 즉시 박스를 부른다.
+        손상 후 리어 불안정 감시 — 횡속도(실제 슬라이드) + 요레이트가
+        동반되는 순간이 반복되면 리어 에어로/서스 손상으로 판단하고
+        페이스 관찰(2랩)을 기다리지 않고 박스를 부른다.
+        고속 코너(요레이트만 높음)나 정상적인 미세 슬립은 잡지 않는다.
         """
         if self._instab_called or now >= self._instab_until:
             return
         yaw = p.get("yaw_rate")
-        steer = p.get("steering")
-        if yaw is None or steer is None or p.get("in_pitlane") \
+        lat_vel = p.get("lat_vel")
+        if yaw is None or lat_vel is None or p.get("in_pitlane") \
                 or (p.get("speed_kmh", 0.0) or 0.0) < INSTAB_SPEED_KMH:
             return
-        if abs(yaw) < INSTAB_YAW_RAD_S or abs(steer) > INSTAB_STEER_MAX:
+        if abs(yaw) < INSTAB_YAW_RAD_S or abs(lat_vel) < INSTAB_LAT_SLIP_MS:
             return
         if now - self._instab_last_t < INSTAB_GAP_SEC:
             return
         self._instab_last_t = now
         self._instab_count += 1
+        log.info("슬라이드 감지 (%d/%d): 요레이트 %.2f, 횡속도 %.1fm/s",
+                 self._instab_count, INSTAB_COUNT, yaw, lat_vel)
         if self._instab_count < INSTAB_COUNT:
             return
         self._instab_called = True
         bus.push(Event(
             type=EventType.DAMAGE_REPORT, priority=Priority.CRITICAL,
-            message="리어 그립 없어, 계속 돌아. 리어 에어로 사망. "
-                    "박스, 수리하자.",
+            message="리어 불안정 반복. 데미지 영향 같아. "
+                    "무리 금지, 박스 권장.",
             dedup_key="rear_instab", tone="urgent", ttl=15.0,
         ))
-        state.set_issue("damage", "리어 불안정 (에어로/서스 손상) — 즉시 수리 권장")
-        state.add_narrative("(점검) 손상 후 리어 불안정 반복 감지 → 박스 콜")
+        state.set_issue("damage", "리어 불안정 반복 (에어로/서스 손상 의심)")
+        state.add_narrative("(점검) 손상 후 리어 불안정 반복 감지 → 박스 권장")
 
     def _check_slow_puncture(self, p: dict, wheels: list,
                              state: SessionState, bus: EventBus) -> None:

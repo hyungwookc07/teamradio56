@@ -279,6 +279,7 @@ class SharedMemoryTelemetry(TelemetrySource):
                 "speed_limiter": bool(vt.mSpeedLimiter),
                 "steering": round(vt.mUnfilteredSteering, 4),   # -1..1, 얼라인 감지용
                 "yaw_rate": round(vt.mLocalRot.y, 4),           # rad/s — 리어 불안정 감지용
+                "lat_vel": round(vt.mLocalVel.x, 2),            # m/s 횡속도 — 슬라이드 판정용
 
                 "wheels": [_wheel_to_dict(w) for w in vt.mWheels],  # FL FR RL RR
             }
