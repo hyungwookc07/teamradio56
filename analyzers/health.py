@@ -67,12 +67,15 @@ STEER_JUDGE_SAMPLES = 75     # 충격 후 고속 샘플이 이만큼 쌓여 EMA�
 # 판정은 '횡방향 속도'(mLocalVel.x): 정상 코너링은 1~2m/s, 진짜 슬라이드는
 # 4m/s 이상. (요레이트+저조향 조합은 고속 코너를 슬라이드로 오인하고,
 # 카운터 중엔 조향이 커져 진짜 슬라이드를 놓침 — 실차에서 확인된 오탐.)
-# 오탐 방지: 손상(리어 존 충격/부품 탈락/큰 충격) 이후에만 감시 활성.
+#
+# 드라이버 실수와의 구분: 슬라이드는 상시 카운트해서 '평소 빈도'를 기준선으로
+# 잡고, 손상 후 빈도가 기준선의 2배(최소 3회)를 넘어야만 콜한다.
+# 실수는 가끔, 손상은 코너마다 — 빈도 변화가 신호다.
 INSTAB_WATCH_SEC = 180.0     # 손상 후 감시 시간
 INSTAB_SPEED_KMH = 80.0
 INSTAB_YAW_RAD_S = 0.55      # |요레이트| 동반 조건 (직선 휠스핀 배제)
 INSTAB_LAT_SLIP_MS = 4.0     # |횡속도| 이 이상 = 실제 슬라이드
-INSTAB_COUNT = 2             # 이 횟수 반복되면 박스 콜
+INSTAB_MIN_COUNT = 3         # 손상 후 최소 이 횟수 (실수 1~2회는 통과)
 INSTAB_GAP_SEC = 3.0         # 같은 슬라이드를 중복 카운트하지 않는 간격
 
 
@@ -105,9 +108,11 @@ class HealthAnalyzer:
         self._align_warned = False
         self._last_impact_zone: Optional[str] = None
         self._instab_until = 0.0                    # 리어 불안정 감시 종료 시각
-        self._instab_count = 0
+        self._instab_armed_t = 0.0                  # 감시 시작 시각
+        self._instab_required = INSTAB_MIN_COUNT    # 기준선 반영된 콜 임계 횟수
         self._instab_last_t = 0.0
         self._instab_called = False
+        self._slides: list[float] = []              # 슬라이드 시각 (상시 기록 — 기준선용)
 
     # -- 5Hz 틱: 충격/부품 탈락 즉시 감지 ---------------------------------------
 
@@ -132,7 +137,7 @@ class HealthAnalyzer:
                 self._steer_samples = 0
                 self._align_warned = False
                 self._instab_until = 0.0
-                self._instab_count = 0
+                self._instab_required = INSTAB_MIN_COUNT
                 self._instab_called = False
             self._was_in_pitlane = True
         else:
@@ -178,7 +183,7 @@ class HealthAnalyzer:
                 type=EventType.PART_DETACHED, priority=Priority.CRITICAL,
                 message=msg, dedup_key="detached", tone="urgent", ttl=10.0,
             ))
-            self._instab_until = snap.t + INSTAB_WATCH_SEC
+            self._arm_instab(snap.t, "부품 탈락")
             if self._report_due is None:      # 점검 리포트가 예약 안 됐으면 예약
                 self._report_due = snap.t + REPORT_DELAY_SEC
 
@@ -204,8 +209,7 @@ class HealthAnalyzer:
         self._last_impact_zone = zone
         # 리어 쪽 충격이나 큰 충격이면 리어 불안정 감시 시작
         if heavy or (zone and "리어" in zone):
-            self._instab_until = now + INSTAB_WATCH_SEC
-            log.info("리어 불안정 감시 시작 (%s, 충격 %.0f)", where, mag)
+            self._arm_instab(now, f"{where}, 충격 {mag:.0f}")
         bus.push(Event(
             type=EventType.DAMAGE, priority=Priority.CRITICAL,
             data={"pool": "damage", "zone": zone or "", "mag": round(mag)},
@@ -355,13 +359,11 @@ class HealthAnalyzer:
     def _check_instability(self, p: dict, now: float,
                            state: SessionState, bus: EventBus) -> None:
         """
-        손상 후 리어 불안정 감시 — 횡속도(실제 슬라이드) + 요레이트가
-        동반되는 순간이 반복되면 리어 에어로/서스 손상으로 판단하고
-        페이스 관찰(2랩)을 기다리지 않고 박스를 부른다.
-        고속 코너(요레이트만 높음)나 정상적인 미세 슬립은 잡지 않는다.
+        리어 불안정 감시 — 슬라이드(횡속도+요레이트 동반)는 상시 카운트해서
+        드라이버의 '평소 빈도'를 기준선으로 삼고, 손상 후 빈도가 기준선을
+        확실히 넘을 때만(2배, 최소 3회) 박스를 부른다. 드라이버 실수의
+        가끔 슬라이드와 손상의 코너마다 슬라이드를 빈도 변화로 구분한다.
         """
-        if self._instab_called or now >= self._instab_until:
-            return
         yaw = p.get("yaw_rate")
         lat_vel = p.get("lat_vel")
         if yaw is None or lat_vel is None or p.get("in_pitlane") \
@@ -372,10 +374,16 @@ class HealthAnalyzer:
         if now - self._instab_last_t < INSTAB_GAP_SEC:
             return
         self._instab_last_t = now
-        self._instab_count += 1
-        log.info("슬라이드 감지 (%d/%d): 요레이트 %.2f, 횡속도 %.1fm/s",
-                 self._instab_count, INSTAB_COUNT, yaw, lat_vel)
-        if self._instab_count < INSTAB_COUNT:
+        # 상시 기록 (기준선용). 오래된 것은 정리.
+        self._slides.append(now)
+        self._slides = [t for t in self._slides if now - t <= 2 * INSTAB_WATCH_SEC]
+
+        if self._instab_called or now >= self._instab_until:
+            return
+        post = sum(1 for t in self._slides if t >= self._instab_armed_t)
+        log.info("슬라이드 감지 (손상 후 %d/%d): 요레이트 %.2f, 횡속도 %.1fm/s",
+                 post, self._instab_required, yaw, lat_vel)
+        if post < self._instab_required:
             return
         self._instab_called = True
         bus.push(Event(
@@ -386,6 +394,24 @@ class HealthAnalyzer:
         ))
         state.set_issue("damage", "리어 불안정 반복 (에어로/서스 손상 의심)")
         state.add_narrative("(점검) 손상 후 리어 불안정 반복 감지 → 박스 권장")
+
+    def _arm_instab(self, now: float, reason: str) -> None:
+        """
+        리어 불안정 감시 시작 — 직전 3분간의 슬라이드 횟수를 기준선으로,
+        콜에 필요한 손상 후 슬라이드 횟수를 정한다 (기준선×2, 최소 3회).
+        이미 감시 중이면 창만 연장하고 기준선은 유지한다.
+        """
+        already = now < self._instab_until
+        self._instab_until = now + INSTAB_WATCH_SEC
+        if already:
+            return
+        baseline = sum(1 for t in self._slides
+                       if now - INSTAB_WATCH_SEC <= t <= now)
+        self._instab_armed_t = now
+        self._instab_required = max(INSTAB_MIN_COUNT, baseline * 2)
+        self._instab_called = False
+        log.info("리어 불안정 감시 시작 (%s) — 기준선 %d회/3분, 콜 임계 %d회",
+                 reason, baseline, self._instab_required)
 
     def _check_slow_puncture(self, p: dict, wheels: list,
                              state: SessionState, bus: EventBus) -> None:
