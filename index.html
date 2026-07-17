@@ -1,0 +1,1490 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FFB 최적화 랩</title>
+</head>
+<body>
+<!-- app:start -->
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface:     #fcfcfb;
+    --ink:         #0b0b0b;
+    --ink-2:       #52514e;
+    --muted:       #898781;
+    --grid:        #e1e0d9;
+    --axis:        #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --accent:      #2a78d6;
+    --accent-soft: #cde2fb;
+    --good:        #0ca30c;
+    --good-text:   #006300;
+    --warning:     #fab219;
+    --serious:     #ec835a;
+    --critical:    #d03b3b;
+    --ghost:       #898781;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:        #0d0d0d;
+      --surface:     #1a1a19;
+      --ink:         #ffffff;
+      --ink-2:       #c3c2b7;
+      --muted:       #898781;
+      --grid:        #2c2c2a;
+      --axis:        #383835;
+      --border:      rgba(255,255,255,0.10);
+      --accent:      #3987e5;
+      --accent-soft: #184f95;
+      --good-text:   #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:        #0d0d0d;
+    --surface:     #1a1a19;
+    --ink:         #ffffff;
+    --ink-2:       #c3c2b7;
+    --muted:       #898781;
+    --grid:        #2c2c2a;
+    --axis:        #383835;
+    --border:      rgba(255,255,255,0.10);
+    --accent:      #3987e5;
+    --accent-soft: #184f95;
+    --good-text:   #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font: 400 14.5px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; }
+
+  .page { max-width: 1040px; margin: 0 auto; padding: 40px 20px 80px; }
+
+  .masthead { padding: 16px 0 8px; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .eyebrow .dot { color: var(--accent); }
+  h1 { font-size: 30px; line-height: 1.25; margin: 8px 0 10px; letter-spacing: -0.01em; text-wrap: balance; }
+  .lede { max-width: 62ch; color: var(--ink-2); font-size: 15.5px; margin: 0; }
+
+  section { margin-top: 56px; }
+  .step {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    font-size: 11px; letter-spacing: 0.14em; color: var(--accent); font-weight: 600;
+  }
+  h2 { font-size: 20px; margin: 6px 0 8px; letter-spacing: -0.005em; text-wrap: balance; }
+  .sec-note { max-width: 68ch; color: var(--ink-2); margin: 0 0 20px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+
+  /* ---- controls ---- */
+  .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .field label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 5px; }
+  select, input[type="number"], input[type="file"] {
+    width: 100%; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+    font: inherit; font-size: 14px;
+  }
+  select:focus-visible, input:focus-visible, button:focus-visible, [tabindex="0"]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+  .seg button {
+    flex: 1; padding: 8px 6px; border: 0; background: transparent; color: var(--ink-2);
+    font: inherit; font-size: 13.5px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+
+  /* ---- recommendation ---- */
+  .reco { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .kv { width: 100%; border-collapse: collapse; }
+  .kv td { padding: 7px 0; border-top: 1px solid var(--grid); vertical-align: top; }
+  .kv tr:first-child td { border-top: 0; }
+  .kv .k { color: var(--ink-2); padding-right: 14px; width: 42%; }
+  .kv .v { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  .kv .n { display: block; color: var(--muted); font-size: 12px; font-family: system-ui, sans-serif; margin-top: 1px; }
+  .card h3 { font-size: 13px; margin: 0 0 10px; color: var(--ink-2); font-weight: 600; }
+  .tips { margin: 12px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 13px; }
+  .tips li { margin-top: 4px; }
+
+  .felt { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 4px; }
+  .felt .num { font-size: 40px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
+  .felt .unit { color: var(--ink-2); font-size: 14px; }
+  .meter { height: 8px; border-radius: 4px; background: var(--accent-soft); overflow: hidden; margin-top: 10px; }
+  .meter-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .meter-cap { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 5px; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--border); margin-top: 14px;
+  }
+  .pill .ico { font-family: ui-monospace, monospace; }
+  .pill.p-good     { color: var(--good-text); }
+  .pill.p-warning  { color: var(--ink); }
+  .pill.p-serious  { color: var(--ink); }
+  .pill.p-critical { color: var(--critical); }
+  .pill .swatch { width: 8px; height: 8px; border-radius: 50%; }
+  .pill-note { display: block; color: var(--ink-2); font-size: 12.5px; margin-top: 8px; }
+
+  /* ---- simulator ---- */
+  .sim-top { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 14px; }
+  .gain-box { flex: 1 1 340px; display: flex; align-items: center; gap: 14px; }
+  .gain-box input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .gain-val { font-size: 20px; font-weight: 650; min-width: 92px; text-align: right; }
+  .gain-lab { font-size: 12px; color: var(--ink-2); }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .t-label { font-size: 12px; color: var(--ink-2); }
+  .tile .t-value { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; margin-top: 2px; }
+  .tile .t-sub { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+  .charts { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  @media (min-width: 860px) { .charts { grid-template-columns: 3fr 2fr; } }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px 10px; }
+  .chart-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--ink-2); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .line { width: 14px; height: 0; border-top: 2.5px solid; border-radius: 2px; }
+  .legend .rect { width: 10px; height: 10px; border-radius: 3px; }
+  .chart-body { position: relative; height: 280px; }
+  .chart-body.short { height: 240px; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .tooltip {
+    position: absolute; pointer-events: none; z-index: 3; display: none;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+    min-width: 130px;
+  }
+  .tooltip .tt-t { color: var(--muted); font-family: ui-monospace, monospace; margin-bottom: 4px; }
+  .tooltip .row { display: flex; align-items: center; gap: 7px; margin-top: 2px; }
+  .tooltip .row .line { width: 12px; border-top: 2.5px solid; border-radius: 2px; }
+  .tooltip .row .val { font-weight: 650; font-family: ui-monospace, monospace; margin-left: auto; }
+  .tooltip .row .lab { color: var(--ink-2); }
+
+  details.tableview { margin-top: 8px; }
+  details.tableview summary { font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+  details.tableview table { border-collapse: collapse; margin-top: 8px; font-size: 12.5px; width: 100%; }
+  details.tableview th, details.tableview td {
+    text-align: left; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--grid);
+    font-weight: 400; color: var(--ink-2);
+  }
+  details.tableview td.num { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  /* ---- csv ---- */
+  .drop {
+    display: block;
+    border: 1.5px dashed var(--axis); border-radius: 10px; padding: 26px 20px;
+    text-align: center; color: var(--ink-2); cursor: pointer; background: var(--surface);
+  }
+  .drop.hover { border-color: var(--accent); color: var(--ink); }
+  .drop input { display: none; }
+  .drop .big { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .drop-actions { display: flex; gap: 10px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+  button.ghost {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--accent); font-weight: 600;
+  }
+  .csv-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
+  .csv-verdict { margin: 4px 0 14px; max-width: 70ch; }
+  .csv-verdict strong { font-weight: 650; }
+  .hidden { display: none !important; }
+  .file-tag { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+  /* ---- notes ---- */
+  .notes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .notes-grid h3 { margin-top: 0; }
+  .notes-grid p, .notes-grid li { font-size: 13.5px; color: var(--ink-2); }
+  .notes-grid ul { padding-left: 18px; margin: 8px 0 0; }
+  .wheel-table-wrap { overflow-x: auto; }
+  .wheel-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .wheel-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 14px 6px 0; border-bottom: 1px solid var(--axis); }
+  .wheel-table td { padding: 5px 14px 5px 0; border-bottom: 1px solid var(--grid); color: var(--ink-2); }
+  .wheel-table td.num { font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--grid); color: var(--muted); font-size: 12.5px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .meter-fill { transition: width 200ms ease; }
+    .seg button { transition: background 120ms ease; }
+  }
+</style>
+
+<div class="page">
+  <header class="masthead">
+    <div class="eyebrow">SIM RACING TOOLBOX <span class="dot">·</span> TEAMRADIO56</div>
+    <h1>FFB 최적화 랩</h1>
+    <p class="lede">휠베이스 토크와 게임에 맞는 포스 피드백 시작 세팅을 계산하고, 게인에 따른
+    클리핑을 파형으로 직접 확인하고, 실제 텔레메트리 CSV로 내 세팅을 검증하는 원페이지 툴입니다.
+    모든 계산은 브라우저 안에서만 이뤄집니다.</p>
+  </header>
+
+  <!-- ================= STEP 01 ================= -->
+  <section id="setup">
+    <div class="step">STEP 01</div>
+    <h2>내 장비에 맞는 시작 세팅</h2>
+    <p class="sec-note">휠베이스와 게임, 원하는 체감 강도를 고르면 커뮤니티에서 통용되는
+    시작점 세팅을 계산합니다. 정답이 아니라 출발점입니다 — 차량과 취향에 따라 조정하세요.</p>
+
+    <div class="controls">
+      <div class="field">
+        <label for="wheel-sel">휠베이스</label>
+        <select id="wheel-sel"></select>
+      </div>
+      <div class="field" id="custom-nm-field" hidden>
+        <label for="custom-nm">최대 토크 (Nm)</label>
+        <input type="number" id="custom-nm" min="1" max="35" step="0.1" value="8">
+      </div>
+      <div class="field">
+        <label for="game-sel">게임</label>
+        <select id="game-sel"></select>
+      </div>
+      <div class="field">
+        <label id="pref-label">체감 강도</label>
+        <div class="seg" role="group" aria-labelledby="pref-label">
+          <button type="button" data-pref="0" aria-pressed="false">편안하게 <span class="mono">~5Nm</span></button>
+          <button type="button" data-pref="1" aria-pressed="true">표준 <span class="mono">~8Nm</span></button>
+          <button type="button" data-pref="2" aria-pressed="false">강하게 <span class="mono">~12Nm</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="reco">
+      <div class="card">
+        <h3 id="reco-game-title">인게임 세팅</h3>
+        <table class="kv"><tbody id="reco-rows"></tbody></table>
+        <ul class="tips" id="reco-tips"></ul>
+      </div>
+      <div class="card">
+        <h3>휠 · 체감</h3>
+        <div class="felt"><span class="num" id="felt-nm">8.0</span><span class="unit">Nm 예상 체감 피크 토크</span></div>
+        <div class="meter" role="img" id="realism-meter" aria-label="실차 대비 체감 스케일"><div class="meter-fill" id="realism-fill" style="width:53%"></div></div>
+        <div class="meter-cap"><span>실차 GT3 스티어링 피크(~15 Nm) 대비</span><span class="mono" id="realism-pct">53 %</span></div>
+        <div id="risk-pill"></div>
+        <span class="pill-note" id="risk-note"></span>
+        <table class="kv" style="margin-top:14px"><tbody id="wheel-rows"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= STEP 02 ================= -->
+  <section id="clip">
+    <div class="step">STEP 02</div>
+    <h2>클리핑 시뮬레이터</h2>
+    <p class="sec-note">게임이 요청하는 힘이 출력 한계(100 %)를 넘으면 신호의 꼭대기가 평평하게
+    잘립니다 — 이것이 <strong>클리핑</strong>입니다. 잘린 구간에서는 연석, 노면, 그립 변화 같은
+    디테일이 사라지고 그냥 "최대 힘"만 남습니다. 게인을 움직여서 20초짜리 가상 랩 구간의
+    신호가 어떻게 변하는지 보세요. 목표는 최대한 강하게가 아니라, 피크가 100 % 바로 아래에
+    오도록 맞추는 것입니다.</p>
+
+    <div class="sim-top card">
+      <div class="gain-box">
+        <span class="gain-lab" id="gain-label">게인</span>
+        <input type="range" id="gain" min="50" max="200" step="1" value="128" aria-labelledby="gain-label">
+        <span class="gain-val mono" id="gain-val">128 %</span>
+      </div>
+    </div>
+
+    <div class="tiles" id="sim-tiles">
+      <div class="tile"><div class="t-label">클리핑 시간 비중</div><div class="t-value mono" id="tile-clip">—</div><div class="t-sub" id="tile-clip-sub"></div></div>
+      <div class="tile"><div class="t-label">디테일 손실</div><div class="t-value mono" id="tile-loss">—</div><div class="t-sub">한계 위로 잘려 나간 신호 에너지</div></div>
+      <div class="tile"><div class="t-label">피크 요청</div><div class="t-value mono" id="tile-peak">—</div><div class="t-sub">출력 한계 100 % 기준</div></div>
+      <div class="tile"><div class="t-label">권장 게인</div><div class="t-value mono" id="tile-reco">—</div><div class="t-sub">순간 피크 0.2 % 미만 클리핑 허용</div></div>
+    </div>
+
+    <div class="charts">
+      <div class="chart-card">
+        <div class="chart-head">
+          <span class="chart-title">토크 요청 vs 실제 출력 — 20초 구간</span>
+          <div class="legend" id="wave-legend">
+            <span class="key"><span class="line" style="border-color:var(--ghost)"></span>요청 토크</span>
+            <span class="key"><span class="line" style="border-color:var(--accent)"></span>실제 출력</span>
+            <span class="key"><span class="line" style="border-color:var(--critical)"></span>클리핑 구간</span>
+          </div>
+        </div>
+        <div class="chart-body">
+          <canvas id="wave-canvas" tabindex="0" aria-label="토크 요청과 실제 출력 파형 차트. 좌우 화살표 키로 값을 탐색할 수 있습니다."></canvas>
+          <div class="tooltip" id="wave-tt"></div>
+        </div>
+        <details class="tableview">
+          <summary>수치로 보기</summary>
+          <table><tbody id="wave-stats"></tbody></table>
+        </details>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <span class="chart-title">출력 레벨 분포 — 시간 비중</span>
+          <div class="legend">
+            <span class="key"><span class="rect" style="background:var(--accent)"></span>정상 출력</span>
+            <span class="key"><span class="rect" style="background:var(--critical)"></span>클리핑(≥99 %)</span>
+          </div>
+        </div>
+        <div class="chart-body short">
+          <canvas id="hist-canvas" aria-label="출력 레벨 분포 히스토그램"></canvas>
+          <div class="tooltip" id="hist-tt"></div>
+        </div>
+        <details class="tableview">
+          <summary>수치로 보기</summary>
+          <table><tbody id="hist-stats"></tbody></table>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= STEP 03 ================= -->
+  <section id="csv">
+    <div class="step">STEP 03</div>
+    <h2>텔레메트리로 검증</h2>
+    <p class="sec-note">iRacing(MoTeC i2 CSV 내보내기), rFactor 2, AMS2 등에서 뽑은 스티어링 토크
+    또는 FFB 출력 컬럼이 들어 있는 CSV를 올리면 피크·백분위·클리핑 비율을 계산하고 권장 값을
+    제안합니다. 파일은 서버로 전송되지 않고 브라우저 안에서만 처리됩니다.</p>
+
+    <label class="drop" id="drop">
+      <input type="file" id="file-input" accept=".csv,text/csv,text/plain">
+      <div class="big">CSV 파일을 끌어다 놓거나 클릭해서 선택</div>
+      <div>토크(Nm), FFB 출력(%), 정규화(±1) 컬럼 자동 인식</div>
+      <div class="drop-actions"><button type="button" class="ghost" id="sample-btn">샘플 데이터로 먼저 보기</button></div>
+      <div class="file-tag" id="file-tag"></div>
+    </label>
+
+    <div id="csv-result" class="hidden">
+      <div class="csv-controls">
+        <div class="field">
+          <label for="col-sel">분석할 컬럼</label>
+          <select id="col-sel"></select>
+        </div>
+        <div class="field">
+          <label for="unit-sel">단위</label>
+          <select id="unit-sel">
+            <option value="auto">자동 감지</option>
+            <option value="norm">정규화 (±1)</option>
+            <option value="pct">퍼센트 (±100)</option>
+            <option value="nm">토크 (Nm)</option>
+          </select>
+        </div>
+      </div>
+
+      <p class="csv-verdict" id="csv-verdict"></p>
+
+      <div class="tiles" id="csv-tiles"></div>
+
+      <div class="chart-card">
+        <div class="chart-head">
+          <span class="chart-title" id="csv-hist-title">신호 레벨 분포</span>
+        </div>
+        <div class="chart-body short">
+          <canvas id="csv-hist-canvas" aria-label="텔레메트리 신호 레벨 분포 히스토그램"></canvas>
+          <div class="tooltip" id="csv-hist-tt"></div>
+        </div>
+        <details class="tableview">
+          <summary>수치로 보기</summary>
+          <table><tbody id="csv-stats"></tbody></table>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= NOTES ================= -->
+  <section id="notes">
+    <div class="step">참고</div>
+    <h2>원리와 한계</h2>
+    <div class="notes-grid">
+      <div class="card">
+        <h3>왜 게인을 낮추는 게 나을 수 있나</h3>
+        <p>FFB는 정보 채널입니다. 휠이 낼 수 있는 힘은 유한하므로, 게인을 올려 평균 힘을 키우면
+        피크가 한계에 눌려 잘립니다. 잘린 구간에서는 힘의 <em>변화</em>가 전달되지 않아 그립
+        한계, 연석 타격, 노면 요철을 구분할 수 없게 됩니다. 신호의 99퍼센타일 부근이 출력
+        한계 바로 아래에 오도록 맞추면 체감은 조금 약해져도 정보량은 최대가 됩니다.</p>
+        <ul>
+          <li>토크가 낮은 기어/벨트 휠은 어느 정도의 압축(클리핑)을 감수하는 절충이 필요합니다.</li>
+          <li>순간적인 최대 피크(가장 큰 연석 한 방)까지 다 담으려 하면 평소 힘이 너무 약해집니다 —
+          시간 비중 0.5 % 미만의 짧은 클리핑은 일반적으로 허용됩니다.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>이 툴의 한계</h3>
+        <ul>
+          <li>게임별 수치는 커뮤니티에서 널리 쓰이는 <strong>시작점</strong>이며 버전에 따라 달라질 수 있습니다.</li>
+          <li>댐핑·마찰·필터 값은 하드웨어 개체차와 취향의 영역이라 범위로만 제시합니다.</li>
+          <li>휠 최대 토크는 제조사 공칭값 기준입니다. 실측 피크/지속 토크와는 차이가 있을 수 있습니다.</li>
+          <li>시뮬레이터의 파형은 실제 물리 엔진 출력이 아니라 교육용 합성 신호입니다.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h3>휠베이스 공칭 최대 토크 표</h3>
+      <div class="wheel-table-wrap">
+        <table class="wheel-table" id="wheel-table">
+          <thead><tr><th>휠베이스</th><th>구동 방식</th><th>최대 토크</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    FFB 최적화 랩 — teamradio56 toolbox. 모든 데이터는 로컬에서만 처리됩니다.
+    게임 세팅 수치는 시작점 가이드이며 제조사·게임 업데이트에 따라 달라질 수 있습니다.
+  </footer>
+</div>
+<noscript><p style="text-align:center">이 툴은 JavaScript가 필요합니다.</p></noscript>
+
+<script>
+'use strict';
+
+/* ============================================================
+   데이터: 휠베이스 / 게임
+   ============================================================ */
+const WHEELS = [
+  { group: '기어 드라이브', items: [
+    { name: 'Logitech G29 / G920', nm: 2.2, drive: 'gear' },
+    { name: 'Logitech G923', nm: 2.3, drive: 'gear' },
+  ]},
+  { group: '벨트 / 하이브리드', items: [
+    { name: 'Thrustmaster T248', nm: 3.5, drive: 'belt' },
+    { name: 'Thrustmaster T300 RS', nm: 3.9, drive: 'belt' },
+  ]},
+  { group: '다이렉트 드라이브', items: [
+    { name: 'Moza R3', nm: 3.9, drive: 'dd' },
+    { name: 'Fanatec CSL DD / GT DD Pro (5 Nm)', nm: 5, drive: 'dd' },
+    { name: 'Thrustmaster T598', nm: 5, drive: 'dd' },
+    { name: 'Moza R5', nm: 5.5, drive: 'dd' },
+    { name: 'Fanatec CSL DD / GT DD Pro + Boost Kit (8 Nm)', nm: 8, drive: 'dd' },
+    { name: 'Moza R9', nm: 9, drive: 'dd' },
+    { name: 'Simagic Alpha Mini', nm: 10, drive: 'dd' },
+    { name: 'Thrustmaster T818', nm: 10, drive: 'dd' },
+    { name: 'Logitech PRO Racing Wheel', nm: 11, drive: 'dd' },
+    { name: 'Asetek La Prima', nm: 12, drive: 'dd' },
+    { name: 'Fanatec ClubSport DD', nm: 12, drive: 'dd' },
+    { name: 'Moza R12', nm: 12, drive: 'dd' },
+    { name: 'Fanatec ClubSport DD+', nm: 15, drive: 'dd' },
+    { name: 'Simagic Alpha', nm: 15, drive: 'dd' },
+    { name: 'Moza R16', nm: 16, drive: 'dd' },
+    { name: 'Simucube 2 Sport', nm: 17, drive: 'dd' },
+    { name: 'Asetek Forte', nm: 18, drive: 'dd' },
+    { name: 'Fanatec Podium DD1', nm: 20, drive: 'dd' },
+    { name: 'Moza R21', nm: 21, drive: 'dd' },
+    { name: 'Simagic Alpha Ultimate', nm: 23, drive: 'dd' },
+    { name: 'Fanatec Podium DD2', nm: 25, drive: 'dd' },
+    { name: 'Simucube 2 Pro', nm: 25, drive: 'dd' },
+    { name: 'Asetek Invicta', nm: 27, drive: 'dd' },
+    { name: 'Simucube 2 Ultimate', nm: 32, drive: 'dd' },
+  ]},
+];
+
+const PREF_TARGET = [5, 8, 12]; // 편안 / 표준 / 강하게 — 목표 림 피크 토크(Nm)
+
+// 휠 클래스: gear | belt | dd-low(≤9) | dd-mid(≤15) | dd-high
+function wheelClass(w) {
+  if (w.drive === 'gear') return 'gear';
+  if (w.drive === 'belt') return 'belt';
+  return w.nm <= 9 ? 'dd-low' : (w.nm <= 15 ? 'dd-mid' : 'dd-high');
+}
+function band(map, cls, pref) {
+  const b = map[cls] || map['dd-mid'];
+  return b[pref];
+}
+const R = (v) => `${v}`;
+
+/* 각 게임: rows(ctx) → [{k, v, n?}], tips: [] */
+const GAMES = [
+  {
+    id: 'iracing', name: 'iRacing',
+    rows(ctx) {
+      const { cls, wheel, felt } = ctx;
+      const rows = [];
+      if (cls.startsWith('dd')) {
+        rows.push(
+          wheel.nm <= felt + 0.01
+            ? { k: '드라이버 강도 / 토크 한도', v: `100 % (${wheel.nm} Nm 전부 사용)` }
+            : { k: '드라이버 강도 / 토크 한도', v: `${felt} Nm (≈ ${Math.round(felt / wheel.nm * 100)} %)`, n: '체감 강도는 여기서, 매핑은 인게임에서' },
+          { k: 'Use linear mode', v: 'ON', n: '토크 왜곡 없는 1:1 매핑' },
+          { k: 'Max force', v: '≈ 50 Nm에서 시작', n: 'GT3 기준. 차마다 텔레메트리 P99.5로 보정 (STEP 03)' },
+          { k: 'Wheel force (app.ini/설정)', v: `${wheel.nm} Nm`, n: '휠 실제 토크를 알려줘야 선형 매핑이 맞음' },
+          { k: 'Damping', v: '0–15 %', n: '진동 억제 최소한만' },
+        );
+      } else if (cls === 'belt') {
+        rows.push(
+          { k: '드라이버 강도', v: '100 %' },
+          { k: 'Use linear mode', v: 'ON' },
+          { k: 'Max force', v: '≈ 45–55 Nm에서 시작', n: '약하면 낮추고, 피크가 평평하면 올리기' },
+          { k: 'Damping', v: '0–10 %' },
+        );
+      } else {
+        rows.push(
+          { k: '드라이버 강도', v: '100 %' },
+          { k: 'Use linear mode', v: 'OFF', n: '낮은 토크 휠은 비선형 압축이 유리' },
+          { k: 'Max force', v: '렌치 아이콘(자동) 또는 25–35 Nm' },
+          { k: 'Min force', v: '5–15 %', n: '중심부 데드존 보상 (WheelCheck로 측정 가능)' },
+        );
+      }
+      return rows;
+    },
+    tips: [
+      '주행 후 화면의 F 미터(또는 텔레메트리)의 클리핑 표시가 빨간색에 자주 닿으면 max force를 올리세요 — iRacing은 max force가 클수록 매핑이 약해집니다.',
+      'STEP 03에 MoTeC CSV를 올리면 그 차에 맞는 max force를 바로 계산해 줍니다.',
+    ],
+  },
+  {
+    id: 'acc', name: 'Assetto Corsa Competizione',
+    rows(ctx) {
+      const { cls, pref } = ctx;
+      const gain = band({ gear: [95, 100, 100], belt: [78, 85, 92], 'dd-low': [58, 66, 74], 'dd-mid': [48, 56, 64], 'dd-high': [40, 48, 56] }, cls, pref);
+      return [
+        { k: 'Gain', v: `${gain} %`, n: '피크가 평평하게 느껴지면 5 %씩 낮추기' },
+        { k: 'Minimum damping', v: cls.startsWith('dd') ? '0–20 %' : '0 %' },
+        { k: 'Dynamic damping', v: '100 %' },
+        { k: 'Road effects', v: '0–20 %', n: '노면 질감 취향껏' },
+        { k: '드라이버 강도', v: '100 % (DD는 토크 한도로 체감 조절)' },
+      ];
+    },
+    tips: [
+      'ACC는 인게임 클리핑 미터가 없습니다 — 연석 위에서 힘 변화가 사라지면 클리핑 신호입니다.',
+      '기어 휠은 게인을 낮추는 것보다 100 % 근처 + 낮은 road effects가 대체로 낫습니다.',
+    ],
+  },
+  {
+    id: 'ac', name: 'Assetto Corsa',
+    rows(ctx) {
+      const { cls, pref } = ctx;
+      const gain = band({ gear: [90, 100, 100], belt: [85, 95, 100], 'dd-low': [72, 80, 88], 'dd-mid': [62, 70, 78], 'dd-high': [52, 60, 68] }, cls, pref);
+      return [
+        { k: 'Gain', v: `${gain} %`, n: '차량별 배수(숫자패드 +/-)로 미세 조정' },
+        { k: 'Minimum force', v: cls === 'gear' ? '8–13 %' : (cls === 'belt' ? '0–5 %' : '0 %') },
+        { k: 'FF filter', v: cls.startsWith('dd') ? '0–5 %' : '0 %' },
+        { k: '노면/연석/슬립 효과', v: '0–25 %', n: '전부 인공 효과 — 순수파는 0' },
+      ];
+    },
+    tips: [
+      '기어 휠은 WheelCheck + LUT Generator로 LUT를 만들면 반응이 크게 좋아집니다.',
+      'CSP(커스텀 셰이더 패치)의 FFB Tweaks에서 소프트 클리핑을 켤 수 있습니다.',
+    ],
+  },
+  {
+    id: 'rf2', name: 'rFactor 2 / Le Mans Ultimate',
+    rows(ctx) {
+      const { cls, wheel } = ctx;
+      return [
+        { k: '프로필 휠 토크', v: `${wheel.nm} Nm`, n: '컨트롤러 프로필에 실제 토크 지정' },
+        { k: '차량별 FFB multiplier', v: '1.00에서 시작', n: '클리핑 나는 차만 0.05씩 낮추기' },
+        { k: 'Smoothing', v: cls.startsWith('dd') ? '0–4' : (cls === 'belt' ? '4–8' : '8–16') },
+        { k: 'Minimum torque', v: cls === 'gear' ? '4–8 %' : '0 %' },
+      ];
+    },
+    tips: [
+      'rF2 계열은 물리 토크를 거의 그대로 보내는 방식이라 multiplier 1.0 기준으로 클리핑이 적습니다.',
+      '펜듈럼처럼 출렁이면 smoothing이 아니라 인게임/드라이버 댐핑을 조금 올리세요.',
+    ],
+  },
+  {
+    id: 'ams2', name: 'Automobilista 2',
+    rows(ctx) {
+      const { cls, pref } = ctx;
+      const gain = band({ gear: [85, 95, 100], belt: [65, 75, 85], 'dd-low': [50, 60, 70], 'dd-mid': [42, 52, 62], 'dd-high': [36, 45, 55] }, cls, pref);
+      const lfb = cls === 'gear' ? '30–50' : (cls === 'belt' ? '10–25' : '0–10');
+      return [
+        { k: '프로필', v: 'Default+' },
+        { k: 'Gain', v: `${gain} %` },
+        { k: 'LFB (low force boost)', v: lfb, n: '낮은 토크 휠의 중심부 보상' },
+        { k: 'FX', v: '10–40', n: '노면 효과 취향껏' },
+        { k: 'Damping', v: cls.startsWith('dd') ? '0–30' : '0–15' },
+      ];
+    },
+    tips: ['AMS2는 차별 편차가 큽니다 — 기준 차 한 대로 gain을 잡고 나머지는 차량별 FFB로 맞추세요.'],
+  },
+  {
+    id: 'f1', name: 'F1 24 / 25',
+    rows(ctx) {
+      const { cls, pref } = ctx;
+      const str = band({ gear: [85, 95, 105], belt: [70, 80, 90], 'dd-low': [55, 62, 70], 'dd-mid': [45, 52, 60], 'dd-high': [38, 46, 54] }, cls, pref);
+      return [
+        { k: 'Vibration & FFB strength', v: `${str}` },
+        { k: 'On track effects', v: '20–40' },
+        { k: 'Rumble strip effects', v: '20–40' },
+        { k: 'Wheel damper', v: cls.startsWith('dd') ? '0–5' : '10–20' },
+        { k: 'Understeer enhance', v: 'OFF', n: '인공 언더스티어 신호 — 정보 왜곡' },
+      ];
+    },
+    tips: ['코드마스터즈 계열은 연석에서 클리핑이 흔합니다 — 연석 효과를 먼저 낮추고 strength는 유지하세요.'],
+  },
+  {
+    id: 'gt7', name: 'Gran Turismo 7',
+    rows(ctx) {
+      const { cls, pref } = ctx;
+      const tq = band({ gear: [6, 7, 8], belt: [5, 6, 7], 'dd-low': [3, 4, 5], 'dd-mid': [2, 3, 4], 'dd-high': [1, 2, 3] }, cls, pref);
+      return [
+        { k: '포스 피드백 최대 토크', v: `${tq} / 10` },
+        { k: '포스 피드백 감도', v: '5–7 / 10' },
+      ];
+    },
+    tips: ['GT7은 콘솔 특성상 세부 조절 폭이 좁습니다 — 휠 쪽(드라이버/온휠 설정) 토크 한도로 맞추는 편이 정확합니다.'],
+  },
+];
+
+/* ============================================================
+   공통 유틸
+   ============================================================ */
+const $ = (id) => document.getElementById(id);
+const fmt = (n, d = 1) => Number(n).toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d });
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function cssToken(name) {
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+function quantileSorted(sortedAbs, q) {
+  const i = clamp((sortedAbs.length - 1) * q, 0, sortedAbs.length - 1);
+  const lo = Math.floor(i), hi = Math.ceil(i);
+  return sortedAbs[lo] + (sortedAbs[hi] - sortedAbs[lo]) * (i - lo);
+}
+
+function severity(clipPct) {
+  if (clipPct < 0.5) return { key: 'good', ico: '✓', label: '양호', color: '--good' };
+  if (clipPct < 3)   return { key: 'warning', ico: '!', label: '주의', color: '--warning' };
+  if (clipPct < 8)   return { key: 'serious', ico: '!!', label: '경고', color: '--serious' };
+  return { key: 'critical', ico: '✕', label: '심각', color: '--critical' };
+}
+
+function pillEl(sev, text) {
+  const pill = document.createElement('span');
+  pill.className = `pill p-${sev.key}`;
+  const sw = document.createElement('span');
+  sw.className = 'swatch';
+  sw.style.background = `var(${sev.color})`;
+  const ico = document.createElement('span');
+  ico.className = 'ico';
+  ico.textContent = sev.ico;
+  pill.append(sw, ico, document.createTextNode(text));
+  return pill;
+}
+
+/* 차트 공통: DPR 캔버스 + 테마/리사이즈 시 다시 그리기 */
+const redrawFns = new Set();
+function registerChart(canvas, draw) {
+  const wrapped = () => {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw(ctx, rect.width, rect.height);
+  };
+  redrawFns.add(wrapped);
+  new ResizeObserver(wrapped).observe(canvas.parentElement);
+  return wrapped;
+}
+function redrawAll() { redrawFns.forEach((f) => f()); }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redrawAll);
+new MutationObserver(redrawAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* 툴팁 행 생성 (textContent만 사용) */
+function ttRow(tt, label, value, color) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const key = document.createElement('span');
+  key.className = 'line';
+  key.style.borderColor = color;
+  const lab = document.createElement('span');
+  lab.className = 'lab';
+  lab.textContent = label;
+  const val = document.createElement('span');
+  val.className = 'val';
+  val.textContent = value;
+  row.append(key, lab, val);
+  tt.appendChild(row);
+}
+
+/* ============================================================
+   STEP 01 — 추천 엔진
+   ============================================================ */
+const wheelSel = $('wheel-sel');
+const gameSel = $('game-sel');
+const customField = $('custom-nm-field');
+const customNm = $('custom-nm');
+let prefIdx = 1;
+
+WHEELS.forEach((grp) => {
+  const og = document.createElement('optgroup');
+  og.label = grp.group;
+  grp.items.forEach((w) => {
+    const opt = document.createElement('option');
+    opt.value = w.name;
+    opt.textContent = `${w.name} — ${w.nm} Nm`;
+    og.appendChild(opt);
+  });
+  wheelSel.appendChild(og);
+});
+const customOpt = document.createElement('option');
+customOpt.value = '__custom__';
+customOpt.textContent = '직접 입력 (토크만 알 때)';
+wheelSel.appendChild(customOpt);
+wheelSel.value = 'Fanatec CSL DD / GT DD Pro (5 Nm)';
+
+GAMES.forEach((g) => {
+  const opt = document.createElement('option');
+  opt.value = g.id;
+  opt.textContent = g.name;
+  gameSel.appendChild(opt);
+});
+
+function currentWheel() {
+  if (wheelSel.value === '__custom__') {
+    const nm = clamp(parseFloat(customNm.value) || 8, 1, 35);
+    return { name: `커스텀 휠 (${nm} Nm)`, nm, drive: nm >= 5 ? 'dd' : (nm >= 3 ? 'belt' : 'gear') };
+  }
+  for (const grp of WHEELS) {
+    const w = grp.items.find((x) => x.name === wheelSel.value);
+    if (w) return w;
+  }
+  return WHEELS[2].items[1];
+}
+
+function renderReco() {
+  const wheel = currentWheel();
+  const game = GAMES.find((g) => g.id === gameSel.value) || GAMES[0];
+  const cls = wheelClass(wheel);
+  const target = PREF_TARGET[prefIdx];
+  const felt = Math.min(target, wheel.nm);
+  const ctx = { wheel, cls, pref: prefIdx, felt: Math.round(felt * 10) / 10 };
+
+  $('reco-game-title').textContent = `인게임 세팅 — ${game.name}`;
+  const tbody = $('reco-rows');
+  tbody.textContent = '';
+  game.rows(ctx).forEach((row) => {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td');
+    td1.className = 'k';
+    td1.textContent = row.k;
+    const td2 = document.createElement('td');
+    td2.className = 'v';
+    td2.textContent = row.v;
+    if (row.n) {
+      const note = document.createElement('span');
+      note.className = 'n';
+      note.textContent = row.n;
+      td2.appendChild(note);
+    }
+    tr.append(td1, td2);
+    tbody.appendChild(tr);
+  });
+  const tips = $('reco-tips');
+  tips.textContent = '';
+  game.tips.forEach((t) => {
+    const li = document.createElement('li');
+    li.textContent = t;
+    tips.appendChild(li);
+  });
+
+  $('felt-nm').textContent = fmt(felt, 1);
+  const realism = clamp(felt / 15 * 100, 0, 100);
+  $('realism-fill').style.width = `${realism}%`;
+  $('realism-pct').textContent = `${Math.round(realism)} %`;
+  $('realism-meter').setAttribute('aria-label', `실차 GT3 피크 대비 체감 스케일 ${Math.round(realism)} 퍼센트`);
+
+  const riskWrap = $('risk-pill');
+  riskWrap.textContent = '';
+  let sev, note;
+  if (cls === 'gear') {
+    sev = { key: 'serious', ico: '!!', label: '클리핑 위험 높음', color: '--serious' };
+    note = '토크가 낮아 강한 코너에서 압축·클리핑이 불가피합니다. 디테일이 우선이면 인게임 게인을 표보다 한 단계 낮추세요.';
+  } else if (cls === 'belt') {
+    sev = { key: 'warning', ico: '!', label: '클리핑 위험 중간', color: '--warning' };
+    note = '큰 연석·고하중 코너에서 간헐적 클리핑이 생길 수 있습니다. 피크가 평평하면 게인을 5 %씩 낮추세요.';
+  } else if (felt >= wheel.nm * 0.95) {
+    sev = { key: 'warning', ico: '!', label: '한계 토크 근접', color: '--warning' };
+    note = '목표 체감이 휠 한계와 같습니다. 헤드룸이 없으니 게인을 보수적으로 잡으세요.';
+  } else {
+    sev = { key: 'good', ico: '✓', label: '헤드룸 충분', color: '--good' };
+    note = `휠 한계(${wheel.nm} Nm)까지 여유가 있어 클리핑 없이 목표 체감을 낼 수 있습니다.`;
+  }
+  riskWrap.appendChild(pillEl(sev, sev.label));
+  $('risk-note').textContent = note;
+
+  const wRows = $('wheel-rows');
+  wRows.textContent = '';
+  [
+    ['휠 최대 토크', `${wheel.nm} Nm`],
+    ['구동 방식', wheel.drive === 'gear' ? '기어' : wheel.drive === 'belt' ? '벨트/하이브리드' : '다이렉트 드라이브'],
+    ['헤드룸', `${fmt(Math.max(0, wheel.nm - felt), 1)} Nm`],
+  ].forEach(([k, v]) => {
+    const tr = document.createElement('tr');
+    const td1 = document.createElement('td');
+    td1.className = 'k';
+    td1.textContent = k;
+    const td2 = document.createElement('td');
+    td2.className = 'v';
+    td2.textContent = v;
+    tr.append(td1, td2);
+    wRows.appendChild(tr);
+  });
+}
+
+wheelSel.addEventListener('change', () => {
+  customField.hidden = wheelSel.value !== '__custom__';
+  renderReco();
+});
+customNm.addEventListener('input', renderReco);
+gameSel.addEventListener('change', renderReco);
+document.querySelectorAll('.seg button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    prefIdx = Number(btn.dataset.pref);
+    document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+    renderReco();
+  });
+});
+
+/* 휠 토크 표 */
+(function fillWheelTable() {
+  const tbody = $('wheel-table').querySelector('tbody');
+  const driveLabel = { gear: '기어', belt: '벨트/하이브리드', dd: '다이렉트 드라이브' };
+  WHEELS.forEach((grp) => grp.items.forEach((w) => {
+    const tr = document.createElement('tr');
+    const t1 = document.createElement('td'); t1.textContent = w.name;
+    const t2 = document.createElement('td'); t2.textContent = driveLabel[w.drive];
+    const t3 = document.createElement('td'); t3.className = 'num'; t3.textContent = `${w.nm} Nm`;
+    tr.append(t1, t2, t3);
+    tbody.appendChild(tr);
+  }));
+})();
+
+/* ============================================================
+   STEP 02 — 클리핑 시뮬레이터
+   ============================================================ */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const SIM = (() => {
+  const n = 1200, dur = 20; // 20초, 60 Hz
+  const t = new Float64Array(n);
+  const s = new Float64Array(n);
+  const rng = mulberry32(56); // 재현 가능한 신호
+  // 코너: [시작, 길이, 진폭, 방향]
+  const corners = [[1.4, 3.4, 0.66, 1], [5.9, 2.6, 0.92, -1], [10.4, 4.0, 0.78, 1], [15.9, 2.9, 0.88, -1]];
+  // 연석 타격: [시각, 진폭]
+  const kerbs = [[4.1, 0.34], [7.9, 0.52], [12.4, 0.38], [17.6, 0.44]];
+  let noise = 0;
+  for (let i = 0; i < n; i++) {
+    const time = (i / (n - 1)) * dur;
+    t[i] = time;
+    let v = 0;
+    for (const [t0, len, amp, dir] of corners) {
+      if (time >= t0 && time <= t0 + len) {
+        v += dir * amp * Math.pow(Math.sin(Math.PI * (time - t0) / len), 1.4);
+      }
+    }
+    for (const [tk, amp] of kerbs) {
+      if (time >= tk && time <= tk + 0.6) {
+        const dt = time - tk;
+        v += amp * Math.exp(-dt * 9) * Math.sin(2 * Math.PI * 17 * dt);
+      }
+    }
+    noise = noise * 0.86 + (rng() - 0.5) * 0.11; // 저역 통과 노면 질감
+    v += noise;
+    s[i] = v;
+  }
+  let peak = 0;
+  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(s[i]));
+  for (let i = 0; i < n; i++) s[i] /= peak; // 피크 = 1.0 (게인 100 %에서 딱 한계)
+  const sortedAbs = Float64Array.from(s, Math.abs).sort();
+  return { n, dur, t, s, sortedAbs };
+})();
+
+let gain = 1.28;
+let waveHover = -1;
+
+function simStats() {
+  const g = gain;
+  let clipped = 0, lossNum = 0, lossDen = 0;
+  for (let i = 0; i < SIM.n; i++) {
+    const a = Math.abs(SIM.s[i] * g);
+    if (a >= 0.999) clipped++;
+    lossDen += a;
+    if (a > 1) lossNum += a - 1;
+  }
+  const recoGain = Math.floor(0.995 / quantileSorted(SIM.sortedAbs, 0.998) * 100);
+  return {
+    clipPct: (clipped / SIM.n) * 100,
+    lossPct: lossDen > 0 ? (lossNum / lossDen) * 100 : 0,
+    peakPct: g * 100,
+    recoGain,
+  };
+}
+
+/* --- 파형 차트 --- */
+const PADL = 46, PADR = 14, PADT = 10, PADB = 26;
+const drawWave = registerChart($('wave-canvas'), (ctx, W, H) => {
+  const plotW = W - PADL - PADR, plotH = H - PADT - PADB;
+  const yMax = 1.6;
+  const xOf = (time) => PADL + (time / SIM.dur) * plotW;
+  const yOf = (v) => PADT + (1 - (v + yMax) / (2 * yMax)) * plotH;
+  const cGrid = cssToken('--grid'), cAxis = cssToken('--axis'), cMuted = cssToken('--muted');
+  const cAccent = cssToken('--accent'), cCrit = cssToken('--critical'), cGhost = cssToken('--ghost');
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
+
+  // 그리드 + Y 눈금
+  for (const lv of [-1.5, -1, -0.5, 0, 0.5, 1, 1.5]) {
+    const y = yOf(lv);
+    ctx.strokeStyle = lv === 0 ? cAxis : cGrid;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PADL, y); ctx.lineTo(W - PADR, y); ctx.stroke();
+    ctx.fillStyle = cMuted;
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    ctx.fillText(`${Math.round(lv * 100)}%`, PADL - 7, y);
+  }
+  // 출력 한계 ±100 %
+  ctx.strokeStyle = cCrit; ctx.globalAlpha = 0.55; ctx.lineWidth = 1;
+  for (const lv of [-1, 1]) {
+    const y = yOf(lv);
+    ctx.beginPath(); ctx.moveTo(PADL, y); ctx.lineTo(W - PADR, y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = cCrit; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+  ctx.fillText('출력 한계', PADL + 4, yOf(1) - 3);
+
+  // X 눈금
+  ctx.fillStyle = cMuted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let sec = 0; sec <= SIM.dur; sec += 5) ctx.fillText(`${sec}s`, xOf(sec), H - PADB + 8);
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(PADL, PADT, plotW, plotH); ctx.clip();
+
+  // 요청 토크(게인 적용, 클램프 전) — 회색 고스트
+  ctx.strokeStyle = cGhost; ctx.globalAlpha = 0.65; ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < SIM.n; i++) {
+    const x = xOf(SIM.t[i]), y = yOf(clamp(SIM.s[i] * gain, -yMax, yMax));
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // 실제 출력(클램프) — 파랑
+  ctx.strokeStyle = cAccent; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < SIM.n; i++) {
+    const x = xOf(SIM.t[i]), y = yOf(clamp(SIM.s[i] * gain, -1, 1));
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+
+  // 클리핑 구간 강조 — 빨강
+  ctx.strokeStyle = cCrit; ctx.lineWidth = 2.5;
+  let run = false;
+  ctx.beginPath();
+  for (let i = 0; i < SIM.n; i++) {
+    const clippedHere = Math.abs(SIM.s[i] * gain) >= 0.999;
+    const x = xOf(SIM.t[i]), y = yOf(clamp(SIM.s[i] * gain, -1, 1));
+    if (clippedHere) { run ? ctx.lineTo(x, y) : ctx.moveTo(x, y); run = true; }
+    else run = false;
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // 크로스헤어
+  if (waveHover >= 0) {
+    const x = xOf(SIM.t[waveHover]);
+    ctx.strokeStyle = cAxis; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, PADT); ctx.lineTo(x, H - PADB); ctx.stroke();
+    const out = clamp(SIM.s[waveHover] * gain, -1, 1);
+    ctx.fillStyle = cAccent;
+    ctx.beginPath(); ctx.arc(x, yOf(out), 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = cssToken('--surface'); ctx.lineWidth = 2; ctx.stroke();
+  }
+});
+
+function showWaveTT() {
+  const tt = $('wave-tt');
+  if (waveHover < 0) { tt.style.display = 'none'; drawWave(); return; }
+  const body = $('wave-canvas').parentElement.getBoundingClientRect();
+  const req = SIM.s[waveHover] * gain * 100;
+  const out = clamp(SIM.s[waveHover] * gain, -1, 1) * 100;
+  tt.textContent = '';
+  const tEl = document.createElement('div');
+  tEl.className = 'tt-t';
+  tEl.textContent = `t = ${fmt(SIM.t[waveHover], 2)} s`;
+  tt.appendChild(tEl);
+  ttRow(tt, '요청', `${fmt(req, 0)} %`, cssToken('--ghost'));
+  ttRow(tt, '출력', `${fmt(out, 0)} %`, cssToken('--accent'));
+  if (Math.abs(req) >= 99.9) ttRow(tt, '클리핑', '한계 도달', cssToken('--critical'));
+  tt.style.display = 'block';
+  const x = PADL + (SIM.t[waveHover] / SIM.dur) * (body.width - PADL - PADR);
+  const left = clamp(x + 14, 4, body.width - tt.offsetWidth - 4);
+  tt.style.left = `${left}px`;
+  tt.style.top = '14px';
+  drawWave();
+}
+
+const waveCanvas = $('wave-canvas');
+waveCanvas.addEventListener('pointermove', (e) => {
+  const rect = waveCanvas.getBoundingClientRect();
+  const frac = clamp((e.clientX - rect.left - PADL) / (rect.width - PADL - PADR), 0, 1);
+  waveHover = Math.round(frac * (SIM.n - 1));
+  showWaveTT();
+});
+waveCanvas.addEventListener('pointerleave', () => { waveHover = -1; showWaveTT(); });
+waveCanvas.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  e.preventDefault();
+  const step = e.key === 'ArrowLeft' ? -10 : 10;
+  waveHover = clamp((waveHover < 0 ? Math.floor(SIM.n / 2) : waveHover) + step, 0, SIM.n - 1);
+  showWaveTT();
+});
+waveCanvas.addEventListener('blur', () => { waveHover = -1; showWaveTT(); });
+
+/* --- 히스토그램 (공통 렌더러) --- */
+function makeHistogram(canvas, ttEl, statsEl) {
+  const state = { bins: [], xUnit: '%', hover: -1, cutLabel: null, cutX: null };
+  const PL = 44, PR = 10, PT = 8, PB = 26;
+
+  const draw = registerChart(canvas, (ctx, W, H) => {
+    const { bins } = state;
+    ctx.clearRect(0, 0, W, H);
+    if (!bins.length) return;
+    const plotW = W - PL - PR, plotH = H - PT - PB;
+    const maxShare = Math.max(...bins.map((b) => b.share), 0.001);
+    const yMax = [1, 2, 5, 10, 20, 50, 100].find((v) => v >= maxShare * 1.05) || 100;
+    const yStep = { 1: 0.5, 2: 1, 5: 1, 10: 2, 20: 5, 50: 10, 100: 25 }[yMax];
+    const cGrid = cssToken('--grid'), cAxis = cssToken('--axis'), cMuted = cssToken('--muted');
+    const cAccent = cssToken('--accent'), cCrit = cssToken('--critical'), cSurface = cssToken('--surface');
+
+    ctx.font = '11px ui-monospace, Menlo, Consolas, monospace';
+    for (let v = 0; v <= yMax + 1e-9; v += yStep) {
+      const y = PT + plotH - (v / yMax) * plotH;
+      ctx.strokeStyle = v === 0 ? cAxis : cGrid; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(PL, y); ctx.lineTo(W - PR, y); ctx.stroke();
+      ctx.fillStyle = cMuted; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(`${v}%`, PL - 7, y);
+    }
+
+    const bw = plotW / bins.length;
+    const barW = Math.min(24, Math.max(2, bw - 2)); // 2px 서피스 갭
+    bins.forEach((b, i) => {
+      const h = Math.max(b.share > 0 ? 1.5 : 0, (b.share / yMax) * plotH);
+      const x = PL + i * bw + (bw - barW) / 2;
+      const y = PT + plotH - h;
+      ctx.fillStyle = b.flag ? cCrit : cAccent;
+      const r = Math.min(4, barW / 2, h);
+      ctx.beginPath();
+      ctx.moveTo(x, y + h);
+      ctx.lineTo(x, y + r);
+      ctx.arcTo(x, y, x + r, y, r);
+      ctx.lineTo(x + barW - r, y);
+      ctx.arcTo(x + barW, y, x + barW, y + r, r);
+      ctx.lineTo(x + barW, y + h);
+      ctx.closePath();
+      ctx.fill();
+      if (i === state.hover && h > 0) {
+        ctx.strokeStyle = cSurface; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = b.flag ? cCrit : cAccent; ctx.lineWidth = 1; ctx.stroke();
+      }
+    });
+
+    ctx.fillStyle = cMuted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    const every = Math.ceil(bins.length / 5);
+    bins.forEach((b, i) => {
+      if (i % every === 0 && i < bins.length - 2) ctx.fillText(`${b.x0}${state.xUnit}`, PL + i * bw, H - PB + 8);
+    });
+    ctx.textAlign = 'right';
+    ctx.fillText(`${bins[bins.length - 1].x1}${state.xUnit}`, PL + plotW, H - PB + 8);
+
+    if (state.cutX != null) {
+      const x = PL + (state.cutX * plotW);
+      ctx.strokeStyle = cCrit; ctx.globalAlpha = 0.7; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, PT); ctx.lineTo(x, PT + plotH); ctx.stroke();
+      ctx.globalAlpha = 1;
+      const label = state.cutLabel || '';
+      const lw = ctx.measureText(label).width;
+      ctx.fillStyle = cCrit; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(label, Math.min(x + 4, W - PR - lw - 2), PT + 2);
+    }
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const plotW = rect.width - PL - PR;
+    const i = Math.floor((e.clientX - rect.left - PL) / (plotW / state.bins.length));
+    state.hover = (i >= 0 && i < state.bins.length) ? i : -1;
+    if (state.hover >= 0) {
+      const b = state.bins[state.hover];
+      ttEl.textContent = '';
+      const tEl = document.createElement('div');
+      tEl.className = 'tt-t';
+      tEl.textContent = `${b.x0}–${b.x1} ${state.xUnit}`;
+      ttEl.appendChild(tEl);
+      ttRow(ttEl, '시간 비중', `${fmt(b.share, b.share < 1 ? 2 : 1)} %`, b.flag ? cssToken('--critical') : cssToken('--accent'));
+      ttEl.style.display = 'block';
+      const left = clamp(e.clientX - rect.left + 14, 4, rect.width - ttEl.offsetWidth - 4);
+      ttEl.style.left = `${left}px`;
+      ttEl.style.top = '10px';
+    } else ttEl.style.display = 'none';
+    draw();
+  });
+  canvas.addEventListener('pointerleave', () => { state.hover = -1; ttEl.style.display = 'none'; draw(); });
+
+  return {
+    update(bins, opts = {}) {
+      state.bins = bins;
+      state.xUnit = opts.xUnit || '%';
+      state.cutX = opts.cutX ?? null;
+      state.cutLabel = opts.cutLabel || null;
+      if (statsEl) {
+        statsEl.textContent = '';
+        bins.forEach((b) => {
+          if (b.share <= 0) return;
+          const tr = document.createElement('tr');
+          const t1 = document.createElement('td');
+          t1.textContent = `${b.x0}–${b.x1} ${state.xUnit}${b.flag ? ' (클리핑)' : ''}`;
+          const t2 = document.createElement('td');
+          t2.className = 'num';
+          t2.textContent = `${fmt(b.share, 2)} %`;
+          tr.append(t1, t2);
+          statsEl.appendChild(tr);
+        });
+      }
+      draw();
+    },
+  };
+}
+
+const simHist = makeHistogram($('hist-canvas'), $('hist-tt'), $('hist-stats'));
+
+function binsFromValues(absVals, fullScale, nBins = 20) {
+  const bins = Array.from({ length: nBins }, (_, i) => ({
+    x0: Math.round((i / nBins) * 100), x1: Math.round(((i + 1) / nBins) * 100), share: 0, flag: false,
+  }));
+  for (const a of absVals) {
+    const frac = clamp(a / fullScale, 0, 1);
+    const i = Math.min(nBins - 1, Math.floor(frac * nBins));
+    bins[i].share++;
+  }
+  bins.forEach((b) => { b.share = (b.share / absVals.length) * 100; });
+  return bins;
+}
+
+function updateSim() {
+  $('gain-val').textContent = `${Math.round(gain * 100)} %`;
+  const st = simStats();
+  const sev = severity(st.clipPct);
+  $('tile-clip').textContent = `${fmt(st.clipPct, st.clipPct < 1 ? 2 : 1)} %`;
+  $('tile-clip').style.color = st.clipPct >= 0.5 ? `var(${sev.color === '--warning' ? '--ink' : sev.color})` : '';
+  $('tile-clip-sub').textContent = `${sev.ico} ${sev.label} — 0.5 % 미만이 목표`;
+  $('tile-loss').textContent = `${fmt(st.lossPct, st.lossPct < 1 ? 2 : 1)} %`;
+  $('tile-peak').textContent = `${Math.round(st.peakPct)} %`;
+  $('tile-reco').textContent = `≤ ${st.recoGain} %`;
+
+  const out = new Float64Array(SIM.n);
+  for (let i = 0; i < SIM.n; i++) out[i] = Math.min(1, Math.abs(SIM.s[i] * gain));
+  const bins = binsFromValues(out, 1);
+  bins[bins.length - 1].flag = st.clipPct >= 0.05;
+  simHist.update(bins);
+
+  const stats = $('wave-stats');
+  stats.textContent = '';
+  [
+    ['게인', `${Math.round(gain * 100)} %`],
+    ['클리핑 시간 비중', `${fmt(st.clipPct, 2)} %`],
+    ['디테일 손실(잘린 에너지)', `${fmt(st.lossPct, 2)} %`],
+    ['피크 요청', `${Math.round(st.peakPct)} %`],
+    ['권장 게인', `≤ ${st.recoGain} %`],
+  ].forEach(([k, v]) => {
+    const tr = document.createElement('tr');
+    const t1 = document.createElement('td'); t1.textContent = k;
+    const t2 = document.createElement('td'); t2.className = 'num'; t2.textContent = v;
+    tr.append(t1, t2);
+    stats.appendChild(tr);
+  });
+
+  drawWave();
+}
+$('gain').addEventListener('input', (e) => { gain = Number(e.target.value) / 100; updateSim(); });
+
+/* ============================================================
+   STEP 03 — CSV 분석
+   ============================================================ */
+const drop = $('drop');
+const fileInput = $('file-input');
+let csvData = null; // { headers, cols: Float64Array[], numericIdx: [] }
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/);
+  const delims = [',', ';', '\t'];
+  // 헤더 후보: 뒤따르는 행들과 열 수가 같고, 뒤 행들이 대부분 숫자인 첫 행
+  const isNumCell = (c) => c.trim() !== '' && Number.isFinite(Number(c.replace(/^"|"$/g, '')));
+  let best = null;
+  const scanMax = Math.min(lines.length - 2, 100);
+  for (const d of delims) {
+    for (let i = 0; i <= scanMax; i++) {
+      const cells = lines[i].split(d);
+      if (cells.length < 2) continue;
+      let numericRows = 0, checked = 0;
+      for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
+        const rc = lines[j].split(d);
+        if (rc.length !== cells.length) continue;
+        checked++;
+        const numShare = rc.filter(isNumCell).length / rc.length;
+        if (numShare >= 0.6) numericRows++;
+      }
+      if (checked >= 2 && numericRows >= 2) { best = { headerIdx: i, delim: d, nCols: cells.length }; break; }
+    }
+    if (best) break;
+  }
+  if (!best) return null;
+
+  const { headerIdx, delim, nCols } = best;
+  const headers = lines[headerIdx].split(delim).map((h, i) => {
+    const clean = h.replace(/^"|"$/g, '').trim();
+    return clean || `컬럼 ${i + 1}`;
+  });
+  const cols = headers.map(() => []);
+  const maxRows = 400000;
+  let taken = 0;
+  for (let i = headerIdx + 1; i < lines.length && taken < maxRows; i++) {
+    const cells = lines[i].split(delim);
+    if (cells.length !== nCols) continue;
+    taken++;
+    for (let c = 0; c < nCols; c++) {
+      cols[c].push(Number(cells[c].replace(/^"|"$/g, '')));
+    }
+  }
+  if (!taken) return null;
+  const numericIdx = [];
+  cols.forEach((col, i) => {
+    const finite = col.filter(Number.isFinite).length;
+    if (finite / col.length >= 0.8) numericIdx.push(i);
+  });
+  return { headers, cols: cols.map((c) => Float64Array.from(c, (v) => (Number.isFinite(v) ? v : 0))), numericIdx };
+}
+
+function guessTorqueColumn(data) {
+  const score = (h) => {
+    const s = h.toLowerCase();
+    if (/time|dist|lap|speed|rpm|throttle|brake|gear/.test(s)) return -2;
+    if (/steer.*(torque|force)|swtorque|st\s*torque/.test(s)) return 5;
+    if (/torque/.test(s)) return 4;
+    if (/ffb|forcefeedback|force feedback/.test(s)) return 3;
+    if (/force/.test(s)) return 2;
+    return 0;
+  };
+  let bestIdx = data.numericIdx[0] ?? 0, bestScore = -1;
+  for (const i of data.numericIdx) {
+    const sc = score(data.headers[i]);
+    if (sc > bestScore) { bestScore = sc; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
+const csvHist = makeHistogram($('csv-hist-canvas'), $('csv-hist-tt'), $('csv-stats'));
+
+function analyzeCSV() {
+  if (!csvData) return;
+  const colIdx = Number($('col-sel').value);
+  const raw = csvData.cols[colIdx];
+  const abs = Float64Array.from(raw, Math.abs).sort();
+  const peak = abs[abs.length - 1] || 0;
+  let unit = $('unit-sel').value;
+  if (unit === 'auto') {
+    const header = csvData.headers[colIdx].toLowerCase();
+    if (/%|pct|percent/.test(header)) unit = peak <= 1.5 ? 'norm' : 'pct';
+    else if (/torque|\bnm\b|\[nm\]/.test(header)) unit = 'nm';
+    else if (peak <= 1.5) unit = 'norm';
+    else if (peak <= 101) unit = 'pct';
+    else unit = 'nm';
+  }
+  const p999 = quantileSorted(abs, 0.999);
+  const p995 = quantileSorted(abs, 0.995);
+  const p990 = quantileSorted(abs, 0.99);
+  let rms = 0;
+  for (const v of raw) rms += v * v;
+  rms = Math.sqrt(rms / raw.length);
+
+  const tiles = $('csv-tiles');
+  tiles.textContent = '';
+  const addTile = (label, value, sub) => {
+    const div = document.createElement('div');
+    div.className = 'tile';
+    const l = document.createElement('div'); l.className = 't-label'; l.textContent = label;
+    const v = document.createElement('div'); v.className = 't-value mono'; v.textContent = value;
+    div.append(l, v);
+    if (sub) { const s = document.createElement('div'); s.className = 't-sub'; s.textContent = sub; div.appendChild(s); }
+    tiles.appendChild(div);
+  };
+
+  const verdict = $('csv-verdict');
+  verdict.textContent = '';
+  const strong = (txt) => { const el = document.createElement('strong'); el.textContent = txt; return el; };
+  const statRows = [];
+
+  if (unit === 'norm' || unit === 'pct') {
+    const fs = unit === 'norm' ? 1 : 100;
+    const suffix = unit === 'norm' ? '' : ' %';
+    let clipped = 0;
+    for (const v of abs) if (v >= fs * 0.995) clipped++;
+    const clipPct = (clipped / abs.length) * 100;
+    const sev = severity(clipPct);
+    addTile('샘플 수', abs.length.toLocaleString('ko-KR'));
+    addTile('클리핑 시간 비중', `${fmt(clipPct, 2)} %`, `${sev.ico} ${sev.label}`);
+    addTile('피크', `${fmt(peak / fs * 100, 1)} %`, '풀스케일 대비');
+    addTile('RMS', `${fmt(rms / fs * 100, 1)} %`, '평균적인 힘 수준');
+
+    verdict.append('이 신호는 출력형(풀스케일 대비)입니다. 클리핑 시간 비중 ');
+    verdict.append(strong(`${fmt(clipPct, 2)} %`));
+    if (clipPct < 0.5) {
+      verdict.append(' — 양호합니다. 지금 게인을 유지해도 좋고, 피크(');
+      verdict.append(strong(`${fmt(peak / fs * 100, 1)} %`));
+      verdict.append(')가 90 % 아래라면 게인을 조금 올릴 여유도 있습니다.');
+    } else {
+      // 기록된 신호는 이미 잘려 있어 백분위만으로는 감소량을 알 수 없음 —
+      // 클리핑 시간 비중으로 과구동 배율을 역산(사인형 피크 가정)해 보수적으로 병합
+      const multQ = 0.99 * fs / quantileSorted(abs, 0.997);
+      const multClip = Math.cos(Math.PI * clipPct / 200);
+      const mult = Math.min(multQ, multClip);
+      verdict.append(' — 디테일이 잘리고 있습니다. ');
+      if (mult >= 0.97) {
+        verdict.append('신호가 한계에 눌려 기록돼 정확한 감소량은 계산할 수 없습니다. 게인을 ');
+        verdict.append(strong('5–10 %'));
+        verdict.append(' 낮춘 뒤 다시 기록해서 0.5 % 미만이 될 때까지 반복하세요.');
+      } else {
+        verdict.append('게인(iRacing이라면 max force는 반대로 올리기)을 현재의 약 ');
+        verdict.append(strong(`${Math.round(mult * 100)} %`));
+        verdict.append(' 수준으로 낮춘 뒤 다시 기록해 확인하세요. 잘린 기록에서 역산한 추정치라 실제로는 이보다 조금 더 낮춰야 할 수 있습니다.');
+      }
+    }
+    const bins = binsFromValues(abs, fs);
+    bins[bins.length - 1].flag = clipPct >= 0.05;
+    $('csv-hist-title').textContent = '신호 레벨 분포 — 풀스케일 대비';
+    csvHist.update(bins, { xUnit: '%' });
+    statRows.push(['단위 해석', unit === 'norm' ? '정규화 (±1)' : '퍼센트 (±100)'],
+      ['피크', `${fmt(peak, 3)}${suffix}`], ['P99.9', `${fmt(p999, 3)}${suffix}`],
+      ['P99.5', `${fmt(p995, 3)}${suffix}`], ['RMS', `${fmt(rms, 3)}${suffix}`],
+      ['클리핑 시간 비중', `${fmt(clipPct, 2)} %`]);
+  } else {
+    // Nm — 물리 토크 요청: iRacing max force 권장값 계산
+    const recoMax = Math.ceil(p995);
+    addTile('샘플 수', abs.length.toLocaleString('ko-KR'));
+    addTile('피크 토크', `${fmt(peak, 1)} Nm`);
+    addTile('P99.5', `${fmt(p995, 1)} Nm`, '순간 피크 제외한 실질 최대');
+    addTile('권장 max force', `${recoMax} Nm`, 'iRacing 기준 — P99.5에 맞춤');
+
+    verdict.append('이 신호는 물리 조향 토크(Nm)입니다. iRacing이라면 인게임 ');
+    verdict.append(strong('max force'));
+    verdict.append('를 ');
+    verdict.append(strong(`${recoMax} Nm`));
+    verdict.append('으로 설정하면 시간 비중 약 0.5 % 미만의 순간 클리핑만 남기고 다이내믹 레인지를 최대로 쓸 수 있습니다. 다른 게임이라면 게인을 잡을 때 같은 기준(P99.5 ≈ 출력 100 %)을 쓰면 됩니다.');
+
+    const niceMax = Math.ceil(peak / 5) * 5;
+    const nBins = 20;
+    const bins = Array.from({ length: nBins }, (_, i) => ({
+      x0: Math.round((i / nBins) * niceMax), x1: Math.round(((i + 1) / nBins) * niceMax), share: 0, flag: false,
+    }));
+    for (const a of abs) {
+      const i = Math.min(nBins - 1, Math.floor((a / niceMax) * nBins));
+      bins[i].share++;
+    }
+    bins.forEach((b) => { b.share = (b.share / abs.length) * 100; });
+    $('csv-hist-title').textContent = '토크 분포 — 빨간 선이 권장 max force';
+    csvHist.update(bins, { xUnit: 'Nm', cutX: clamp(p995 / niceMax, 0, 1), cutLabel: `P99.5 = ${fmt(p995, 1)} Nm` });
+    statRows.push(['단위 해석', '토크 (Nm)'], ['피크', `${fmt(peak, 2)} Nm`],
+      ['P99.9', `${fmt(p999, 2)} Nm`], ['P99.5', `${fmt(p995, 2)} Nm`],
+      ['P99', `${fmt(p990, 2)} Nm`], ['RMS', `${fmt(rms, 2)} Nm`],
+      ['권장 max force', `${recoMax} Nm`]);
+  }
+
+  const statsEl = $('csv-stats');
+  const prepend = document.createDocumentFragment();
+  statRows.forEach(([k, v]) => {
+    const tr = document.createElement('tr');
+    const t1 = document.createElement('td'); t1.textContent = k;
+    const t2 = document.createElement('td'); t2.className = 'num'; t2.textContent = v;
+    tr.append(t1, t2);
+    prepend.appendChild(tr);
+  });
+  statsEl.insertBefore(prepend, statsEl.firstChild);
+
+  $('csv-result').classList.remove('hidden');
+}
+
+function loadCSVText(text, label) {
+  const data = parseCSV(text);
+  if (!data || !data.numericIdx.length) {
+    $('file-tag').textContent = '숫자 데이터를 찾지 못했습니다 — 컬럼 헤더가 있는 CSV인지 확인해 주세요.';
+    return;
+  }
+  csvData = data;
+  $('file-tag').textContent = `${label} · ${data.cols[0].length.toLocaleString('ko-KR')} 행 · ${data.headers.length} 컬럼`;
+  const colSel = $('col-sel');
+  colSel.textContent = '';
+  data.numericIdx.forEach((i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = data.headers[i];
+    colSel.appendChild(opt);
+  });
+  colSel.value = String(guessTorqueColumn(data));
+  $('unit-sel').value = 'auto';
+  analyzeCSV();
+}
+
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files && fileInput.files[0];
+  if (!f) return;
+  f.text().then((text) => loadCSVText(text, f.name));
+});
+['dragover', 'dragenter'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('hover'); }));
+['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('hover'); }));
+drop.addEventListener('drop', (e) => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) f.text().then((text) => loadCSVText(text, f.name));
+});
+$('col-sel').addEventListener('change', analyzeCSV);
+$('unit-sel').addEventListener('change', analyzeCSV);
+
+$('sample-btn').addEventListener('click', (e) => {
+  e.preventDefault();
+  // 시뮬레이터 신호를 GT3급 조향 토크(피크 ~52 Nm)로 스케일한 합성 텔레메트리
+  let csv = 'Time,SteeringWheelTorque\n';
+  for (let i = 0; i < SIM.n; i++) {
+    csv += `${SIM.t[i].toFixed(3)},${(SIM.s[i] * 52).toFixed(3)}\n`;
+  }
+  loadCSVText(csv, '샘플 데이터 (합성 GT3 랩 구간)');
+});
+
+/* ============================================================
+   초기 렌더
+   ============================================================ */
+renderReco();
+updateSim();
+</script>
+<!-- app:end -->
+</body>
+</html>
