@@ -82,11 +82,26 @@ copy config.yaml.example config.yaml
 ## 4. 실행
 
 ```bat
-venv\Scripts\activate
-python main.py
+pipenv run python main.py
 ```
 
 게임보다 먼저 실행해도 됩니다. 게임/세션이 시작되면 자동으로 붙습니다.
+
+### 게임과 자동 동시 실행 (Steam 시작 옵션)
+
+매번 따로 켜기 귀찮으면, Steam이 게임을 켤 때 크루치프를 같이 띄우게
+할 수 있습니다:
+
+1. Steam 라이브러리 → **Le Mans Ultimate** 우클릭 → **속성** → 일반
+2. **시작 옵션**에 입력 (경로는 실제 설치 위치로):
+
+```
+"D:\teamradio56\launch_with_lmu.bat" %command%
+```
+
+이후 Steam에서 게임을 실행하면 크루치프가 최소화 창으로 같이 뜨고,
+게임을 끄면 20초 뒤(디브리핑/저장 마무리 시간) 자동 종료됩니다.
+시작 옵션을 지우면 원래대로 돌아갑니다.
 
 ### 게임 없이 테스트 (리플레이 모드)
 
