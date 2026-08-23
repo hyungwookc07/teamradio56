@@ -17,6 +17,15 @@ namespace TeamRadio56.Core.Config
     /// </summary>
     public class PluginSettings
     {
+        // -- 엔진 --------------------------------------------------------
+        /// <summary>
+        /// python = 파이썬 엔진을 자식 프로세스로 실행 (전체 기능, 현재 권장).
+        /// builtin = C# 내장 (이식 진행 중 — 아직 콜을 내지 않는다).
+        /// </summary>
+        public string EngineMode { get; set; } = "python";
+        public string EngineExe { get; set; } = "";      // 비우면 기본 경로 사용
+        public string EngineArgs { get; set; } = "";     // 소스 실행 시 main.py 경로 등
+
         // -- 음성 --------------------------------------------------------
         public bool VoiceEnabled { get; set; } = true;
         public double Volume { get; set; } = 0.9;
@@ -74,6 +83,8 @@ namespace TeamRadio56.Core.Config
         };
 
         public static readonly string[] ChatterChoices = { "quiet", "normal", "chatty" };
+
+        public static readonly string[] EngineChoices = { "python", "builtin" };
     }
 
     /// <summary>

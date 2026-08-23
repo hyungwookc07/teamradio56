@@ -26,6 +26,7 @@ namespace TeamRadio56.SimHub
         private readonly TextBlock _connection = new TextBlock();
         private readonly TextBlock _status = new TextBlock();
         private readonly TextBlock _recent = new TextBlock();
+        private readonly TextBlock _engineState = new TextBlock();
         private readonly DispatcherTimer _timer = new DispatcherTimer();
 
         public SettingsControl(TeamRadio56Plugin plugin)
@@ -69,6 +70,7 @@ namespace TeamRadio56.SimHub
             });
 
             BuildStatus(root);
+            BuildEngine(root);
             BuildVoice(root);
             BuildChatter(root);
             BuildTraffic(root);
@@ -110,6 +112,48 @@ namespace TeamRadio56.SimHub
             buttons.Children.Add(MakeButton("로그 열기", () => OpenFile(FileLog.Path)));
             buttons.Children.Add(MakeButton("설정 파일 열기", () => OpenFile(SettingsStore.Path)));
             box.Children.Add(buttons);
+        }
+
+        private void BuildEngine(StackPanel root)
+        {
+            StackPanel box = Section(root, "엔진");
+            box.Children.Add(Hint(
+                "python = 검증된 파이썬 엔진을 플러그인이 자식 프로세스로 띄웁니다 "
+                + "(전체 기능, 현재 권장). builtin = C# 내장 — 이식 중이라 아직 콜이 나가지 않습니다."));
+
+            _engineState.Foreground = Dim;
+            _engineState.TextWrapping = TextWrapping.Wrap;
+            _engineState.Margin = new Thickness(0, 2, 0, 6);
+            box.Children.Add(_engineState);
+
+            Row(box, "모드", MakeCombo(PluginSettings.EngineChoices, S.EngineMode, v =>
+            {
+                S.EngineMode = v;
+            }), "바꾼 뒤 [엔진 재시작]");
+
+            Row(box, "실행 파일", MakeText(S.EngineExe, v =>
+            {
+                S.EngineExe = v;
+            }), "비우면 기본: 플러그인 폴더\\teamradio56-engine\\");
+
+            Row(box, "추가 인자", MakeText(S.EngineArgs, v =>
+            {
+                S.EngineArgs = v;
+            }), "소스로 돌릴 때 main.py 경로");
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 6, 0, 0),
+            };
+            buttons.Children.Add(MakeButton("엔진 시작", () => _plugin.StartEngine()));
+            buttons.Children.Add(MakeButton("엔진 중지", () => _plugin.StopEngine()));
+            buttons.Children.Add(MakeButton("엔진 재시작", () => _plugin.RestartEngine()));
+            buttons.Children.Add(MakeButton("엔진 로그", () => OpenFile(_plugin.EngineLogPath)));
+            box.Children.Add(buttons);
+
+            box.Children.Add(Hint(
+                "설정을 바꾸면 [엔진 재시작]을 눌러야 엔진에 반영됩니다."));
         }
 
         private void BuildVoice(StackPanel root)
@@ -247,6 +291,31 @@ namespace TeamRadio56.SimHub
                 _connection.Text = connected ? "● LMU 연결됨" : "○ 게임 대기 중";
                 _connection.Foreground = connected ? Ok : Off;
                 _status.Text = _plugin.StatusText ?? "";
+
+                if (_plugin.UsingPythonEngine)
+                {
+                    string error = _plugin.EngineError;
+                    if (!string.IsNullOrEmpty(error))
+                    {
+                        _engineState.Text = "엔진 오류 — " + error;
+                        _engineState.Foreground = Off;
+                    }
+                    else if (_plugin.EngineRunning)
+                    {
+                        _engineState.Text = "엔진 실행 중 · " + _plugin.EngineExePath();
+                        _engineState.Foreground = Ok;
+                    }
+                    else
+                    {
+                        _engineState.Text = "엔진 중지됨 · " + _plugin.EngineExePath();
+                        _engineState.Foreground = Dim;
+                    }
+                }
+                else
+                {
+                    _engineState.Text = "내장(C#) 엔진 — 이식 진행 중이라 콜이 나가지 않습니다";
+                    _engineState.Foreground = Dim;
+                }
 
                 string[] calls = _plugin.RecentCalls();
                 _recent.Text = calls.Length == 0

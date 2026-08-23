@@ -6,6 +6,7 @@ using GameReaderCommon;
 using SimHub.Plugins;
 using TeamRadio56.Core.Config;
 using TeamRadio56.Core.Diagnostics;
+using TeamRadio56.Core.Engine;
 using TeamRadio56.Core.Telemetry;
 
 namespace TeamRadio56.SimHub
@@ -26,7 +27,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.8.1-simhub-ui";
+        public const string Version = "0.9.0-simhub-engine";
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
@@ -35,7 +36,10 @@ namespace TeamRadio56.SimHub
         private readonly Queue<string> _recent = new Queue<string>();
         private readonly object _recentGate = new object();
 
+        private readonly EngineHost _engine = new EngineHost();
+        private readonly EngineStatus _engineStatus = new EngineStatus();
         private SpeechOutput _speech;
+        private DateTime _nextStatusRead = DateTime.MinValue;
         private DateTime _nextPoll = DateTime.MinValue;
         private bool _wasConnected;
         private bool _layoutOk;
@@ -46,7 +50,52 @@ namespace TeamRadio56.SimHub
         /// <summary>설정 — SimHub 좌측 메뉴에서 편집, DLL 옆 파일에 저장.</summary>
         public PluginSettings Settings { get; private set; }
 
-        public bool IsConnected { get { return _reader.Connected; } }
+        public bool IsConnected
+        {
+            get { return UsingPythonEngine ? _engineStatus.GetBool("connected") : _reader.Connected; }
+        }
+
+        /// <summary>파이썬 엔진 모드로 동작 중인가 (C# 이식 완료 전 기본값).</summary>
+        public bool UsingPythonEngine
+        {
+            get
+            {
+                return Settings != null
+                    && !string.Equals(Settings.EngineMode, "builtin",
+                                      StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        public bool EngineRunning { get { return _engine.IsRunning; } }
+        public string EngineError { get { return _engine.LastError; } }
+        public string EngineLogPath { get { return EngineHost.EngineLogPath(); } }
+
+        public string EngineExePath()
+        {
+            string configured = Settings != null ? Settings.EngineExe : null;
+            return string.IsNullOrEmpty(configured) ? EngineHost.DefaultExePath() : configured;
+        }
+
+        /// <summary>설정 화면의 [엔진 시작] — 설정을 먼저 저장해 엔진이 최신 값을 읽게 한다.</summary>
+        public bool StartEngine()
+        {
+            SaveSettings();
+            return _engine.Start(EngineExePath(),
+                                 Settings != null ? Settings.EngineArgs : null,
+                                 SettingsStore.Path, EngineStatus.DefaultPath());
+        }
+
+        public void StopEngine()
+        {
+            _engine.Stop();
+        }
+
+        /// <summary>설정을 바꾼 뒤 엔진에 반영 (재시작).</summary>
+        public void RestartEngine()
+        {
+            _engine.Stop();
+            StartEngine();
+        }
 
         /// <summary>설정 화면에 보여줄 한 줄 상태.</summary>
         public string StatusText { get; private set; }
@@ -83,6 +132,18 @@ namespace TeamRadio56.SimHub
 
             _speech = new SpeechOutput();
             StatusText = "대기 중";
+
+            if (UsingPythonEngine)
+            {
+                if (StartEngine())
+                    FileLog.Info("파이썬 엔진 모드 — 전체 기능 동작");
+                else
+                    FileLog.Warn("엔진을 띄우지 못했습니다: " + (_engine.LastError ?? "원인 불명"));
+            }
+            else
+            {
+                FileLog.Info("내장(C#) 엔진 모드 — 이식 진행 중이라 콜은 아직 나가지 않습니다");
+            }
             FileLog.Info("초기화 완료. 로그: {0} / 설정: {1}", FileLog.Path, SettingsStore.Path);
         }
 
@@ -129,6 +190,7 @@ namespace TeamRadio56.SimHub
         {
             FileLog.Info("종료 — 정리 중");
             SaveSettings();
+            _engine.Stop();
             if (_speech != null)
                 _speech.Dispose();
             _reader.Dispose();
@@ -149,6 +211,8 @@ namespace TeamRadio56.SimHub
 
         public string[] RecentCalls()
         {
+            if (UsingPythonEngine)
+                return _engineStatus.RecentCalls();
             lock (_recentGate)
             {
                 return _recent.ToArray();
@@ -173,8 +237,40 @@ namespace TeamRadio56.SimHub
             }
         }
 
+        /// <summary>
+        /// 엔진 모드: 텔레메트리는 파이썬이 읽는다. 플러그인은 상태 파일만
+        /// 확인해 UI에 보여주고, 엔진이 죽었으면 알린다.
+        /// </summary>
+        private void TickEngineMode()
+        {
+            DateTime now = DateTime.UtcNow;
+            if (now < _nextStatusRead)
+                return;
+            _nextStatusRead = now.AddSeconds(1.0);
+
+            _engineStatus.Refresh(EngineStatus.DefaultPath());
+
+            if (!_engine.IsRunning)
+            {
+                StatusText = _engine.LastError ?? "엔진이 실행 중이 아닙니다 — [엔진 시작]을 눌러주세요";
+                return;
+            }
+            if (!_engineStatus.IsFresh)
+            {
+                StatusText = "엔진 시작 중...";
+                return;
+            }
+            StatusText = _engineStatus.Summary() ?? "엔진 동작 중";
+        }
+
         private void Tick()
         {
+            if (UsingPythonEngine)
+            {
+                TickEngineMode();
+                return;
+            }
+
             Snapshot snap = _reader.Poll();
 
             if (_reader.Connected != _wasConnected)

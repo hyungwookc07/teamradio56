@@ -158,7 +158,96 @@ class Config:
         return os.environ.get("ANTHROPIC_API_KEY") or self.get("llm.api_key", "")
 
 
-def load_config(path: str = "config.yaml") -> Config:
+# SimHub 플러그인 설정 UI(teamradio56.settings.txt) → config 경로 매핑.
+# 플러그인이 엔진으로 우리를 실행할 때, 사용자가 SimHub 화면에서 바꾼 값이
+# 이 파일 하나로 전달된다. (C#/파이썬이 같은 파일을 읽어 설정이 갈라지지 않게)
+PLUGIN_SETTINGS_MAP = {
+    "VoiceEnabled": "voice.enabled",
+    "Volume": "voice.volume",
+    "EdgeVoice": "tts.edge_voice",
+    "RadioFx": "tts.radio_fx",
+    "RadioNoise": "tts.radio_noise",
+    "AlongsideMeters": "thresholds.alongside_m",
+    "StartSpotterSeconds": "thresholds.start_spotter_sec",
+    "SideInvert": "thresholds.side_invert",
+    "TrafficRaceOnly": "thresholds.traffic_race_only",
+    "LapTimeEveryLap": "reports.laptime_every_lap",
+    "StatusEveryLaps": "reports.status_every_laps",
+    "LlmEnabled": "llm.enabled",
+    "LlmApiKey": "llm.api_key",
+    "LlmBudgetPerHour": "llm.budget_per_hour",
+    "RequireRealtime": "app.require_realtime",
+    "SpeechLog": "app.speech_log",
+}
+
+# 수다스러움 프리셋 → 쿨다운 배율 (클수록 조용)
+CHATTER_SCALE = {"quiet": 1.8, "normal": 1.0, "chatty": 0.6}
+
+
+def _parse_scalar(text: str) -> Any:
+    low = text.strip().lower()
+    if low in ("true", "false"):
+        return low == "true"
+    try:
+        return int(text)
+    except ValueError:
+        pass
+    try:
+        return float(text)
+    except ValueError:
+        return text
+
+
+def _set_path(data: dict, path: str, value: Any) -> None:
+    parts = path.split(".")
+    cur = data
+    for part in parts[:-1]:
+        cur = cur.setdefault(part, {})
+    cur[parts[-1]] = value
+
+
+def read_plugin_settings(path: str) -> dict:
+    """
+    SimHub 플러그인이 쓴 key=value 설정을 config 구조(dict)로 변환.
+    파일이 없거나 깨져 있으면 빈 dict — 호출부가 기본값으로 진행한다.
+    """
+    out: dict = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError:
+        return out
+
+    raw: dict[str, str] = {}
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        raw[key.strip()] = value.strip()
+
+    for key, cfg_path in PLUGIN_SETTINGS_MAP.items():
+        if key in raw:
+            _set_path(out, cfg_path, _parse_scalar(raw[key]))
+
+    # 말 속도는 정수(%) → edge-tts 형식("+10%")
+    if "SpeechRatePercent" in raw:
+        try:
+            pct = int(float(raw["SpeechRatePercent"]))
+            _set_path(out, "tts.edge_rate", f"{pct:+d}%")
+        except ValueError:
+            pass
+
+    # 수다스러움 프리셋 → 전 쿨다운에 배율
+    scale = CHATTER_SCALE.get(raw.get("ChatterPreset", "").lower())
+    if scale and scale != 1.0:
+        out["cooldowns"] = {k: round(v * scale)
+                            for k, v in DEFAULTS["cooldowns"].items()}
+    return out
+
+
+def load_config(path: str = "config.yaml",
+                plugin_settings: str | None = None) -> Config:
     data = DEFAULTS
     if os.path.exists(path):
         try:
@@ -170,4 +259,15 @@ def load_config(path: str = "config.yaml") -> Config:
             log.error("config.yaml 파싱 실패, 기본값 사용: %s", e)
     else:
         log.info("config.yaml 없음, 기본값 사용 (config.yaml.example 참고)")
+
+    # SimHub 플러그인 설정이 있으면 config.yaml보다 우선 (UI가 진실의 원천)
+    if plugin_settings:
+        override = read_plugin_settings(plugin_settings)
+        if override:
+            data = _deep_merge(data, override)
+            log.info("SimHub 플러그인 설정 적용: %s (%d개 섹션)",
+                     plugin_settings, len(override))
+        else:
+            log.info("플러그인 설정을 읽지 못함 — config.yaml/기본값 사용: %s",
+                     plugin_settings)
     return Config(data)

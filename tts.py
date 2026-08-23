@@ -20,6 +20,7 @@ import os
 import random
 import threading
 import time
+from collections import deque
 import urllib.request
 from typing import Callable, Optional
 
@@ -260,6 +261,8 @@ class VoiceWorker(threading.Thread):
         self.enabled = enabled
         self.speech_log = speech_log or SpeechLogger(None)
         self._stop_flag = threading.Event()
+        # 최근 발화 (SimHub 플러그인 상태 화면에 노출)
+        self.recent: deque = deque(maxlen=5)
 
     def stop(self) -> None:
         self._stop_flag.set()
@@ -287,6 +290,7 @@ class VoiceWorker(threading.Thread):
         if not text:
             return
         log.info("🎙️ [크루치프] %s", text)
+        self.recent.append(f"{time.strftime('%H:%M:%S')}  {text}")
         self.state.add_narrative(f"(랩{len(self.state.laps)}) 크루치프: {text}")
         self.speech_log.write(ev, text, source, lap=len(self.state.laps))
         self._maybe_bridge(ev)

@@ -41,6 +41,7 @@ from analyzers.health import HealthAnalyzer
 from analyzers.reporter import StatusReporter
 from training import LapCoach, TrackHistory, Debriefer
 from resttelemetry import RestTelemetry
+from status import StatusWriter
 from voice import VoiceGenerator
 from tts import AudioPlayer, SpeechLogger, VoiceWorker, build_engine
 
@@ -67,10 +68,13 @@ def fmt_gap(sec: float) -> str:
 
 class CrewChiefApp:
     def __init__(self, cfg: Config, source: TelemetrySource,
-                 recorder: SnapshotRecorder | None = None):
+                 recorder: SnapshotRecorder | None = None,
+                 status_path: str | None = None):
         self.cfg = cfg
         self.source = source
         self.recorder = recorder
+        # SimHub 플러그인 엔진 모드: 상태를 파일로 내보내 UI가 표시
+        self.status = StatusWriter(status_path)
         self.poll_interval = 1.0 / max(cfg.get("app.poll_hz", 5), 1)
         self.status_interval = cfg.get("app.console_status_sec", 1.0)
         self._last_status = 0.0
@@ -156,6 +160,7 @@ class CrewChiefApp:
             if now - self._last_waiting_msg > 5.0:
                 log.info("게임 대기 중... (LMU 실행 + 공유 메모리 플러그인 활성화 필요)")
                 self._last_waiting_msg = now
+            self._publish_status(None, "게임 대기 중")
             return
 
         # 세션 시작/종료 전이 감지
@@ -170,6 +175,7 @@ class CrewChiefApp:
             if now - self._last_waiting_msg > 5.0:
                 log.info("세션 대기 중... (게임 연결됨, 세션 없음)")
                 self._last_waiting_msg = now
+            self._publish_status(snap, "세션 대기 중")
             return
 
         # 모니터/가라지/메뉴(mInRealtime=false)에서는 분석·발화 중단.
@@ -179,13 +185,39 @@ class CrewChiefApp:
             if now - self._last_waiting_msg > 5.0:
                 log.info("모니터/메뉴 상태 — 주행 복귀 대기 중")
                 self._last_waiting_msg = now
+            self._publish_status(snap, "모니터/메뉴 — 주행 복귀 대기")
             return
 
         self.on_snapshot(snap)
 
+        self._publish_status(snap, "주행 중")
+
         if now - self._last_status >= self.status_interval:
             self._last_status = now
             self.print_status(snap)
+
+    def _publish_status(self, snap, state_text: str) -> None:
+        """SimHub 플러그인 UI가 읽을 상태 파일 갱신 (엔진 모드에서만 동작)."""
+        if not self.status.path:
+            return
+        fields = {"running": True, "state": state_text,
+                  "connected": snap is not None}
+        me = snap.player_scoring() if snap is not None else None
+        if snap is not None and me is not None:
+            fields.update({
+                "track": snap.session.get("track", ""),
+                "phase": GAME_PHASES.get(snap.session.get("game_phase", -1), "?"),
+                "place": me["place"],
+                "class_place": self.state.class_place_of(snap, me),
+                "cls": me["cls"],
+                "lap": me["total_laps"],
+                "vehicles": snap.session.get("num_vehicles", 0),
+                "fuel": (snap.player or {}).get("fuel", 0.0),
+                "speed": (snap.player or {}).get("speed_kmh", 0.0),
+            })
+        for i, line in enumerate(list(self.worker.recent)[-5:], start=1):
+            fields[f"call{i}"] = line
+        self.status.write(fields)
 
     def _on_session_end(self, reason: str) -> None:
         """세션 종료: 디브리핑 + 히스토리 저장 + 전 분석기 상태 리셋."""
@@ -352,6 +384,7 @@ class CrewChiefApp:
             log.exception("디브리핑 생성 실패")
         self.worker.stop()
         self.rest.stop()
+        self.status.close()
         if self.cfg.get("app.save_race_json", True):
             self.state.save_json(self.cfg.get("app.data_dir", "data"))
         if self.recorder is not None:
@@ -374,6 +407,10 @@ def main() -> int:
     parser.add_argument("--replay", metavar="PATH", help="녹화된 텔레메트리 JSONL 재생 (mock 모드)")
     parser.add_argument("--speed", type=float, default=1.0, help="리플레이 배속 (기본 1.0)")
     parser.add_argument("--record", metavar="PATH", help="텔레메트리를 JSONL로 녹화")
+    parser.add_argument("--settings", metavar="PATH",
+                        help="SimHub 플러그인 설정 파일 (엔진 모드에서 UI 값 수신)")
+    parser.add_argument("--status-file", metavar="PATH",
+                        help="엔진 상태를 이 파일에 기록 (플러그인 UI가 표시)")
     args = parser.parse_args()
 
     # Windows 콘솔(cp949)에서 이모지/한글 로그가 인코딩 에러 내지 않게
@@ -384,12 +421,16 @@ def main() -> int:
         except (AttributeError, OSError):
             pass
 
-    cfg = load_config(args.config)
+    cfg = load_config(args.config, plugin_settings=args.settings)
     logging.basicConfig(
         level=getattr(logging, cfg.get("app.log_level", "INFO").upper(), logging.INFO),
         format="%(asctime)s %(levelname)-5s %(name)-10s %(message)s",
         datefmt="%H:%M:%S",
     )
+
+    # load_config는 로깅 설정 전에 돌아 로그가 묻히므로 여기서 한 번 더 알린다
+    if args.settings:
+        log.info("SimHub 엔진 모드 — 설정 파일: %s", args.settings)
 
     if args.record:
         os.makedirs(os.path.dirname(args.record) or ".", exist_ok=True)
@@ -400,7 +441,8 @@ def main() -> int:
         log.error("%s", e)
         return 1
 
-    app = CrewChiefApp(cfg, source, recorder)
+    app = CrewChiefApp(cfg, source, recorder,
+                       status_path=getattr(args, "status_file", None))
     app.run()
     return 0
 
