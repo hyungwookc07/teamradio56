@@ -1,0 +1,9 @@
+<Project>
+  <!-- net48을 어느 OS에서나 빌드할 수 있게 하는 참조 어셈블리.
+       Windows/VS에선 이미 있는 것과 동일해 무해하고, 리눅스 CI나
+       개발 환경에서도 컴파일 검증이 가능해진다. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies"
+                      Version="1.0.3" PrivateAssets="All" />
+  </ItemGroup>
+</Project>

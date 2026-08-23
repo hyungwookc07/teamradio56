@@ -13,3 +13,4 @@ build/
 simhub/**/bin/
 simhub/**/obj/
 *.user
+simhub/verify/stubout/

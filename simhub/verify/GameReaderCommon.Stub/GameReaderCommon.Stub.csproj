@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>GameReaderCommon</AssemblyName>
+    <RootNamespace>GameReaderCommon</RootNamespace>
+    <!-- 검증 전용 스텁 — 배포물에 절대 포함하지 않는다 -->
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>SimHub.Plugins</AssemblyName>
+    <RootNamespace>SimHub.Plugins</RootNamespace>
+    <!-- 검증 전용 스텁 — 배포물에 절대 포함하지 않는다 -->
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\GameReaderCommon.Stub\GameReaderCommon.Stub.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+  </ItemGroup>
+</Project>

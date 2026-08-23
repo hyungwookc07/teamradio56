@@ -18,8 +18,20 @@ TeamRadio56.SimHub    얇은 플러그인 래퍼 (IPlugin/IDataPlugin/IWPFSettin
 
 Core가 SimHub을 참조하지 않으므로, 같은 Core로 나중에 단독 exe도 뽑을 수 있다.
 
-개발 환경에서 C# 컴파일 검증이 불가능하므로(빌드는 사용자 PC에서) 실패
-지점을 의도적으로 줄였다:
+### 컴파일 검증
+
+**개발 환경에서도 전체 C#을 컴파일 검증한다** (SimHub 설치 불필요):
+
+```bash
+bash simhub/verify/build-check.sh
+```
+
+`verify/*.Stub`이 SimHub 인터페이스의 최소 스텁을 만들고, 그걸 참조해
+Core와 플러그인을 빌드한다. 문법·타입·오탈자·시그니처 오류를 전부 잡는다.
+**못 잡는 것은 실제 SimHub API와의 차이뿐** — 스텁이 곧 그 API에 대한
+가정이므로, 가정이 틀리면 사용자 PC 빌드에서 드러난다.
+
+그 외에도 실패 지점을 줄여뒀다:
 
 - 구조체는 손으로 옮기지 않고 `rf2data.py`에서 **자동 생성** + 런타임 크기 대조
 - 설정 UI는 **XAML 없이 코드로 조립** (x:Class 매칭, .g.cs 생성 실패 제거)
