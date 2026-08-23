@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>TeamRadio56.SimHub</AssemblyName>
+    <RootNamespace>TeamRadio56.SimHub</RootNamespace>
+    <Version>0.8.0</Version>
+    <!-- SimHub 설치 경로. 다르면 빌드 시 지정:
+         dotnet build -p:SimHubPath="D:\SimHub" -->
+    <SimHubPath Condition="'$(SimHubPath)' == ''">C:\Program Files (x86)\SimHub</SimHubPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TeamRadio56.Core\TeamRadio56.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Windows 내장 TTS (1단계 오디오 확인용) -->
+    <Reference Include="System.Speech" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SimHub 어셈블리는 참조만 하고 복사하지 않는다 (Private=false).
+         SimHub 프로세스가 이미 로드하고 있으므로 중복 배포하면 안 됨. -->
+    <Reference Include="SimHub.Plugins">
+      <HintPath>$(SimHubPath)\SimHub.Plugins.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GameReaderCommon">
+      <HintPath>$(SimHubPath)\GameReaderCommon.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CheckSimHubPath" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(SimHubPath)\SimHub.Plugins.dll')"
+           Text="SimHub을 찾을 수 없습니다: $(SimHubPath). 설치 경로가 다르면 -p:SimHubPath=&quot;D:\SimHub&quot; 로 지정하세요." />
+  </Target>
+
+</Project>

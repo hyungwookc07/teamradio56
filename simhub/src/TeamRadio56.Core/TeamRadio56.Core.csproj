@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>TeamRadio56.Core</AssemblyName>
+    <RootNamespace>TeamRadio56.Core</RootNamespace>
+    <!-- SimHub에 의존하지 않는 순수 로직 — 나중에 단독 실행/테스트에도 재사용 -->
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.8.0</Version>
+  </PropertyGroup>
+
+</Project>

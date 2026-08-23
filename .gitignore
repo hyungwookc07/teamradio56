@@ -8,3 +8,8 @@ audio_cache/
 dist/
 build/
 *.spec.bak
+
+# C# 빌드 산출물
+simhub/**/bin/
+simhub/**/obj/
+*.user
