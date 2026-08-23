@@ -257,10 +257,9 @@ class TrafficAnalyzer:
                 if since is None:
                     self._spot_clear_since[side] = now
                 elif now - since >= self.SPOT_CLEAR_HOLD_SEC:
-                    name = "왼쪽" if side == "left" else "오른쪽"
                     if bus.push(Event(
                             type=EventType.SPOTTER, priority=Priority.HIGH,
-                            data={"pool": "side_clear", "side": name},
+                            data={"pool": "side_clear", "side": side},
                             dedup_key=f"spotclr_{side}", tone="casual", ttl=3.0)):
                         self._spot[side] = False
                         self._spot_clear_since[side] = None
@@ -286,7 +285,7 @@ class TrafficAnalyzer:
         self._hazard_announced[t.cid] = now
         bus.push(Event(
             type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
-            message="전방 정지 차량. 라인 미리 바꿔.",
+            message="Stopped car ahead. Change your line early.",
             dedup_key=f"hazard_{t.cid}", ttl=8.0, tone="urgent",
         ))
 
@@ -504,21 +503,21 @@ class TrafficAnalyzer:
         같은 상태의 차량들을 한 절로 합치고(클래스별 카운트), 위협도 순
         상위 2개 절만 한 문장으로. "뒤로 하이퍼카 하나, GT3 하나 붙는다" 식.
         """
-        from voice import class_ko
+        from voice import class_name
 
         def names_of(cars: list[CarTrack]) -> str:
             counts: dict[str, int] = {}
             for c in cars:
-                key = class_ko(c.cls)
+                key = class_name(c.cls)
                 counts[key] = counts.get(key, 0) + 1
             parts = []
             for name, n in counts.items():
                 if n == 1:
-                    parts.append(f"{name} 하나")
+                    parts.append(f"one {name}")
                 elif n == 2:
-                    parts.append(f"{name} 두 대 줄지어")
+                    parts.append(f"two {name}s")
                 else:
-                    parts.append(f"{name} {n}대")
+                    parts.append(f"{n} {name}s")
             return ", ".join(parts)
 
         by_state: dict[str, list[CarTrack]] = {}
@@ -531,15 +530,15 @@ class TrafficAnalyzer:
             if not cars or len(clauses) >= 2:
                 continue
             if st == ALONGSIDE:
-                side = {"left": "왼쪽에", "right": "오른쪽에"}.get(cars[0].side, "옆에")
-                clauses.append(f"{side} {class_ko(cars[0].cls)} 나란히")
+                side = {"left": "on your left", "right": "on your right"}.get(
+                    cars[0].side, "alongside")
+                clauses.append(f"{class_name(cars[0].cls)} {side}")
             elif st == NEARBY_BEHIND:
-                clauses.append(f"뒤에 {names_of(cars)} 붙는다")
+                clauses.append(f"{names_of(cars)} behind")
             else:
-                clauses.append(f"{names_of(cars)} 접근 중")
+                clauses.append(f"{names_of(cars)} closing")
         if not clauses:
             return None
         ahead_free = not any(t.state == NEARBY_AHEAD for t in active)
-        tail = " 앞은 여유." if ahead_free and len(clauses) >= 2 else ""
-        # 절 안에 쉼표(클래스 나열)가 있어 절 사이는 마침표로 끊는다
+        tail = " Ahead is clear." if ahead_free and len(clauses) >= 2 else ""
         return ". ".join(clauses) + "." + tail

@@ -29,17 +29,18 @@ DEFAULTS: dict[str, Any] = {
     "voice": {
         "enabled": True,
         "volume": 0.9,
-        "language": "ko",
+        "language": "en",           # en(기본, 자연스러움) | ko(레거시 풀만)
         "persona": (
-            "당신은 20년 경력의 내구레이스 크루치프다. 침착하고 간결하며, "
-            "드라이버를 신뢰하는 톤. 숫자를 나열하지 않고 판단을 말한다. "
-            "실제 팀라디오처럼 단어 위주로 짧게 끊어 말하고 어미를 아낀다."
+            "You are an endurance-racing crew chief with 20 years of "
+            "experience. Calm, concise, trusts the driver. States judgment, "
+            "not raw numbers. Talks like real team radio: short, clipped, "
+            "word-first."
         ),
         "driver_name": "드라이버",   # 멘트에서 부르는 호칭
     },
     "tts": {
         "engine": "edge",           # edge | elevenlabs
-        "edge_voice": "ko-KR-InJoonNeural",
+        "edge_voice": "en-GB-RyanNeural",   # 영국 레이스 엔지니어 톤
         "edge_rate": "+10%",
         "elevenlabs_api_key": "",
         "elevenlabs_voice_id": "",

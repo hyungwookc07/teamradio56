@@ -44,10 +44,10 @@ class LapCoach:
         is_personal_best = getattr(last, f"s{sector}") < best_s
 
         if delta < 0:
-            msg = f"섹터{sector}에서 {abs(delta):.1f}초 좋아졌어"
-            msg += ", 세션 베스트야. 그 감 유지해." if is_personal_best else ". 그 감 유지해."
+            msg = f"Sector {sector}, {abs(delta):.1f} quicker"
+            msg += ", session best. Keep that feel." if is_personal_best else ". Keep that feel."
         else:
-            msg = f"섹터{sector}에서 {delta:.1f}초 새고 있어. 다음 랩에 다시 잡자."
+            msg = f"Losing {delta:.1f} in sector {sector}. Get it back next lap."
 
         bus.push(Event(
             type=EventType.LAP_FEEDBACK, priority=Priority.NORMAL,
@@ -85,13 +85,14 @@ class TrackHistory:
         if abs(diff) < 0.3:
             return   # 큰 차이 없으면 침묵
 
-        when = f"{days_ago}일 전" if days_ago < 21 else f"{days_ago // 7}주 전"
+        when = (f"{days_ago} days ago" if days_ago < 21
+                else f"{days_ago // 7} weeks ago")
         if diff > 0:
-            msg = (f"이 트랙 {when} 베스트가 {fmt(past_best)}였는데 "
-                   f"오늘 벌써 {fmt(cur_best)}이야. 확실히 늘었네.")
+            msg = (f"Your best here {when} was {fmt(past_best)}. "
+                   f"Already {fmt(cur_best)} today. Clear progress.")
         else:
-            msg = (f"이 트랙 {when}엔 {fmt(past_best)}까지 갔었어. "
-                   f"오늘은 {fmt(cur_best)} — 감 다시 찾아보자.")
+            msg = (f"You did {fmt(past_best)} here {when}. "
+                   f"{fmt(cur_best)} today — let's find that feel again.")
         bus.push(Event(
             type=EventType.TRACK_TREND, priority=Priority.NORMAL,
             message=msg, dedup_key="track_trend", ttl=60.0,

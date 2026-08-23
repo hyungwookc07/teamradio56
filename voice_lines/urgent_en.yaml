@@ -1,0 +1,258 @@
+# Pre-generated urgent call pools (English) — event type × tone.
+#
+# Structure: <pool>: { casual: [...], urgent: [...] }
+# Style: real team radio — short, word-first, minimal grammar.
+# Slots (discrete only, for audio caching): {cls}=class name, {gap}=1-6 sec,
+# {fuel_laps}=1-4 laps, {side}=left/right, {place}=1-8.
+
+traffic_approach:
+  casual:
+    - "{cls} behind, {gap}."
+    - "{cls} closing, {gap}."
+    - "{cls} in {gap}. Hold your line."
+    - "{cls}, {gap} back. Stay on it."
+    - "Traffic. {cls}, {gap}."
+    - "{cls} coming, {gap} out. Let him by on the straight."
+    - "Heads up, {cls} in {gap}."
+    - "{cls} through in {gap}. Line as normal."
+    - "Check. {cls}, {gap} behind."
+    - "One {cls}, {gap} back."
+  urgent:
+    - "Traffic! {cls}, {gap}."
+    - "{cls} closing fast, {gap}."
+    - "{cls}, {gap} out. Mirrors."
+    - "Lap traffic, {cls} in {gap}."
+    - "{cls} {gap} back. Stay on line."
+    - "{cls} coming, {gap}!"
+    - "Mirror check. {cls}, {gap}."
+
+alongside:
+  urgent:
+    - "Car alongside!"
+    - "He's alongside!"
+    - "Side by side. Leave room."
+    - "Car with you. Hold your line."
+    - "Alongside, careful contact!"
+    - "He's there, don't squeeze."
+    - "Car alongside. Car width."
+
+alongside_left:
+  urgent:
+    - "Car left!"
+    - "Left side!"
+    - "Left left!"
+    - "Car left, careful!"
+    - "He's on your left, don't squeeze!"
+    - "Left. Leave room."
+
+alongside_right:
+  urgent:
+    - "Car right!"
+    - "Right side!"
+    - "Right right!"
+    - "Car right, careful!"
+    - "He's on your right, don't squeeze!"
+    - "Right. Leave room."
+
+alongside_both:
+  urgent:
+    - "Cars both sides!"
+    - "Both sides!"
+    - "Three wide, you're the meat!"
+    - "Both sides, no room!"
+
+side_clear:
+  casual:
+    - "Clear {side}."
+    - "{side} is clear."
+    - "Clear {side}, use it."
+
+nearby_behind:
+  casual:
+    - "Car behind."
+    - "One behind. Stay calm."
+    - "Car closing behind. Hold your line."
+    - "He's there. Keep it consistent."
+    - "{cls} right behind."
+    - "Car behind. Braking points consistent."
+  urgent:
+    - "He's on you!"
+    - "Car right behind. Defend once, no more."
+    - "Right behind you! Your line."
+    - "He's there. Keep it clean."
+    - "{cls} right behind!"
+    - "Pressure behind. Track position first."
+
+pass_complete:
+  casual:
+    - "He's through. Back to your line."
+    - "Clear. Back on line."
+    - "He's by. Pace back up."
+    - "Through. Find your rhythm."
+    - "Clear now. Normal line."
+    - "Gone. Back to your race."
+    - "He's past, ahead is clear."
+
+dropped:
+  casual:
+    - "He's dropped. Keep pace."
+    - "Gap's opening. Well held."
+    - "He's gone backwards. Manage from here."
+    - "Shaken him off."
+    - "Clear behind. Your pace now."
+
+backmarker_ahead:
+  casual:
+    - "Backmarker ahead, {cls}. Easy does it."
+    - "Backmarker up ahead. Take it clean."
+    - "{cls} ahead is a backmarker. He'll have blue flags."
+    - "Backmarker. Pick your moment, one move."
+    - "Car ahead is a lap down. Not a fight."
+    - "Backmarker traffic. Give it margin."
+  urgent:
+    - "Backmarker ahead! Keep your distance."
+    - "Backmarker, stay calm."
+    - "Backmarker ahead. One clean move."
+
+blue_flag:
+  casual:
+    - "Blue flag. Let him by on the straight."
+    - "Blues for you. Hold your line."
+    - "Blue flag. Keep your pace, let him through."
+    - "Blue. Not the straight-line fight, let him go."
+    - "Blue flag. Minimum time loss."
+  urgent:
+    - "Blue blue! Let him through."
+    - "Blue flag! Hold line, yield on the straight."
+    - "Blues! Keep it clean, let him by."
+
+fuel_warning:
+  casual:
+    - "Fuel, {fuel_laps} laps."
+    - "Fuel check. {fuel_laps} laps."
+    - "Fuel {fuel_laps} laps. Let's plan the stop."
+    - "{fuel_laps} laps in the tank."
+    - "Fuel {fuel_laps} laps. Window's open."
+    - "Fuel {fuel_laps} laps. Standing by."
+    - "{fuel_laps} laps of fuel. Think about saving."
+    - "Fuel {fuel_laps} laps. Lift and coast."
+    - "Fueling in {fuel_laps}. Keep it in mind."
+    - "Fuel {fuel_laps} laps. We'll call it with tyres."
+  urgent:
+    - "Fuel {fuel_laps} laps! Start saving."
+    - "Fuel is tight. {fuel_laps} laps."
+    - "Fuel {fuel_laps} laps. Ease off the fights."
+
+fuel_critical:
+  urgent:
+    - "Fuel critical. {fuel_laps} laps."
+    - "Fuel critical. Box within {fuel_laps}."
+    - "Fuel {fuel_laps} laps. Full save now."
+    - "Tank's empty. {fuel_laps} laps max."
+    - "Fuel limit. Box within {fuel_laps} laps."
+    - "Critical. Fuel {fuel_laps} laps."
+    - "{fuel_laps} laps, that's the line. Save fuel."
+
+pit_call:
+  casual:
+    - "Box box, box box."
+    - "Box box. This lap."
+    - "Box call. Pit this lap."
+    - "Box this lap."
+    - "Pitting this lap. Box box."
+    - "Box box. Crew is ready."
+  urgent:
+    - "Box box! This lap!"
+    - "Come in, box box!"
+    - "Window closing. Box this lap."
+    - "Box box. Mind the limiter."
+
+# First call after an impact — the auto-check report follows in a few seconds,
+# so reassure and announce the check. Never ask the driver to verify.
+damage:
+  urgent:
+    - "Contact confirmed. Checking data now."
+    - "Impact. Checking wheels and pressures."
+    - "Possible damage. We're on it."
+    - "Big hit. Report coming shortly."
+    - "Contact. Checking pressures."
+    - "Impact. Keep your pace, checking."
+    - "Impact registered. Give me a few seconds."
+    - "Checking damage. Pace as normal."
+    - "Contact. Checking aero."
+    - "Impact logged. We'll call if there's a problem."
+
+penalty:
+  casual:
+    - "Penalty. Checking the details."
+    - "Penalty. I'll time the stop for it."
+    - "Stewards call. One penalty."
+    - "We have a penalty. Stay calm."
+    - "Penalty. We'll serve it with the next stop."
+    - "One penalty. Recoverable."
+    - "Penalty confirmed. Keep your pace."
+    - "One penalty. Recalculating strategy."
+
+race_start:
+  urgent:
+    - "Green green green!"
+    - "Green flag!"
+    - "It's a race! Careful turn one."
+    - "Green! Clean start."
+    - "Lights out. Stay calm."
+    - "Green. Survive first."
+
+fcy_start:
+  urgent:
+    - "Full course yellow! Slow down."
+    - "FCY. No overtaking, hold the delta."
+    - "Safety car. Check up."
+    - "Full course yellow. Strategy time."
+    - "FCY! Match the delta."
+    - "Yellow all round. No passing."
+
+fcy_pit_open:
+  urgent:
+    - "Pits open! Free stop."
+    - "FCY pit open. Box box."
+    - "Pits are open. Box."
+    - "In in in! Costs us nothing."
+    - "Open. Box box."
+
+green_flag:
+  urgent:
+    - "Green green! Restart."
+    - "Restart! Focus."
+    - "Green. Racing again."
+    - "Restart green. Mind the tyre temps."
+    - "Green! Chances at the restart."
+
+race_end:
+  casual:
+    - "Checkered flag! P{place} in class. Good job."
+    - "That's the flag. P{place}."
+    - "It's done. P{place} in class."
+    - "Checkered. P{place}. I'll put the debrief together."
+    - "Finish. P{place}. Well done."
+
+position_up:
+  casual:
+    - "P{place} in class. Up one."
+    - "P{place}. Nice."
+    - "P{place}. Keep the rhythm."
+    - "Position up. P{place}."
+
+position_down:
+  casual:
+    - "P{place} now. We'll take it back."
+    - "P{place}. One lap at a time."
+    - "P{place}. The pace is there, chances will come."
+    - "Lost one. P{place}."
+
+pit_limiter:
+  urgent:
+    - "Limiter! Limiter!"
+    - "Pit speed! Limiter!"
+    - "Too fast. Limiter!"
+    - "Limiter's off!"
+    - "Pit lane speed! Limiter!"

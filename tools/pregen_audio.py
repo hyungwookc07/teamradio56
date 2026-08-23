@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import load_config           # noqa: E402
 from tts import build_engine              # noqa: E402
-from voice import PhrasePool, iter_pregen_texts  # noqa: E402
+from voice import PhrasePool, iter_pregen_texts, lines_file  # noqa: E402
 
 
 def main() -> int:
@@ -41,7 +41,7 @@ def main() -> int:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
-    pool = PhrasePool()
+    pool = PhrasePool(lines_file(cfg.get("voice.language", "en")))
     texts = sorted(set(iter_pregen_texts(pool)))
     print(f"사전 캐시 대상: {len(texts)}개 멘트")
 

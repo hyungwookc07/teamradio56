@@ -43,28 +43,28 @@ def _parse_penalty(text: str) -> Optional[tuple]:
                                  "drive through", "stop/go", "stop go")):
         return None
     if "drive" in tl:
-        kind = "드라이브 스루"
+        kind = "drive-through"
     elif "stop" in tl:
-        kind = "스탑고"
+        kind = "stop-and-go"
     elif "second" in tl or "sec " in tl or "time" in tl:
-        kind = "타임 페널티"
+        kind = "time penalty"
     else:
-        kind = "페널티"
+        kind = "penalty"
     reason = ""
     if "pit" in tl and ("speed" in tl or "spd" in tl):
-        reason = "피트레인 속도위반"
+        reason = "pit lane speeding"
     elif "cut" in tl or "track limit" in tl or "boundar" in tl:
-        reason = "트랙 리밋"
+        reason = "track limits"
     elif "yellow" in tl or "full course" in tl or "caution" in tl:
-        reason = "옐로 구간 위반"
+        reason = "yellow flag infringement"
     elif "false start" in tl or "jump" in tl:
-        reason = "스타트 위반"
+        reason = "start infringement"
     elif "contact" in tl or "avoidable" in tl:
-        reason = "접촉"
+        reason = "contact"
     elif "blocking" in tl:
-        reason = "블로킹"
+        reason = "blocking"
     elif "rejoin" in tl:
-        reason = "위험한 복귀"
+        reason = "unsafe rejoin"
     return (kind, reason)
 PIT_LIMIT_MARGIN_KMH = 5.0         # 리밋 + 이 이상 넘으면 경고
 DEFAULT_PIT_LIMIT_KMH = 80.0       # Extended에서 리밋을 못 읽으면 이 값 사용
@@ -195,7 +195,7 @@ class RaceControlAnalyzer:
             self._sector_yellow_announced[i] = now
             bus.push(Event(
                 type=EventType.SECTOR_YELLOW, priority=Priority.HIGH,
-                message=f"섹터{i + 1} 옐로. 추월 금지, 감속 준비.",
+                message=f"Yellow in sector {i + 1}. No overtaking, be ready to lift.",
                 dedup_key=f"syellow_{i}", ttl=15.0, tone="urgent",
             ))
 
@@ -253,7 +253,7 @@ class RaceControlAnalyzer:
             self._pen_due = None
             bus.push(Event(
                 type=EventType.PENALTY, priority=Priority.NORMAL,
-                message="페널티 클리어. 다시 니 레이스.",
+                message="Penalty served. Back to your race.",
                 dedup_key="pen_clear", ttl=20.0, tone="casual",
             ))
             state.clear_issue("penalty")
@@ -273,12 +273,12 @@ class RaceControlAnalyzer:
                 break
         if detail:
             kind, reason = detail
-            head = f"페널티 — {kind}" + (f", {reason}" if reason else "")
+            head = f"Penalty — {kind}" + (f", {reason}" if reason else "")
             advice = {
-                "드라이브 스루": "다음 랩 피트 통과. 리미터 주의.",
-                "스탑고": "박스 정지 시간 준수. 침착하게.",
-                "타임 페널티": "결과에 가산. 페이스로 만회.",
-            }.get(kind, "처리 타이밍은 내가 불러줄게.")
+                "drive-through": "Serve it next lap. Mind the limiter.",
+                "stop-and-go": "Hold the stop time in the box. Stay calm.",
+                "time penalty": "Added to the result. We claw it back on pace.",
+            }.get(kind, "I'll call the timing.")
             message = f"{head}. {advice}"
             issue = f"미소화 페널티 {n}건 ({kind}{', ' + reason if reason else ''})"
             topic = f"방금 페널티가 부여됐다: {kind}, 사유 {reason or '불명'}. " \
@@ -344,7 +344,7 @@ class RaceControlAnalyzer:
             self._final_lap_done = True
             bus.push(Event(
                 type=EventType.RACE_MILESTONE, priority=Priority.HIGH,
-                data={"final_lap": True}, message="마지막 랩. 다 쏟아붓자.",
+                data={"final_lap": True}, message="Last lap. Everything you've got.",
                 dedup_key="final_lap", ttl=30.0,
             ))
             state.add_narrative("(이벤트) 마지막 랩")

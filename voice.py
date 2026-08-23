@@ -28,20 +28,20 @@ log = logging.getLogger("voice")
 # 페르소나 뒤에 붙는 고정 규칙. 페르소나+규칙은 바이트 단위로 불변이어야
 # prompt cache가 유지된다 — 시간/랩 번호 같은 가변 값을 여기 넣지 말 것.
 LLM_RULES = """
-출력 규칙:
-- 팀 무전으로 드라이버에게 하는 말 한 줄만 출력한다. 따옴표, 설명, 머리말 금지.
-- 한국어 반말, 1~2문장, 짧게. 무전 특유의 간결한 호흡.
-- 단어 위주로 끊어 말하고 어미를 아껴라. "타이어가 많이 닳았으니까 관리해야 해"
-  대신 "타이어 한계 근접. 관리 모드." 실제 팀라디오 스타일.
-- 숫자를 나열하지 말고 판단을 말한다. 꼭 필요한 숫자만 한두 개.
-- 여러 데이터를 엮어서 결론을 내라. (예: 연료는 10랩인데 타이어가 8랩쯤 한계면
-  "9랩째 들어와서 같이 해결하자"처럼)
-- 지난 멘트와 같은 표현을 반복하지 마라. 서사가 이어지게.
-- 생성 지연이 있으므로 실시간 수치를 단정하지 마라: "지금 2.3초 뒤" 금지,
-  "계속 붙어오는 상황이야", "다음 스트레이트에서 압박 올 거야" 같은
-  범용/예측형 표현을 써라.
-- 사실 통보가 아니라 행동 조언 형태로: "왼쪽 GT3 신경 쓰고 다음 코너 라인 깔끔하게".
-- 말할 가치가 없으면 정확히 PASS 라고만 출력한다.
+Output rules:
+- Output exactly ONE line of team radio to the driver. No quotes, no preamble.
+- ENGLISH ONLY. Real endurance-race engineer style: short, clipped, word-first.
+  One or two short sentences. "Tyres near the cliff. Manage mode." — not prose.
+- Judgment over numbers. At most one or two key figures.
+- Combine data into a conclusion (fuel 10 laps + tyres 8 laps ->
+  "Box lap nine, we fix both.").
+- Never repeat recent radio lines. Keep the story flowing.
+- Generation lags reality: never state live gaps as fact ("2.3 behind" is
+  forbidden). Use general or predictive phrasing ("he keeps coming",
+  "expect pressure into the next straight").
+- Advise action, not just facts.
+- If nothing is worth saying, output exactly PASS.
+- Situation summaries below may be in Korean — still answer in English.
 """.strip()
 
 def _base_dir() -> str:
@@ -50,25 +50,34 @@ def _base_dir() -> str:
     return getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
 
 
-URGENT_LINES_FILE = os.path.join(_base_dir(), "voice_lines", "urgent_ko.yaml")
+def lines_file(lang: str = "en") -> str:
+    """언어별 멘트 풀 파일 (en 기본, ko는 레거시 유지)."""
+    name = "urgent_ko.yaml" if lang == "ko" else "urgent_en.yaml"
+    return os.path.join(_base_dir(), "voice_lines", name)
 
-# 게임 클래스명 → 멘트에서 부르는 이름
-CLASS_KO = {
-    "Hypercar": "하이퍼카",
-    "LMH": "하이퍼카",
-    "LMDh": "하이퍼카",
-    "LMP2": "엘엠피 투",
+
+URGENT_LINES_FILE = lines_file()
+
+# 게임 클래스명 → 무전에서 부르는 이름 (영어)
+CLASS_NAMES = {
+    "Hypercar": "Hypercar",
+    "LMH": "Hypercar",
+    "LMDh": "Hypercar",
+    "LMP2": "LMP2",
     "LMGT3": "GT3",
     "GT3": "GT3",
     "GTE": "GTE",
 }
 
 
-def class_ko(cls: str) -> str:
-    for key, name in CLASS_KO.items():
+def class_name(cls: str) -> str:
+    for key, name in CLASS_NAMES.items():
         if key.lower() in cls.lower():
             return name
-    return "상위 클래스"
+    return "faster car"
+
+
+class_ko = class_name    # 하위 호환 별칭
 
 
 class PhrasePool:
@@ -281,7 +290,7 @@ class VoiceGenerator:
     def __init__(self, cfg, state):
         self.cfg = cfg
         self.state = state
-        self.pool = PhrasePool()
+        self.pool = PhrasePool(lines_file(cfg.get("voice.language", "en")))
         self.llm = CrewChiefLLM(cfg)
 
     NONURGENT = (EventType.PACE_COMMENT, EventType.GAP_COMMENT,
@@ -307,18 +316,19 @@ class VoiceGenerator:
     # 슬롯 값은 반드시 이산화(정수/고정 문자열)한다. 사전 캐시 히트 조건.
 
     def _render_traffic_approach(self, d: dict, tone: str = "casual") -> Optional[str]:
+        g = int(min(max(d["gap_sec"], 1), 6))
         return self.pool.pick("traffic_approach", {
-            "cls": class_ko(d["cls"]),
-            "gap": int(min(max(d["gap_sec"], 1), 6)),
+            "cls": class_name(d["cls"]),
+            "gap": f"{g} second" + ("s" if g > 1 else ""),
         }, tone)
 
     def _render_traffic_close(self, d: dict, tone: str = "casual") -> Optional[str]:
         # 트래픽 상태 머신이 풀 이름을 지정 (alongside/alongside_left/.../nearby_behind)
-        return self.pool.pick(d["pool"], {"cls": class_ko(d.get("cls", ""))}, tone)
+        return self.pool.pick(d["pool"], {"cls": class_name(d.get("cls", ""))}, tone)
 
     def _render_traffic_update(self, d: dict, tone: str = "casual") -> Optional[str]:
         # pass_complete / dropped — 서사 마무리 멘트
-        return self.pool.pick(d["pool"], {"cls": class_ko(d.get("cls", ""))}, tone)
+        return self.pool.pick(d["pool"], {"cls": class_name(d.get("cls", ""))}, tone)
 
     def _render_fuel_critical(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("fuel_critical", {
@@ -363,8 +373,9 @@ class VoiceGenerator:
         if m is None:
             return None
         if m >= 60:
-            return f"남은 시간 {m // 60}시간. 계획대로."
-        return f"{m}분 남았어. 연료, 타이어 재계산 중."
+            h = m // 60
+            return f"{h} hour{'s' if h > 1 else ''} to go. On plan."
+        return f"{m} minutes to go. Rechecking fuel and tyres."
 
     def _render_damage(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("damage", {}, tone)
@@ -405,39 +416,38 @@ class VoiceGenerator:
     def _render_lap_analysis(self, d: dict, tone: str = "casual") -> Optional[str]:
         # 템플릿 폴백: 판단형 최소 멘트
         if d.get("pit_window_laps") is not None:
-            return f"피트 윈도우 오픈. 늦어도 {d['pit_window_laps']}랩 안에 박스."
+            return f"Pit window open. Box within {d['pit_window_laps']} laps."
         return None
 
     def _render_stint_briefing(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return "새 스틴트야. 첫 랩은 타이어 아끼고, 리듬부터 찾자."
+        return "New stint. Easy on the tyres first lap, find the rhythm."
 
     def _render_rival_pit(self, d: dict, tone: str = "casual") -> Optional[str]:
-        # 영어 드라이버 이름은 TTS가 어색해 순위로만 특정한다
-        base = f"클래스 {d['rel']} P{d['their_class_place']} 차, 방금 피트 들어갔어."
+        rel = "ahead" if d["rel"] == "앞" else "behind"
+        base = f"P{d['their_class_place']} in class, car {rel}, just pitted."
         if d.get("undercut_risk"):
-            return base + " 언더컷 노리는 거야. 우리 타이밍도 앞당길지 판단할게."
-        return base + " 나오면 갭 다시 계산해서 불러줄게."
+            return base + " Undercut attempt. I'll look at our timing."
+        return base + " I'll call the gap when he's out."
 
     def _render_rival_pace(self, d: dict, tone: str = "casual") -> Optional[str]:
-        # 드라이버 이름은 영어라 조사가 안 맞고 TTS도 어색 — 앞차/뒤차로 부른다
         if d["mode"] == "catch":
-            return (f"클래스 앞차, 랩당 {d['diff']:.1f}초 느림. "
-                    f"{d['laps']}랩 안에 잡는다.")
-        return (f"클래스 뒤차, 랩당 {d['diff']:.1f}초 빠름. "
-                f"{d['laps']}랩 뒤 도착. 준비.")
+            return (f"Car ahead in class is {d['diff']:.1f} a lap slower. "
+                    f"We catch him in {d['laps']}.")
+        return (f"Car behind in class is {d['diff']:.1f} a lap quicker. "
+                f"With us in {d['laps']} laps. Be ready.")
 
     def _render_tyre_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
         if d.get("kind") == "temp_imbalance":
-            return f"{d['hot_wheel']} 타이어 {d['delta']:.0f}도 높음. 그쪽 코너 아껴."
+            return f"{d['hot_wheel']} tyre running {d['delta']:.0f} degrees hot. Ease that side."
         if d.get("kind") == "wear":
-            return f"{d['wheel']} 타이어 수명 {d['laps_left']:.0f}랩. 피트 계획 반영."
+            return f"{d['wheel']} tyre, about {d['laps_left']:.0f} laps left. Factoring it in."
         return None
 
     def _render_pace_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
         delta = abs(d["delta"])
         if d.get("direction") == "slower":
-            return f"방금 랩 {delta:.1f}초 손실. 원인 체크."
-        return f"{delta:.1f}초 빠름. 리듬 유지."
+            return f"Lost {delta:.1f} on that lap. Checking why."
+        return f"{delta:.1f} quicker. Keep the rhythm."
 
     def _render_gap_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
         rate = d["rate"]
@@ -445,15 +455,15 @@ class VoiceGenerator:
         gap_s = f"{gap:.1f}" if gap < 10 else f"{gap:.0f}"
         if d["who"] == "behind":
             if rate <= -0.15:
-                return f"뒤차 랩당 {abs(rate):.1f}초씩 접근. 갭 {gap_s}초. 실수만 줄이자."
+                return f"Car behind closing {abs(rate):.1f} a lap. Gap {gap_s}. Just no mistakes."
             if rate >= 0.15:
-                return f"뒤차 갭 {gap_s}초. 벌어지는 중, 좋아."
-            return f"뒤차 {gap_s}초. 유지 중. 리듬 좋아."
+                return f"Gap behind {gap_s} and opening. Good."
+            return f"Gap behind {gap_s}, holding. Rhythm's good."
         if rate <= -0.15:
-            return f"앞차 갭 {gap_s}초. 랩당 {abs(rate):.1f}초씩 접근 중. 갈 수 있어."
+            return f"Gap ahead {gap_s}, closing {abs(rate):.1f} a lap. We can get him."
         if rate >= 0.15:
-            return f"앞차 {gap_s}초. 벌어지는 중. 무리 금지."
-        return f"앞차 {gap_s}초. 갭 유지. 리듬 그대로."
+            return f"Gap ahead {gap_s} and opening. Don't overdo it."
+        return f"Gap ahead {gap_s}, holding. Keep the rhythm."
 
 
 def iter_pregen_texts(pool: PhrasePool):
@@ -461,10 +471,11 @@ def iter_pregen_texts(pool: PhrasePool):
     사전 캐시 대상 텍스트 전체를 생성 (tools/pregen_audio.py용).
     런타임 렌더러와 동일한 슬롯 조합을 열거해야 캐시가 히트한다.
     """
-    CLASSES = ("하이퍼카", "엘엠피 투", "GT3", "GTE", "상위 클래스", "")
+    CLASSES = ("Hypercar", "LMP2", "GT3", "GTE", "faster car", "")
     slot_values = {
-        "traffic_approach": [{"cls": c, "gap": g} for c in CLASSES if c
-                             for g in range(1, 7)],
+        "traffic_approach": [
+            {"cls": c, "gap": f"{g} second" + ("s" if g > 1 else "")}
+            for c in CLASSES if c for g in range(1, 7)],
         "alongside": [{}],
         "alongside_left": [{}],
         "alongside_right": [{}],
@@ -474,7 +485,7 @@ def iter_pregen_texts(pool: PhrasePool):
         "backmarker_ahead": [{"cls": c} for c in CLASSES],
         "blue_flag": [{}],
         "alongside_both": [{}],
-        "side_clear": [{"side": s} for s in ("왼쪽", "오른쪽")],
+        "side_clear": [{"side": s} for s in ("left", "right")],
         "fuel_warning": [{"fuel_laps": n} for n in range(1, 5)],
         "fuel_critical": [{"fuel_laps": n} for n in range(1, 5)],
         "pit_call": [{}],

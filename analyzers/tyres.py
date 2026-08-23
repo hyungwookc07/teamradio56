@@ -17,7 +17,7 @@ from telemetry import Snapshot
 
 log = logging.getLogger("tyres")
 
-WHEEL_NAMES = ["왼쪽 앞", "오른쪽 앞", "왼쪽 뒤", "오른쪽 뒤"]
+WHEEL_NAMES = ["front left", "front right", "rear left", "rear right"]
 WEAR_CLIFF = 0.25          # 이 잔량 아래로는 그립 절벽으로 간주
 TREND_WINDOW = 3           # 마모율 계산에 쓰는 랩 수
 
@@ -82,7 +82,7 @@ class TyreAnalyzer:
                     type=EventType.DAMAGE, priority=Priority.CRITICAL,
                     data={"wheel": WHEEL_NAMES[i]},
                     dedup_key=f"flat_{i}",
-                    message=f"{WHEEL_NAMES[i]} 펑크! 바로 박스. 무리하지 마.",
+                    message=f"Puncture, {WHEEL_NAMES[i]}! Box now, take it easy.",
                 ))
 
         # 온도 불균형 경고

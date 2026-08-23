@@ -235,10 +235,11 @@ class CrewChiefApp:
         ses = snap.session
         stype = ses.get("session_type", 0)
         is_race = stype >= 10
-        kind = ("레이스" if is_race else "웜업" if stype == 9
-                else "퀄리파잉" if stype >= 5 else "연습")
+        kind = ("Race" if is_race else "Warmup" if stype == 9
+                else "Qualifying" if stype >= 5 else "Practice")
         track = (ses.get("track") or "").strip()
-        parts = [f"{track}, {kind} 세션이야." if track else f"무전 체크. {kind} 세션이야."]
+        parts = [f"{track}. {kind} session." if track
+                 else f"Radio check. {kind} session."]
 
         # 세션 길이 — 시간제(잔여 기준)와 랩제를 구분. 미기입 거대값은 무시.
         end_et = ses.get("end_et", 0.0) or 0.0
@@ -247,32 +248,35 @@ class CrewChiefApp:
         mid_join = cur_et > 120 or me.get("total_laps", 0) > 0
         if 0 < end_et < 86400:
             minutes = max(int(round((end_et - cur_et) / 60)), 1)
-            length = (f"{minutes // 60}시간" if minutes >= 120 and minutes % 60 == 0
-                      else f"{minutes}분")
-            parts.append(f"{'남은 시간' if mid_join else ''} {length}{'' if mid_join else '짜리'}.".strip())
+            if minutes >= 120 and minutes % 60 == 0:
+                h = minutes // 60
+                length = f"{h} hour{'s' if h > 1 else ''}"
+            else:
+                length = f"{minutes} minutes"
+            parts.append(f"{length} {'remaining' if mid_join else 'long'}.")
         elif 0 < max_laps < 10000:
-            parts.append(f"{max_laps}랩짜리.")
+            parts.append(f"{max_laps} laps.")
 
         if is_race:
             cls_count = sum(1 for v in snap.vehicles if v["cls"] == me["cls"])
             cp = self.state.class_place_of(snap, me)
             if cls_count > 1:
-                parts.append(f"우리 클래스 {cls_count}대 중 P{cp}"
-                             f"{'.' if mid_join else ' 스타트.'}")
+                parts.append(f"P{cp} of {cls_count} in class"
+                             f"{'.' if mid_join else ' on the grid.'}")
 
         rain = ses.get("raining", 0.0)
         if rain >= 0.05:
-            parts.append("비 오고 있어, 노면 조심.")
+            parts.append("It's raining, watch the grip.")
         elif ses.get("track_temp", 0.0) > 0:
-            parts.append(f"노면 {ses['track_temp']:.0f}도.")
+            parts.append(f"Track {ses['track_temp']:.0f} degrees.")
 
         fuel = snap.player.get("fuel")
         if fuel:
-            parts.append(f"연료 {fuel:.0f}리터.")
+            parts.append(f"Fuel {fuel:.0f} litres.")
 
-        parts.append("이대로 간다." if mid_join
-                     else "첫 랩 침착하게." if is_race
-                     else "준비되면 나가자.")
+        parts.append("Carry on." if mid_join
+                     else "Calm first lap." if is_race
+                     else "Out when you're ready.")
         self.bus.push(Event(
             type=EventType.SESSION_BRIEFING, priority=Priority.NORMAL,
             message=" ".join(parts), dedup_key="session_brief",
