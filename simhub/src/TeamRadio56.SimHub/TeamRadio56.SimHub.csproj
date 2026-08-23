@@ -16,8 +16,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Windows 내장 TTS (1단계 오디오 확인용) -->
+    <!-- Windows 내장 TTS (오디오 경로 확인용 — 다음 단계에서 edge-tts로 교체) -->
     <Reference Include="System.Speech" />
+    <!-- 설정 UI (WPF). XAML 파일은 쓰지 않고 코드로 조립하므로
+         UseWPF 대신 프레임워크 어셈블리만 참조한다. -->
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
   </ItemGroup>
 
   <ItemGroup>
