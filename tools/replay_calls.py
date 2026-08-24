@@ -30,6 +30,7 @@ from events import EventBus                      # noqa: E402
 from state import SessionState                   # noqa: E402
 from analyzers.traffic import TrafficAnalyzer    # noqa: E402
 from analyzers.racecontrol import RaceControlAnalyzer  # noqa: E402
+from analyzers.health import HealthAnalyzer      # noqa: E402
 from config import load_config                   # noqa: E402
 from telemetry import Snapshot                   # noqa: E402
 
@@ -66,6 +67,7 @@ def main() -> int:
     state = SessionState()
     traffic = TrafficAnalyzer(cfg)
     racecontrol = RaceControlAnalyzer(cfg)
+    health = HealthAnalyzer(cfg)
 
     accepted: list[dict] = []
     orig_push = bus.push
@@ -99,9 +101,11 @@ def main() -> int:
             # main.py on_snapshot 순서: 분석기 틱 → 상태 갱신(랩 완료 감지)
             traffic.on_tick(state, snap, bus)
             racecontrol.on_tick(state, snap, bus)
+            health.on_tick(state, snap, bus)
             lap = state.update(snap)
             if lap is not None:
                 racecontrol.on_lap(state, snap, bus)
+                health.on_lap(state, snap, bus)
             ticks += 1
 
     out = open(args.out, "w", encoding="utf-8") if args.out else sys.stdout

@@ -172,7 +172,8 @@ class HealthAnalyzer:
         # 어느 쪽이든 리어 불안정 감시를 켠다 (에어로 손실 대비).
         if p.get("detached") and not self._detached_warned:
             self._detached_warned = True
-            if self._last_impact_zone and "리어" in self._last_impact_zone:
+            # 존 이름은 영문("rear left" 등) — 한국어로 검사하면 절대 안 걸린다
+            if self._last_impact_zone and "rear" in self._last_impact_zone:
                 msg = ("Bodywork gone at the rear. Could be the wing. "
                        "Careful next corner. If the rear goes, box.")
                 state.set_issue("damage", "리어 부품 탈락 — 리어 윙 손상 가능성")
@@ -208,7 +209,8 @@ class HealthAnalyzer:
         where = f"{zone} 쪽" if zone else "위치 불명"
         self._last_impact_zone = zone
         # 리어 쪽 충격이나 큰 충격이면 리어 불안정 감시 시작
-        if heavy or (zone and "리어" in zone):
+        # (존 이름은 영문 — "rear", "rear left", "rear right")
+        if heavy or (zone and "rear" in zone):
             self._arm_instab(now, f"{where}, 충격 {mag:.0f}")
         bus.push(Event(
             type=EventType.DAMAGE, priority=Priority.CRITICAL,
