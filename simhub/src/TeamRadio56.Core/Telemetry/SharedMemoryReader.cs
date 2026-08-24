@@ -114,10 +114,13 @@ namespace TeamRadio56.Core.Telemetry
     /// <summary>
     /// 텔레메트리/스코어링/Extended 세 버퍼를 묶어 읽고 연결 상태를 판단한다.
     ///
+    /// 이름에 Rf2를 붙인 이유: SimHub의 GameReaderCommon에도 SharedMemoryReader가
+    /// 있어서 플러그인 쪽에서 이름이 충돌한다.
+    ///
     /// 연결 판정은 "버퍼가 열렸는가"가 아니라 "버전 카운터가 실제로 움직이는가"로
     /// 한다. 게임이 종료돼도 매핑이 잠시 남아 있을 수 있기 때문.
     /// </summary>
-    public sealed class SharedMemoryReader : IDisposable
+    public sealed class Rf2SharedMemoryReader : IDisposable
     {
         public const string TelemetryName = "$rFactor2SMMP_Telemetry$";
         public const string ScoringName = "$rFactor2SMMP_Scoring$";

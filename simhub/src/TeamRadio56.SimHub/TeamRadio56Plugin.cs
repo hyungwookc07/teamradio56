@@ -4,10 +4,18 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using GameReaderCommon;
 using SimHub.Plugins;
-using TeamRadio56.Core.Config;
-using TeamRadio56.Core.Diagnostics;
-using TeamRadio56.Core.Engine;
-using TeamRadio56.Core.Telemetry;
+// SimHub의 GameReaderCommon에 동명 타입이 있어 이름이 충돌한다
+// (예: SharedMemoryReader). 네임스페이스를 통째로 여는 대신 쓰는 타입만
+// 별칭으로 고정해 충돌 가능성을 원천 차단한다.
+using PluginSettings = TeamRadio56.Core.Config.PluginSettings;
+using SettingsStore = TeamRadio56.Core.Config.SettingsStore;
+using FileLog = TeamRadio56.Core.Diagnostics.FileLog;
+using EngineHost = TeamRadio56.Core.Engine.EngineHost;
+using EngineStatus = TeamRadio56.Core.Engine.EngineStatus;
+using Rf2SharedMemoryReader = TeamRadio56.Core.Telemetry.Rf2SharedMemoryReader;
+using Snapshot = TeamRadio56.Core.Telemetry.Snapshot;
+using VehicleInfo = TeamRadio56.Core.Telemetry.VehicleInfo;
+using RF2Sizes = TeamRadio56.Core.Telemetry.RF2Sizes;
 
 namespace TeamRadio56.SimHub
 {
@@ -32,7 +40,7 @@ namespace TeamRadio56.SimHub
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
 
-        private readonly SharedMemoryReader _reader = new SharedMemoryReader();
+        private readonly Rf2SharedMemoryReader _reader = new Rf2SharedMemoryReader();
         private readonly Queue<string> _recent = new Queue<string>();
         private readonly object _recentGate = new object();
 
@@ -118,7 +126,7 @@ namespace TeamRadio56.SimHub
             FileLog.Banner(Version);
             Settings = SettingsStore.Load();
 
-            string layoutError = SharedMemoryReader.VerifyLayout();
+            string layoutError = Rf2SharedMemoryReader.VerifyLayout();
             _layoutOk = layoutError == null;
             if (_layoutOk)
             {

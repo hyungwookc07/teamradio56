@@ -8,6 +8,13 @@ namespace GameReaderCommon
         public int CurrentLap { get; set; }
     }
 
+    /// <summary>
+    /// 실제 GameReaderCommon에 존재하는 타입 (2026-08 사용자 빌드에서 확인).
+    /// 우리 Core에도 같은 이름이 있어 충돌했었다 — 스텁에 넣어두면
+    /// 같은 실수를 개발 환경에서 잡는다.
+    /// </summary>
+    public class SharedMemoryReader { }
+
     public class GameData
     {
         public string GameName { get; set; }
