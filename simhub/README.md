@@ -40,13 +40,18 @@ Core와 플러그인을 빌드한다. 문법·타입·오탈자·시그니처 �
 
 ## 빌드
 
-**필요한 것**: .NET SDK 8 이상 (또는 Visual Studio 2022) + .NET Framework 4.8
-개발 팩. VS는 "「.NET 데스크톱 개발」 워크로드"에 포함돼 있다.
+**필요한 것**: .NET SDK 8 하나뿐. Visual Studio도, .NET Framework 개발 팩도
+필요 없다 (net48 참조 어셈블리를 NuGet으로 받도록 설정돼 있음).
 
 ```powershell
+winget install Microsoft.DotNet.SDK.8     # 없으면 한 번만
+# PowerShell 새로 열고
 cd D:\teamradio56\simhub
 dotnet build -c Release
 ```
+
+winget이 없으면 https://dotnet.microsoft.com/download/dotnet/8.0 에서
+**SDK x64** 설치 파일을 받는다.
 
 SimHub이 기본 경로가 아니면:
 
@@ -168,7 +173,7 @@ SimHub 게임 이름: 'LMU'            ← 실제로 뭐라고 나오는지 알�
 | `SimHub을 찾을 수 없습니다` | `-p:SimHubPath="실제경로"` 로 지정 |
 | `IWPFSettingsV2를 구현하지 않습니다` / 멤버 불일치 | SimHub 버전별 API 차이. 에러에 나온 멤버 이름을 알려주세요 (플러그인 파일 상단 3개 프로퍼티만 고치면 됨) |
 | `'GameData'에 'GameName' 정의가 없습니다` | 진단용 로깅일 뿐 — `_loggedGameName` 블록을 통째로 주석 처리 가능 |
-| `net48 대상 팩이 없습니다` | VS Installer에서 ".NET Framework 4.8 targeting pack" 설치 |
+| `dotnet: 명령을 찾을 수 없음` | SDK 설치 후 PowerShell을 새로 열어야 PATH가 잡힌다 |
 | 설정 화면 글자가 안 보임 | SimHub 테마와 색 충돌 — 알려주시면 색을 테마 상속으로 바꿉니다 |
 | 로그에 `구조체 레이아웃 불일치` | 생성기 문제 — 출력된 크기를 알려주세요 |
 | 플러그인 목록에 안 보임 | DLL을 SimHub **루트**에 뒀는지 확인, SimHub 재시작 |
