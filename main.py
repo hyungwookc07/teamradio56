@@ -413,6 +413,18 @@ def main() -> int:
                         help="엔진 상태를 이 파일에 기록 (플러그인 UI가 표시)")
     args = parser.parse_args()
 
+    # SimHub 엔진 모드에선 작업 디렉토리가 python.exe 위치(venv Scripts)로
+    # 잡혀 온다 — config.yaml/audio_cache/data 같은 상대 경로가 전부
+    # 깨지므로, 명시된 경로 인자만 절대 경로로 고정한 뒤 앱 기준
+    # 디렉토리(이 파일 위치)로 이동한다.
+    for name in ("config", "replay", "record", "settings", "status_file"):
+        value = getattr(args, name, None)
+        if value and value != parser.get_default(name):
+            setattr(args, name, os.path.abspath(value))
+    app_dir = (getattr(sys, "_MEIPASS", None)
+               or os.path.dirname(os.path.abspath(__file__)))
+    os.chdir(app_dir)
+
     # Windows 콘솔(cp949)에서 이모지/한글 로그가 인코딩 에러 내지 않게
     if sys.platform == "win32":
         try:

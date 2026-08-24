@@ -192,6 +192,15 @@ namespace TeamRadio56.Core.Engine
             if (string.IsNullOrEmpty(name))
                 return;
 
+            // 실행 파일이 범용 인터프리터면 정리하지 않는다 — 이름만으로
+            // 찾으면 이 PC의 모든 파이썬 프로세스를 죽이게 된다.
+            if (name.Equals("python", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("pythonw", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("py", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             try
             {
                 Process[] found = Process.GetProcessesByName(name);
