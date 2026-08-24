@@ -12,6 +12,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
+from messages import msg, wheel_name
 from state import SessionState
 from telemetry import Snapshot
 
@@ -82,7 +83,7 @@ class TyreAnalyzer:
                     type=EventType.DAMAGE, priority=Priority.CRITICAL,
                     data={"wheel": WHEEL_NAMES[i]},
                     dedup_key=f"flat_{i}",
-                    message=f"Puncture, {WHEEL_NAMES[i]}! Box now, take it easy.",
+                    message=msg("puncture_now", wheel=wheel_name(i)),
                 ))
 
         # 온도 불균형 경고

@@ -38,7 +38,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.10.0-builtin";
+        public const string Version = "0.11.0-i18n";
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
@@ -226,6 +226,12 @@ namespace TeamRadio56.SimHub
 
             FileLog.Info("내장(C#) 엔진 모드 — 분석기 9종 활성. 오디오 캐시: {0}",
                 cacheDir ?? "(없음 — Windows TTS 폴백)");
+            if (string.Equals(Settings.VoiceLanguage, "ko",
+                              StringComparison.OrdinalIgnoreCase))
+            {
+                FileLog.Warn("내장 엔진은 아직 영어 멘트만 지원합니다 — "
+                             + "한국어 멘트는 python 엔진 모드를 사용하세요");
+            }
         }
 
         public void End(PluginManager pluginManager)

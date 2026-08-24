@@ -283,9 +283,10 @@ class TrafficAnalyzer:
         if last is not None and now - last < 90.0:
             return
         self._hazard_announced[t.cid] = now
+        from messages import msg
         bus.push(Event(
             type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
-            message="Stopped car ahead. Change your line early.",
+            message=msg("stopped_hazard"),
             dedup_key=f"hazard_{t.cid}", ttl=8.0, tone="urgent",
         ))
 
@@ -503,21 +504,21 @@ class TrafficAnalyzer:
         같은 상태의 차량들을 한 절로 합치고(클래스별 카운트), 위협도 순
         상위 2개 절만 한 문장으로. "뒤로 하이퍼카 하나, GT3 하나 붙는다" 식.
         """
-        from voice import class_name
+        from messages import msg, class_display
 
         def names_of(cars: list[CarTrack]) -> str:
             counts: dict[str, int] = {}
             for c in cars:
-                key = class_name(c.cls)
+                key = class_display(c.cls)
                 counts[key] = counts.get(key, 0) + 1
             parts = []
             for name, n in counts.items():
                 if n == 1:
-                    parts.append(f"one {name}")
+                    parts.append(msg("multi_one", name=name))
                 elif n == 2:
-                    parts.append(f"two {name}s")
+                    parts.append(msg("multi_two", name=name))
                 else:
-                    parts.append(f"{n} {name}s")
+                    parts.append(msg("multi_n", name=name, n=n))
             return ", ".join(parts)
 
         by_state: dict[str, list[CarTrack]] = {}
@@ -530,15 +531,16 @@ class TrafficAnalyzer:
             if not cars or len(clauses) >= 2:
                 continue
             if st == ALONGSIDE:
-                side = {"left": "on your left", "right": "on your right"}.get(
-                    cars[0].side, "alongside")
-                clauses.append(f"{class_name(cars[0].cls)} {side}")
+                key = {"left": "multi_alongside_left",
+                       "right": "multi_alongside_right"}.get(
+                    cars[0].side, "multi_alongside")
+                clauses.append(msg(key, cls=class_display(cars[0].cls)))
             elif st == NEARBY_BEHIND:
-                clauses.append(f"{names_of(cars)} behind")
+                clauses.append(msg("multi_behind", names=names_of(cars)))
             else:
-                clauses.append(f"{names_of(cars)} closing")
+                clauses.append(msg("multi_closing", names=names_of(cars)))
         if not clauses:
             return None
         ahead_free = not any(t.state == NEARBY_AHEAD for t in active)
-        tail = " Ahead is clear." if ahead_free and len(clauses) >= 2 else ""
+        tail = msg("multi_ahead_clear") if ahead_free and len(clauses) >= 2 else ""
         return ". ".join(clauses) + "." + tail

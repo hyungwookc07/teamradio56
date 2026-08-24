@@ -15,6 +15,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
+from messages import msg, penalty_kind_display, penalty_reason_display
 from state import SessionState
 from telemetry import Snapshot
 
@@ -195,7 +196,7 @@ class RaceControlAnalyzer:
             self._sector_yellow_announced[i] = now
             bus.push(Event(
                 type=EventType.SECTOR_YELLOW, priority=Priority.HIGH,
-                message=f"Yellow in sector {i + 1}. No overtaking, be ready to lift.",
+                message=msg("sector_yellow", n=i + 1),
                 dedup_key=f"syellow_{i}", ttl=15.0, tone="urgent",
             ))
 
@@ -253,7 +254,7 @@ class RaceControlAnalyzer:
             self._pen_due = None
             bus.push(Event(
                 type=EventType.PENALTY, priority=Priority.NORMAL,
-                message="Penalty served. Back to your race.",
+                message=msg("pen_clear"),
                 dedup_key="pen_clear", ttl=20.0, tone="casual",
             ))
             state.clear_issue("penalty")
@@ -273,12 +274,13 @@ class RaceControlAnalyzer:
                 break
         if detail:
             kind, reason = detail
-            head = f"Penalty — {kind}" + (f", {reason}" if reason else "")
-            advice = {
-                "drive-through": "Serve it next lap. Mind the limiter.",
-                "stop-and-go": "Hold the stop time in the box. Stay calm.",
-                "time penalty": "Added to the result. We claw it back on pace.",
-            }.get(kind, "I'll call the timing.")
+            kind_d = penalty_kind_display(kind)
+            reason_d = penalty_reason_display(reason) if reason else ""
+            head = msg("penalty_head", kind=kind_d) + (f", {reason_d}" if reason_d else "")
+            try:
+                advice = msg(f"penalty_advice_{kind}")
+            except KeyError:
+                advice = msg("penalty_advice_default")
             message = f"{head}. {advice}"
             issue = f"미소화 페널티 {n}건 ({kind}{', ' + reason if reason else ''})"
             topic = f"방금 페널티가 부여됐다: {kind}, 사유 {reason or '불명'}. " \
@@ -344,7 +346,7 @@ class RaceControlAnalyzer:
             self._final_lap_done = True
             bus.push(Event(
                 type=EventType.RACE_MILESTONE, priority=Priority.HIGH,
-                data={"final_lap": True}, message="Last lap. Everything you've got.",
+                data={"final_lap": True}, message=msg("final_lap"),
                 dedup_key="final_lap", ttl=30.0,
             ))
             state.add_narrative("(이벤트) 마지막 랩")

@@ -11,6 +11,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
+from messages import msg
 from state import SessionState
 from telemetry import Snapshot
 
@@ -111,6 +112,5 @@ class FuelAnalyzer:
             type=EventType.FUEL_SAVE, priority=Priority.NORMAL,
             data={"target": round(target, 2), "delta": round(delta, 2),
                   "laps_left": left},
-            message=(f"No-stop target {target:.1f} litres a lap. "
-                     f"Save {delta:.1f} — lift and coast, short shift."),
+            message=msg("fuel_save", target=target, delta=delta),
         ))

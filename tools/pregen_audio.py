@@ -47,6 +47,10 @@ def main() -> int:
     if args.engine:
         cfg._data.setdefault("tts", {})["engine"] = args.engine
         print(f"TTS 엔진 덮어씀: {args.engine}")
+
+    # 멘트 언어에 맞는 슬롯/풀로 열거 (en/ko)
+    from messages import set_language
+    set_language(cfg.get("voice.language", "en"))
     pool = PhrasePool(lines_file(cfg.get("voice.language", "en")))
     texts = sorted(set(iter_pregen_texts(pool)))
     print(f"사전 캐시 대상: {len(texts)}개 멘트 (톤별)")

@@ -15,15 +15,19 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from messages import set_language                            # noqa: E402
 from voice import PhrasePool, iter_pregen_texts, lines_file  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default=None)
+    parser.add_argument("--lang", default="en", choices=("en", "ko"))
     args = parser.parse_args()
 
-    pool = PhrasePool(lines_file("en"))
+    # C# 대조(replay-check)는 en 고정 — ko는 수동 확인용
+    set_language(args.lang)
+    pool = PhrasePool(lines_file(args.lang))
     items = sorted(set(f"{tone}\t{text}" for tone, text in iter_pregen_texts(pool)))
 
     out = open(args.out, "w", encoding="utf-8") if args.out else sys.stdout

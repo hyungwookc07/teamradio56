@@ -163,6 +163,7 @@ class Config:
 # 이 파일 하나로 전달된다. (C#/파이썬이 같은 파일을 읽어 설정이 갈라지지 않게)
 PLUGIN_SETTINGS_MAP = {
     "VoiceEnabled": "voice.enabled",
+    "VoiceLanguage": "voice.language",
     "Volume": "voice.volume",
     "EdgeVoice": "tts.edge_voice",
     "RadioFx": "tts.radio_fx",

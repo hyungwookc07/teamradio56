@@ -278,13 +278,28 @@ class RadioFXEngine(TTSEngine):
 def build_engine(cfg) -> TTSEngine:
     cache_dir = cfg.get("tts.cache_dir", "audio_cache")
     engine = cfg.get("tts.engine", "edge")
+    edge_voice = cfg.get("tts.edge_voice", "en-GB-RyanNeural")
+    # 멘트 언어와 보이스 불일치 자동 보정 — 한국어 멘트를 영어 보이스로
+    # 읽으면(또는 그 반대) 알아들을 수 없다
+    lang = str(cfg.get("voice.language", "en")).lower()
+    if lang.startswith("ko") and not edge_voice.startswith("ko"):
+        log.info("멘트 언어 ko ↔ 보이스 %s 불일치 — ko-KR-InJoonNeural로 자동 전환",
+                 edge_voice)
+        edge_voice = "ko-KR-InJoonNeural"
+    elif not lang.startswith("ko") and edge_voice.startswith("ko"):
+        log.info("멘트 언어 en ↔ 보이스 %s 불일치 — en-GB-RyanNeural로 자동 전환",
+                 edge_voice)
+        edge_voice = "en-GB-RyanNeural"
     edge = EdgeTTSEngine(
         cache_dir,
-        cfg.get("tts.edge_voice", "en-GB-RyanNeural"),
+        edge_voice,
         cfg.get("tts.edge_rate", "+10%"),
     )
     built: TTSEngine = edge
-    if engine == "kokoro":
+    if engine == "kokoro" and lang.startswith("ko"):
+        # Kokoro는 영어 전용 — 한국어 멘트는 edge로만
+        log.info("kokoro는 영어 전용 — 멘트 언어 ko라 edge로 폴백")
+    elif engine == "kokoro":
         # 배포 기본 경로: [사전 생성 캐시(kokoro), edge 폴백]
         built = ChainEngine([
             KokoroEngine(cache_dir, cfg.get("tts.kokoro_voice", "bm_george")),

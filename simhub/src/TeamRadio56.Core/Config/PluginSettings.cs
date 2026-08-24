@@ -26,6 +26,12 @@ namespace TeamRadio56.Core.Config
         public string EngineExe { get; set; } = "";      // 비우면 기본 경로 사용
         public string EngineArgs { get; set; } = "";     // 소스 실행 시 main.py 경로 등
 
+        // -- 언어 --------------------------------------------------------
+        /// <summary>설정 화면 언어 (ko/en) — 플러그인 UI 전용.</summary>
+        public string UiLanguage { get; set; } = "ko";
+        /// <summary>멘트(발화) 언어 (en/ko) — 엔진에 전달된다.</summary>
+        public string VoiceLanguage { get; set; } = "en";
+
         // -- 음성 --------------------------------------------------------
         public bool VoiceEnabled { get; set; } = true;
         public double Volume { get; set; } = 0.9;
@@ -83,6 +89,10 @@ namespace TeamRadio56.Core.Config
         };
 
         public static readonly string[] ChatterChoices = { "quiet", "normal", "chatty" };
+
+        public static readonly string[] VoiceLanguageChoices = { "en", "ko" };
+
+        public static readonly string[] UiLanguageChoices = { "ko", "en" };
 
         public static readonly string[] EngineChoices = { "python", "builtin" };
     }

@@ -17,15 +17,11 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
+from messages import msg, fmt_laptime
 from state import SessionState
 from telemetry import Snapshot
 
 log = logging.getLogger("reporter")
-
-
-def _fmt_laptime(sec: float) -> str:
-    m, s = divmod(sec, 60.0)
-    return f"{int(m)} {s:04.1f}" if m >= 1 else f"{s:.1f}"
 
 
 class StatusReporter:
@@ -50,9 +46,9 @@ class StatusReporter:
         if self.laptime_on and lap.valid and lap.lap_time > 0:
             valid_times = [l.lap_time for l in state.laps if l.valid]
             is_best = len(valid_times) >= 2 and lap.lap_time <= min(valid_times)
-            text = f"Last lap {_fmt_laptime(lap.lap_time)}."
+            text = msg("last_lap_report", t=fmt_laptime(lap.lap_time))
             if is_best:
-                text += " Best lap."
+                text += msg("best_lap_suffix")
             bus.push(Event(
                 type=EventType.LAP_TIME_REPORT, priority=Priority.NORMAL,
                 message=text, dedup_key=f"laptime_{lap.lap_number}",
@@ -75,22 +71,22 @@ class StatusReporter:
                         tyre_status: Optional[dict]) -> Optional[str]:
         parts: list[str] = []
         if lap.class_place > 0:
-            parts.append(f"P{lap.class_place}.")
+            parts.append(msg("status_pos", p=lap.class_place))
         gaps: list[str] = []
         if 0 <= lap.gap_ahead <= 60:
-            gaps.append(f"ahead {lap.gap_ahead:.1f}")
+            gaps.append(msg("status_gap_ahead", g=lap.gap_ahead))
         if 0 <= lap.gap_behind <= 60:
-            gaps.append(f"behind {lap.gap_behind:.1f}")
+            gaps.append(msg("status_gap_behind", g=lap.gap_behind))
         if gaps:
-            parts.append("Gap " + ", ".join(gaps) + ".")
+            parts.append(msg("status_gaps", gaps=", ".join(gaps)))
         if fuel_status and fuel_status.get("fuel_laps") is not None:
-            parts.append(f"Fuel {fuel_status['fuel_laps']:.0f} laps.")
+            parts.append(msg("status_fuel", n=fuel_status["fuel_laps"]))
         if tyre_status and tyre_status.get("worst"):
             left = tyre_status["worst"].get("laps_left")
             if left is not None and left <= 20:
-                parts.append(f"Tyres {left:.0f} laps.")
+                parts.append(msg("status_tyres", n=left))
             else:
-                parts.append("Tyres good.")
+                parts.append(msg("status_tyres_good"))
         if not parts:
             return None
         return " ".join(parts)

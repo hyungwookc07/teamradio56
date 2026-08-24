@@ -66,6 +66,9 @@ def main() -> int:
 
     # 존재하지 않는 경로 → 항상 DEFAULTS 사용 (회귀 결정성)
     cfg = load_config("__defaults_only__")
+    # 회귀는 언어 en 고정 — C# 쪽 Messages(en)와 문장 단위로 비교되므로
+    from messages import set_language
+    set_language("en")
 
     vclock = _VirtualTime()
     events.time = vclock          # events.py의 time.monotonic() 호출을 가로챔

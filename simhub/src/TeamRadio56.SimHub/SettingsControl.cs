@@ -13,6 +13,7 @@ namespace TeamRadio56.SimHub
     ///
     /// XAML 없이 코드로 조립한다 — x:Class 매칭이나 .g.cs 생성 같은
     /// XAML 빌드 실패 지점을 없애기 위함 (개발 환경에서 컴파일 검증 불가).
+    /// 문자열은 전부 Loc(ko/en)을 거친다 — 화면 언어를 바꾸면 즉시 재조립.
     /// </summary>
     public class SettingsControl : UserControl
     {
@@ -32,6 +33,7 @@ namespace TeamRadio56.SimHub
         public SettingsControl(TeamRadio56Plugin plugin)
         {
             _plugin = plugin;
+            Loc.Lang = (S != null ? S.UiLanguage : null) ?? "ko";
             Build();
 
             _timer.Interval = TimeSpan.FromSeconds(1);
@@ -41,6 +43,11 @@ namespace TeamRadio56.SimHub
         }
 
         private PluginSettings S { get { return _plugin.Settings; } }
+
+        private static string L(string key)
+        {
+            return Loc.L(key);
+        }
 
         private void Save()
         {
@@ -53,17 +60,31 @@ namespace TeamRadio56.SimHub
         {
             var root = new StackPanel { Margin = new Thickness(14, 10, 14, 20) };
 
-            root.Children.Add(new TextBlock
+            var header = new StackPanel { Orientation = Orientation.Horizontal };
+            header.Children.Add(new TextBlock
             {
                 Text = "teamradio56",
                 FontSize = 20,
                 FontWeight = FontWeights.Bold,
                 Foreground = Accent,
             });
+            // 화면 언어 전환 — 헤더 우측, 바꾸면 화면을 즉시 다시 그린다
+            var langCombo = MakeCombo(PluginSettings.UiLanguageChoices,
+                S != null ? S.UiLanguage : "ko", v =>
+                {
+                    if (S != null)
+                        S.UiLanguage = v;
+                    Loc.Lang = v;
+                    Build();       // 새 언어로 재조립
+                });
+            ((FrameworkElement)langCombo).Width = 80;
+            ((FrameworkElement)langCombo).Margin = new Thickness(16, 4, 0, 0);
+            header.Children.Add(langCombo);
+            root.Children.Add(header);
+
             root.Children.Add(new TextBlock
             {
-                Text = "LMU AI 크루치프 — 상황을 판단해 영어 팀라디오로 불러줍니다. "
-                       + "버전 " + TeamRadio56Plugin.Version,
+                Text = L("subtitle") + TeamRadio56Plugin.Version,
                 Foreground = Dim,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 2, 0, 4),
@@ -87,7 +108,7 @@ namespace TeamRadio56.SimHub
 
         private void BuildStatus(StackPanel root)
         {
-            StackPanel box = Section(root, "상태");
+            StackPanel box = Section(root, L("sec_status"));
 
             _connection.Foreground = Dim;
             _connection.FontWeight = FontWeights.Bold;
@@ -108,177 +129,177 @@ namespace TeamRadio56.SimHub
                 Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 8, 0, 0),
             };
-            buttons.Children.Add(MakeButton("테스트 발화", () => _plugin.TestSpeak()));
-            buttons.Children.Add(MakeButton("로그 열기", () => OpenFile(FileLog.Path)));
-            buttons.Children.Add(MakeButton("설정 파일 열기", () => OpenFile(SettingsStore.Path)));
+            buttons.Children.Add(MakeButton(L("btn_test_speak"), () => _plugin.TestSpeak()));
+            buttons.Children.Add(MakeButton(L("btn_open_log"), () => OpenFile(FileLog.Path)));
+            buttons.Children.Add(MakeButton(L("btn_open_settings"), () => OpenFile(SettingsStore.Path)));
             box.Children.Add(buttons);
         }
 
         private void BuildEngine(StackPanel root)
         {
-            StackPanel box = Section(root, "엔진");
-            box.Children.Add(Hint(
-                "python = 검증된 파이썬 엔진을 플러그인이 자식 프로세스로 띄웁니다 "
-                + "(전체 기능, 현재 권장). builtin = C# 내장 — 이식 중이라 아직 콜이 나가지 않습니다."));
+            StackPanel box = Section(root, L("sec_engine"));
+            box.Children.Add(Hint(L("engine_hint")));
 
             _engineState.Foreground = Dim;
             _engineState.TextWrapping = TextWrapping.Wrap;
             _engineState.Margin = new Thickness(0, 2, 0, 6);
             box.Children.Add(_engineState);
 
-            Row(box, "모드", MakeCombo(PluginSettings.EngineChoices, S.EngineMode, v =>
+            Row(box, L("row_mode"), MakeCombo(PluginSettings.EngineChoices, S.EngineMode, v =>
             {
                 S.EngineMode = v;
-            }), "바꾼 뒤 [엔진 재시작]");
+            }), L("hint_mode"));
 
-            Row(box, "실행 파일", MakeText(S.EngineExe, v =>
+            Row(box, L("row_exe"), MakeText(S.EngineExe, v =>
             {
                 S.EngineExe = v;
-            }), "비우면 기본: 플러그인 폴더\\teamradio56-engine\\");
+            }), L("hint_exe"));
 
-            Row(box, "추가 인자", MakeText(S.EngineArgs, v =>
+            Row(box, L("row_args"), MakeText(S.EngineArgs, v =>
             {
                 S.EngineArgs = v;
-            }), "소스로 돌릴 때 main.py 경로");
+            }), L("hint_args"));
 
             var buttons = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 6, 0, 0),
             };
-            buttons.Children.Add(MakeButton("엔진 시작", () => _plugin.StartEngine()));
-            buttons.Children.Add(MakeButton("엔진 중지", () => _plugin.StopEngine()));
-            buttons.Children.Add(MakeButton("엔진 재시작", () => _plugin.RestartEngine()));
-            buttons.Children.Add(MakeButton("엔진 로그", () => OpenFile(_plugin.EngineLogPath)));
+            buttons.Children.Add(MakeButton(L("btn_engine_start"), () => _plugin.StartEngine()));
+            buttons.Children.Add(MakeButton(L("btn_engine_stop"), () => _plugin.StopEngine()));
+            buttons.Children.Add(MakeButton(L("btn_engine_restart"), () => _plugin.RestartEngine()));
+            buttons.Children.Add(MakeButton(L("btn_engine_log"), () => OpenFile(_plugin.EngineLogPath)));
             box.Children.Add(buttons);
 
-            box.Children.Add(Hint(
-                "설정을 바꾸면 [엔진 재시작]을 눌러야 엔진에 반영됩니다."));
+            box.Children.Add(Hint(L("engine_apply_hint")));
         }
 
         private void BuildVoice(StackPanel root)
         {
-            StackPanel box = Section(root, "음성");
+            StackPanel box = Section(root, L("sec_voice"));
 
-            Row(box, "음성 출력", MakeCheck(S.VoiceEnabled, v =>
+            Row(box, L("row_voice_lang"),
+                MakeCombo(PluginSettings.VoiceLanguageChoices, S.VoiceLanguage, v =>
+                {
+                    S.VoiceLanguage = v;
+                }), L("hint_voice_lang"));
+
+            Row(box, L("row_voice_on"), MakeCheck(S.VoiceEnabled, v =>
             {
                 S.VoiceEnabled = v;
-            }), "끄면 로그에만 남습니다");
+            }), L("hint_voice_on"));
 
-            Row(box, "보이스", MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
+            Row(box, L("row_voice"), MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
             {
                 S.EdgeVoice = v;
-            }), "바꾸면 오디오 캐시를 다시 만듭니다");
+            }), L("hint_voice"));
 
-            Row(box, "말 속도", MakeSlider(-20, 40, 5, S.SpeechRatePercent, v =>
+            Row(box, L("row_rate"), MakeSlider(-20, 40, 5, S.SpeechRatePercent, v =>
             {
                 S.SpeechRatePercent = (int)Math.Round(v);
             }, "{0:+0;-0;0}%"));
 
-            Row(box, "볼륨", MakeSlider(0.1, 1.0, 0.05, S.Volume, v =>
+            Row(box, L("row_volume"), MakeSlider(0.1, 1.0, 0.05, S.Volume, v =>
             {
                 S.Volume = v;
             }, "{0:P0}"));
 
-            Row(box, "무전기 효과", MakeCheck(S.RadioFx, v =>
+            Row(box, L("row_radiofx"), MakeCheck(S.RadioFx, v =>
             {
                 S.RadioFx = v;
-            }), "TTS 기계음을 팀라디오 질감으로");
+            }), L("hint_radiofx"));
 
-            Row(box, "무전 노이즈", MakeSlider(0.0, 0.02, 0.002, S.RadioNoise, v =>
+            Row(box, L("row_noise"), MakeSlider(0.0, 0.02, 0.002, S.RadioNoise, v =>
             {
                 S.RadioNoise = v;
-            }, "{0:0.000}"), "0이면 지직임 없음");
+            }, "{0:0.000}"), L("hint_noise"));
         }
 
         private void BuildChatter(StackPanel root)
         {
-            StackPanel box = Section(root, "수다스러움");
-            Row(box, "프리셋", MakeCombo(PluginSettings.ChatterChoices, S.ChatterPreset, v =>
+            StackPanel box = Section(root, L("sec_chatter"));
+            Row(box, L("row_preset"), MakeCombo(PluginSettings.ChatterChoices, S.ChatterPreset, v =>
             {
                 S.ChatterPreset = v;
-            }), "quiet = 꼭 필요한 콜만, chatty = 자주");
-            box.Children.Add(Hint(
-                "긴급 콜(나란히/충격/펑크/피트 리미터)은 프리셋과 무관하게 항상 나갑니다."));
+            }), L("hint_preset"));
+            box.Children.Add(Hint(L("chatter_hint")));
         }
 
         private void BuildTraffic(StackPanel root)
         {
-            StackPanel box = Section(root, "트래픽 / 스포터");
+            StackPanel box = Section(root, L("sec_traffic"));
 
-            Row(box, "나란히 판정 거리", MakeSlider(3.0, 10.0, 0.2, S.AlongsideMeters, v =>
+            Row(box, L("row_alongside"), MakeSlider(3.0, 10.0, 0.2, S.AlongsideMeters, v =>
             {
                 S.AlongsideMeters = v;
-            }, "{0:0.0} m"), "차 한 대 길이 ≈ 4.6m");
+            }, "{0:0.0} m"), L("hint_alongside"));
 
-            Row(box, "스타트 스포터 모드", MakeSlider(0, 120, 5, S.StartSpotterSeconds, v =>
+            Row(box, L("row_spotter"), MakeSlider(0, 120, 5, S.StartSpotterSeconds, v =>
             {
                 S.StartSpotterSeconds = v;
-            }, "{0:0}초"), "혼전 구간엔 좌우 점유만 즉시 콜");
+            }, L("fmt_seconds")), L("hint_spotter"));
 
-            Row(box, "좌우 반전", MakeCheck(S.SideInvert, v =>
+            Row(box, L("row_invert"), MakeCheck(S.SideInvert, v =>
             {
                 S.SideInvert = v;
-            }), "\"왼쪽/오른쪽\"이 반대로 들리면 켜세요");
+            }), L("hint_invert"));
 
-            Row(box, "레이스에서만", MakeCheck(S.TrafficRaceOnly, v =>
+            Row(box, L("row_race_only"), MakeCheck(S.TrafficRaceOnly, v =>
             {
                 S.TrafficRaceOnly = v;
-            }), "연습/퀄리는 고스트 차가 많음");
+            }), L("hint_race_only"));
         }
 
         private void BuildReports(StackPanel root)
         {
-            StackPanel box = Section(root, "HUD 대체 정기 무전");
-            box.Children.Add(Hint("HUD를 끄고 달릴 때 켜세요. 기본은 꺼짐(침묵 우선)."));
+            StackPanel box = Section(root, L("sec_reports"));
+            box.Children.Add(Hint(L("reports_hint")));
 
-            Row(box, "매 랩 랩타임", MakeCheck(S.LapTimeEveryLap, v =>
+            Row(box, L("row_laptime"), MakeCheck(S.LapTimeEveryLap, v =>
             {
                 S.LapTimeEveryLap = v;
-            }), "\"Last lap 2 01.8. Best lap.\"");
+            }), L("hint_laptime"));
 
-            Row(box, "상황 리포트", MakeSlider(0, 10, 1, S.StatusEveryLaps, v =>
+            Row(box, L("row_status_report"), MakeSlider(0, 10, 1, S.StatusEveryLaps, v =>
             {
                 S.StatusEveryLaps = (int)Math.Round(v);
-            }, "{0:0}랩마다"), "0 = 끔. 순위/갭/연료/타이어");
+            }, L("fmt_every_laps")), L("hint_status_report"));
         }
 
         private void BuildLlm(StackPanel root)
         {
-            StackPanel box = Section(root, "LLM 멘트");
-            box.Children.Add(Hint(
-                "여러 데이터를 엮은 판단형 멘트를 실시간 생성합니다. "
-                + "꺼도 긴급 콜과 템플릿 멘트는 그대로 동작합니다."));
+            StackPanel box = Section(root, L("sec_llm"));
+            box.Children.Add(Hint(L("llm_hint")));
 
-            Row(box, "사용", MakeCheck(S.LlmEnabled, v =>
+            Row(box, L("row_llm_on"), MakeCheck(S.LlmEnabled, v =>
             {
                 S.LlmEnabled = v;
             }));
 
-            Row(box, "API 키", MakeText(S.LlmApiKey, v =>
+            Row(box, L("row_api_key"), MakeText(S.LlmApiKey, v =>
             {
                 S.LlmApiKey = v;
-            }), "비우면 환경변수 ANTHROPIC_API_KEY");
+            }), L("hint_api_key"));
 
-            Row(box, "시간당 호출 예산", MakeSlider(0, 60, 5, S.LlmBudgetPerHour, v =>
+            Row(box, L("row_budget"), MakeSlider(0, 60, 5, S.LlmBudgetPerHour, v =>
             {
                 S.LlmBudgetPerHour = (int)Math.Round(v);
-            }, "{0:0}회"), "2시간 레이스 기준 30회 이내 권장");
+            }, L("fmt_calls")), L("hint_budget"));
         }
 
         private void BuildBehaviour(StackPanel root)
         {
-            StackPanel box = Section(root, "동작");
+            StackPanel box = Section(root, L("sec_behaviour"));
 
-            Row(box, "주행 중에만 발화", MakeCheck(S.RequireRealtime, v =>
+            Row(box, L("row_realtime"), MakeCheck(S.RequireRealtime, v =>
             {
                 S.RequireRealtime = v;
-            }), "모니터/메뉴에선 침묵");
+            }), L("hint_realtime"));
 
-            Row(box, "발화 로그", MakeCheck(S.SpeechLog, v =>
+            Row(box, L("row_speech_log"), MakeCheck(S.SpeechLog, v =>
             {
                 S.SpeechLog = v;
-            }), "무슨 말을 언제 했는지 기록");
+            }), L("hint_speech_log"));
         }
 
         // -- 상태 갱신 -------------------------------------------------------
@@ -288,7 +309,7 @@ namespace TeamRadio56.SimHub
             try
             {
                 bool connected = _plugin.IsConnected;
-                _connection.Text = connected ? "● LMU 연결됨" : "○ 게임 대기 중";
+                _connection.Text = connected ? L("conn_on") : L("conn_off");
                 _connection.Foreground = connected ? Ok : Off;
                 _status.Text = _plugin.StatusText ?? "";
 
@@ -297,30 +318,30 @@ namespace TeamRadio56.SimHub
                     string error = _plugin.EngineError;
                     if (!string.IsNullOrEmpty(error))
                     {
-                        _engineState.Text = "엔진 오류 — " + error;
+                        _engineState.Text = L("engine_error") + error;
                         _engineState.Foreground = Off;
                     }
                     else if (_plugin.EngineRunning)
                     {
-                        _engineState.Text = "엔진 실행 중 · " + _plugin.EngineExePath();
+                        _engineState.Text = L("engine_running") + _plugin.EngineExePath();
                         _engineState.Foreground = Ok;
                     }
                     else
                     {
-                        _engineState.Text = "엔진 중지됨 · " + _plugin.EngineExePath();
+                        _engineState.Text = L("engine_stopped") + _plugin.EngineExePath();
                         _engineState.Foreground = Dim;
                     }
                 }
                 else
                 {
-                    _engineState.Text = "내장(C#) 엔진 — 이식 진행 중이라 콜이 나가지 않습니다";
+                    _engineState.Text = L("engine_builtin");
                     _engineState.Foreground = Dim;
                 }
 
                 string[] calls = _plugin.RecentCalls();
                 _recent.Text = calls.Length == 0
-                    ? "최근 무전 없음"
-                    : "최근 무전\n  " + string.Join("\n  ", calls);
+                    ? L("no_recent")
+                    : L("recent_title") + "\n  " + string.Join("\n  ", calls);
             }
             catch (Exception)
             {
@@ -366,9 +387,10 @@ namespace TeamRadio56.SimHub
             row.Children.Add(new TextBlock
             {
                 Text = label,
-                Width = 150,
+                Width = 170,
                 Foreground = Fg,
                 VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
             });
             row.Children.Add(control);
             if (!string.IsNullOrEmpty(hint))
@@ -418,7 +440,7 @@ namespace TeamRadio56.SimHub
             var label = new TextBlock
             {
                 Text = string.Format(format, slider.Value),
-                Width = 70,
+                Width = 90,
                 Foreground = Fg,
                 Margin = new Thickness(10, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,

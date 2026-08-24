@@ -21,6 +21,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
+from messages import msg, wheel_name
 from state import SessionState
 from telemetry import Snapshot
 
@@ -174,15 +175,14 @@ class HealthAnalyzer:
             self._detached_warned = True
             # 존 이름은 영문("rear left" 등) — 한국어로 검사하면 절대 안 걸린다
             if self._last_impact_zone and "rear" in self._last_impact_zone:
-                msg = ("Bodywork gone at the rear. Could be the wing. "
-                       "Careful next corner. If the rear goes, box.")
+                text = msg("part_detached_rear")
                 state.set_issue("damage", "리어 부품 탈락 — 리어 윙 손상 가능성")
             else:
-                msg = "Bodywork detached. Possible aero loss. Checking data."
+                text = msg("part_detached")
                 state.set_issue("damage", "차체 부품 탈락 — 에어로 손상 의심")
             bus.push(Event(
                 type=EventType.PART_DETACHED, priority=Priority.CRITICAL,
-                message=msg, dedup_key="detached", tone="urgent", ttl=10.0,
+                message=text, dedup_key="detached", tone="urgent", ttl=10.0,
             ))
             self._arm_instab(snap.t, "부품 탈락")
             if self._report_due is None:      # 점검 리포트가 예약 안 됐으면 예약
@@ -194,7 +194,7 @@ class HealthAnalyzer:
                 self._wheel_detached_warned.add(i)
                 bus.push(Event(
                     type=EventType.WHEEL_DAMAGE, priority=Priority.CRITICAL,
-                    message=f"{WHEEL_NAMES[i]} wheel is gone! Careful, bring it to the pits slowly.",
+                    message=msg("wheel_gone", wheel=wheel_name(i)),
                     dedup_key=f"wheel_det_{i}", tone="urgent", ttl=10.0,
                 ))
                 state.set_issue("damage", f"{WHEEL_NAMES[i]} 휠 탈락 — 즉시 피트 필요")
@@ -231,13 +231,13 @@ class HealthAnalyzer:
         wheels = p.get("wheels") or []
         problems: list[str] = []
 
-        detached = [WHEEL_NAMES[i] for i, w in enumerate(wheels[:4]) if w.get("detached")]
-        flats = [WHEEL_NAMES[i] for i, w in enumerate(wheels[:4])
+        detached = [wheel_name(i) for i, w in enumerate(wheels[:4]) if w.get("detached")]
+        flats = [wheel_name(i) for i, w in enumerate(wheels[:4])
                  if w.get("flat") and not w.get("detached")]
         if detached:
-            problems.append(f"{'/'.join(detached)} wheel damage")
+            problems.append(msg("item_wheel_damage", names="/".join(detached)))
         if flats:
-            problems.append(f"{'/'.join(flats)} puncture")
+            problems.append(msg("item_puncture", names="/".join(flats)))
 
         # 충격 전후 공기압 비교 — 서서히 새는 누출 조기 발견
         if self._pre_pressures:
@@ -248,24 +248,25 @@ class HealthAnalyzer:
                         and self._pre_pressures[i] - w.get("pressure", 0.0) \
                         >= IMPACT_PRESSURE_DROP_KPA:
                     self._puncture_warned.add(i)
-                    problems.append(f"{WHEEL_NAMES[i]} losing pressure")
+                    problems.append(msg("item_losing_pressure", name=wheel_name(i)))
         self._pre_pressures = None
 
+        from messages import zone_display
         dents = list(p.get("dent_severity") or [])[:8]
-        heavy_zones = [DENT_ZONES[i] for i, s in enumerate(dents) if s >= 2]
+        heavy_zones = [zone_display(DENT_ZONES[i]) for i, s in enumerate(dents) if s >= 2]
         light = any(s == 1 for s in dents)
         if heavy_zones:
-            problems.append(f"heavy bodywork damage, {'/'.join(heavy_zones)}")
+            problems.append(msg("item_heavy_body", zones="/".join(heavy_zones)))
 
         if problems:
             need_box = bool(detached or flats)
-            advice = "Prepare to box." if need_box else "Keep pace, I'll make the repair call."
-            message = f"Check done. {', '.join(problems)}. {advice}"
+            advice = msg("report_advice_box") if need_box else msg("report_advice_keep")
+            message = msg("report_problems", problems=", ".join(problems), advice=advice)
             state.set_issue("damage", "점검 결과: " + ", ".join(problems))
         elif light:
-            message = "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on."
+            message = msg("report_marks")
         else:
-            message = "Check done. No damage, car is clean. Carry on."
+            message = msg("report_clean")
         bus.push(Event(
             type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
             message=message, dedup_key=f"dmg_report_{self._last_impact_et}",
@@ -296,8 +297,7 @@ class HealthAnalyzer:
             # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
             accepted = bus.push(Event(
                 type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
-                message=f"Front wing down {drop * 1000:.0f} millimetres. Wing damage. "
-                        "Careful in the fast stuff. Repair call on pace.",
+                message=msg("wing_down", mm=drop * 1000),
                 dedup_key="wing_damage", ttl=20.0, tone="casual",
             ))
             if not accepted:
@@ -335,8 +335,7 @@ class HealthAnalyzer:
         if abs(shift) >= STEER_SHIFT_SEVERE:
             accepted = bus.push(Event(
                 type=EventType.DAMAGE_REPORT, priority=Priority.CRITICAL,
-                message="Alignment is badly out. You're steering on the straights. "
-                        "Box for repairs.",
+                message=msg("align_severe"),
                 dedup_key="align_severe", tone="urgent", ttl=15.0,
             ))
             if not accepted:
@@ -348,8 +347,7 @@ class HealthAnalyzer:
         # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
         accepted = bus.push(Event(
             type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
-            message="Steering pull on the straights. Alignment's off from that hit. "
-                    "It'll eat the tyre. Repair call on pace.",
+            message=msg("align_mild"),
             dedup_key="align_damage", ttl=20.0, tone="casual",
         ))
         if not accepted:
@@ -390,8 +388,7 @@ class HealthAnalyzer:
         self._instab_called = True
         bus.push(Event(
             type=EventType.DAMAGE_REPORT, priority=Priority.CRITICAL,
-            message="Rear keeps stepping out. Looks damage-related. "
-                    "Don't push, recommend box.",
+            message=msg("rear_instab"),
             dedup_key="rear_instab", tone="urgent", ttl=15.0,
         ))
         state.set_issue("damage", "리어 불안정 반복 (에어로/서스 손상 의심)")
@@ -431,8 +428,7 @@ class HealthAnalyzer:
                 self._puncture_warned.add(i)
                 bus.push(Event(
                     type=EventType.TYRE_WARNING, priority=Priority.HIGH,
-                    message=f"{WHEEL_NAMES[i]} losing pressure. Slow puncture. "
-                            "We change it next stop.",
+                    message=msg("slow_puncture", wheel=wheel_name(i)),
                     dedup_key=f"slowpunc_{i}", ttl=20.0, tone="casual",
                 ))
                 state.set_issue("tyres", f"{WHEEL_NAMES[i]} 슬로우 펑처 의심")
@@ -461,10 +457,12 @@ class HealthAnalyzer:
         water = p.get("water_temp", 0.0)
         oil = p.get("oil_temp", 0.0)
         if p.get("overheating") or water >= self.water_warn or oil >= self.oil_warn:
-            what = "Water temp" if water >= self.water_warn else "Oil temp" if oil >= self.oil_warn else "Engine temp"
+            what = (msg("engine_what_water") if water >= self.water_warn
+                    else msg("engine_what_oil") if oil >= self.oil_warn
+                    else msg("engine_what_engine"))
             bus.push(Event(
                 type=EventType.ENGINE_WARNING, priority=Priority.HIGH,
-                message=f"{what} climbing. Get out of the slipstream, give it air.",
+                message=msg("engine_warn", what=what),
                 data={"water": water, "oil": oil}, ttl=30.0,
             ))
             state.set_issue("engine", f"엔진 온도 상승 (수온 {water:.0f}, 유온 {oil:.0f})")
@@ -477,8 +475,7 @@ class HealthAnalyzer:
             if avg_brake >= self.brake_warn:
                 bus.push(Event(
                     type=EventType.BRAKE_WARNING, priority=Priority.NORMAL,
-                    message=f"Brakes averaging {avg_brake:.0f} degrees. "
-                            "Brake a touch earlier, cool them.",
+                    message=msg("brake_warn", t=avg_brake),
                     data={"avg_brake": round(avg_brake)}, ttl=30.0,
                 ))
 
@@ -505,8 +502,7 @@ class HealthAnalyzer:
                     f"접촉 데미지 이후 랩당 {delta:.1f}초 느려졌다. "
                     "피트에서 수리할지, 그냥 달릴지 판단해라 (수리는 시간 손실, "
                     "방치는 랩마다 손실 누적)."]},
-                message=f"Damage is costing {delta:.1f} a lap. "
-                        "We repair at the next stop. It pays off.",
+                message=msg("repair_cost", delta=delta),
                 dedup_key=f"repair_{self._impact_lap}",
             ))
             state.set_issue("damage", f"데미지로 랩당 {delta:.1f}초 손실 — 수리 권장")
@@ -514,7 +510,7 @@ class HealthAnalyzer:
         elif delta <= NO_EFFECT_DELTA:
             bus.push(Event(
                 type=EventType.DAMAGE, priority=Priority.NORMAL,
-                message="That contact — no effect on pace. Forget it.",
+                message=msg("dmg_no_effect"),
                 dedup_key=f"dmg_ok_{self._impact_lap}", ttl=30.0,
             ))
             state.clear_issue("damage")

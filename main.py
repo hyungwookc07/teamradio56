@@ -21,6 +21,7 @@ import sys
 import time
 
 from config import load_config, Config
+from messages import msg, set_language
 from telemetry import (
     TelemetrySource,
     SharedMemoryTelemetry,
@@ -267,11 +268,11 @@ class CrewChiefApp:
         ses = snap.session
         stype = ses.get("session_type", 0)
         is_race = stype >= 10
-        kind = ("Race" if is_race else "Warmup" if stype == 9
-                else "Qualifying" if stype >= 5 else "Practice")
+        kind = (msg("kind_race") if is_race else msg("kind_warmup") if stype == 9
+                else msg("kind_quali") if stype >= 5 else msg("kind_practice"))
         track = (ses.get("track") or "").strip()
-        parts = [f"{track}. {kind} session." if track
-                 else f"Radio check. {kind} session."]
+        parts = [msg("brief_track", track=track, kind=kind) if track
+                 else msg("brief_radio", kind=kind)]
 
         # 세션 길이 — 시간제(잔여 기준)와 랩제를 구분. 미기입 거대값은 무시.
         end_et = ses.get("end_et", 0.0) or 0.0
@@ -282,33 +283,34 @@ class CrewChiefApp:
             minutes = max(int(round((end_et - cur_et) / 60)), 1)
             if minutes >= 120 and minutes % 60 == 0:
                 h = minutes // 60
-                length = f"{h} hour{'s' if h > 1 else ''}"
+                length = msg("brief_hours_plural" if h > 1 else "brief_hours", h=h)
             else:
-                length = f"{minutes} minutes"
-            parts.append(f"{length} {'remaining' if mid_join else 'long'}.")
+                length = msg("brief_minutes", m=minutes)
+            parts.append(msg("brief_len_remaining" if mid_join else "brief_len_long",
+                             length=length))
         elif 0 < max_laps < 10000:
-            parts.append(f"{max_laps} laps.")
+            parts.append(msg("brief_laps", n=max_laps))
 
         if is_race:
             cls_count = sum(1 for v in snap.vehicles if v["cls"] == me["cls"])
             cp = self.state.class_place_of(snap, me)
             if cls_count > 1:
-                parts.append(f"P{cp} of {cls_count} in class"
-                             f"{'.' if mid_join else ' on the grid.'}")
+                parts.append(msg("brief_grid_mid" if mid_join else "brief_grid",
+                                 cp=cp, n=cls_count))
 
         rain = ses.get("raining", 0.0)
         if rain >= 0.05:
-            parts.append("It's raining, watch the grip.")
+            parts.append(msg("brief_rain"))
         elif ses.get("track_temp", 0.0) > 0:
-            parts.append(f"Track {ses['track_temp']:.0f} degrees.")
+            parts.append(msg("brief_temp", t=ses["track_temp"]))
 
         fuel = snap.player.get("fuel")
         if fuel:
-            parts.append(f"Fuel {fuel:.0f} litres.")
+            parts.append(msg("brief_fuel", f=fuel))
 
-        parts.append("Carry on." if mid_join
-                     else "Calm first lap." if is_race
-                     else "Out when you're ready.")
+        parts.append(msg("brief_carry_on") if mid_join
+                     else msg("brief_calm") if is_race
+                     else msg("brief_out"))
         self.bus.push(Event(
             type=EventType.SESSION_BRIEFING, priority=Priority.NORMAL,
             message=" ".join(parts), dedup_key="session_brief",
@@ -434,6 +436,7 @@ def main() -> int:
             pass
 
     cfg = load_config(args.config, plugin_settings=args.settings)
+    set_language(cfg.get("voice.language", "en"))   # 발화 문장 언어 (en/ko)
     logging.basicConfig(
         level=getattr(logging, cfg.get("app.log_level", "INFO").upper(), logging.INFO),
         format="%(asctime)s %(levelname)-5s %(name)-10s %(message)s",
