@@ -1,13 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
+    <!-- net48: SimHub 플러그인용. net8.0: 리눅스 개발 환경에서 리플레이
+         회귀 테스트를 돌리기 위함 (tests/TeamRadio56.Replay가 참조). -->
+    <TargetFrameworks>net48;net8.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <AssemblyName>TeamRadio56.Core</AssemblyName>
     <RootNamespace>TeamRadio56.Core</RootNamespace>
     <!-- SimHub에 의존하지 않는 순수 로직 — 나중에 단독 실행/테스트에도 재사용 -->
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Version>0.8.0</Version>
+    <!-- net8에서 MemoryMappedFile 등 Windows 전용 API 경고 억제 —
+         실행은 항상 Windows(SimHub), net8 타겟은 로직 테스트 전용 -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
 </Project>

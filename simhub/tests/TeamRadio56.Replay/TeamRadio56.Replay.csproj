@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 리플레이 회귀 러너 — 리눅스 개발 환경에서 파이썬과 콜 대조.
+         배포물이 아니다 (SimHub에 설치하지 않는다). -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>teamradio56-replay</AssemblyName>
+    <RootNamespace>TeamRadio56.Replay</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TeamRadio56.Core\TeamRadio56.Core.csproj" />
+  </ItemGroup>
+
+</Project>

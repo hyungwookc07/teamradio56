@@ -3,7 +3,12 @@ __pycache__/
 venv/
 .venv/
 config.yaml
-data/
+# data는 통째로 제외하되 리플레이 회귀 자산만 예외 (디렉토리째 제외하면
+# 하위 재포함이 불가능해 data/* 패턴을 쓴다)
+data/*
+!data/replays/
+data/replays/*
+!data/replays/*.jsonl.gz
 audio_cache/
 dist/
 build/
