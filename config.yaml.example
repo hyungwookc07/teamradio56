@@ -22,11 +22,18 @@ voice:
     Talks like real team radio: short, clipped, word-first.
 
 tts:
-  engine: edge               # edge | elevenlabs (11labs가 훨씬 자연스러움, 유료)
+  engine: edge               # edge | kokoro | elevenlabs
+                             #   edge: 무료, 설치 불필요 (교과서 낭독 느낌)
+                             #   kokoro: 무료·로컬·Apache 2.0 — 배포용 추천.
+                             #     제작자 PC에서 pip install kokoro-onnx 후
+                             #     tools/pregen_audio.py --engine kokoro 로
+                             #     사전 생성. 유저 PC는 캐시 재생만 (설치 불필요)
+                             #   elevenlabs: 최상 품질, 유료 (키는 제작자만)
   edge_voice: en-GB-RyanNeural     # 영국 레이스 엔지니어 톤 (추천)
                                    # en-GB-ThomasNeural, en-US-GuyNeural,
                                    # en-AU-WilliamNeural 등으로 교체 가능
   edge_rate: "+10%"          # 말 속도
+  kokoro_voice: bm_george    # engine: kokoro 사용 시 (bm_* = 영국 남성)
   elevenlabs_api_key: ""     # engine: elevenlabs 사용 시
   elevenlabs_voice_id: ""
   cache_dir: audio_cache

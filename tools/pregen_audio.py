@@ -37,10 +37,16 @@ from voice import PhrasePool, iter_pregen_texts, lines_file  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--engine", choices=("edge", "elevenlabs", "kokoro"),
+                        help="config.yaml의 tts.engine을 이 실행에서만 덮어씀 "
+                             "(배포용 캐시는 --engine kokoro)")
     parser.add_argument("--dry-run", action="store_true", help="합성 없이 대상 텍스트만 출력")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    if args.engine:
+        cfg._data.setdefault("tts", {})["engine"] = args.engine
+        print(f"TTS 엔진 덮어씀: {args.engine}")
     pool = PhrasePool(lines_file(cfg.get("voice.language", "en")))
     texts = sorted(set(iter_pregen_texts(pool)))
     print(f"사전 캐시 대상: {len(texts)}개 멘트 (톤별)")

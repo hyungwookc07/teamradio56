@@ -149,6 +149,94 @@ class ElevenLabsEngine(TTSEngine):
             return None
 
 
+class KokoroEngine(TTSEngine):
+    """
+    Kokoro — 로컬 신경망 TTS (모델 라이선스 Apache 2.0, 상업 배포 자유).
+
+    배포용 사전 생성 엔진: 제작자 PC에서 pip install kokoro-onnx 후
+    tools/pregen_audio.py로 전체 멘트를 생성해 audio_cache를 배포판에
+    동봉한다. 유저 PC에는 kokoro-onnx가 없으므로 캐시 전용으로 동작하고,
+    캐시에 없는 멘트는 None → ChainEngine이 edge-tts로 폴백.
+
+    모델 파일(약 340MB)은 첫 생성 때 models/ 아래로 자동 다운로드.
+    """
+
+    MODEL_URL = ("https://github.com/thewh1teagle/kokoro-onnx/releases/"
+                 "download/model-files-v1.0/kokoro-v1.0.onnx")
+    VOICES_URL = ("https://github.com/thewh1teagle/kokoro-onnx/releases/"
+                  "download/model-files-v1.0/voices-v1.0.bin")
+
+    # 톤별 말 속도 (edge-tts의 전달 차등과 같은 취지)
+    TONE_SPEED = {"casual": 1.0, "urgent": 1.15}
+
+    def __init__(self, cache_dir: str, voice: str = "bm_george",
+                 model_dir: str = "models"):
+        self.cache_dir = cache_dir
+        self.voice = voice
+        self.model_dir = model_dir
+        self._engine = None
+        self._unavailable = False
+        os.makedirs(cache_dir, exist_ok=True)
+
+    def synth(self, text: str, tone: str = "casual") -> Optional[str]:
+        speed = self.TONE_SPEED.get(tone, 1.0)
+        path = _cache_path(self.cache_dir,
+                           f"kokoro|{self.voice}|{tone}|{text}", ext="wav")
+        if os.path.exists(path):
+            return path
+        engine = self._load()
+        if engine is None:
+            return None
+        try:
+            import soundfile as sf
+            lang = "en-gb" if self.voice.startswith("b") else "en-us"
+            samples, sr = engine.create(text, voice=self.voice,
+                                        speed=speed, lang=lang)
+            sf.write(path, samples, sr)
+            return path
+        except Exception as e:
+            log.warning("Kokoro 합성 실패: %s", e)
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+            return None
+
+    def _load(self):
+        if self._engine is not None:
+            return self._engine
+        if self._unavailable:
+            return None
+        try:
+            from kokoro_onnx import Kokoro
+        except ImportError:
+            self._unavailable = True
+            log.info("kokoro-onnx 미설치 — 캐시 전용 모드 "
+                     "(생성하려면 pip install kokoro-onnx soundfile)")
+            return None
+        try:
+            model = self._ensure_file("kokoro-v1.0.onnx", self.MODEL_URL)
+            voices = self._ensure_file("voices-v1.0.bin", self.VOICES_URL)
+            self._engine = Kokoro(model, voices)
+            return self._engine
+        except Exception as e:
+            self._unavailable = True
+            log.warning("Kokoro 초기화 실패 — 캐시 전용 모드: %s", e)
+            return None
+
+    def _ensure_file(self, name: str, url: str) -> str:
+        os.makedirs(self.model_dir, exist_ok=True)
+        path = os.path.join(self.model_dir, name)
+        if os.path.exists(path):
+            return path
+        log.info("Kokoro 모델 다운로드 중: %s (한 번만)", name)
+        tmp = path + ".part"
+        urllib.request.urlretrieve(url, tmp)
+        os.replace(tmp, path)
+        return path
+
+
 class ChainEngine(TTSEngine):
     """
     앞 엔진이 실패하면 다음 엔진으로. 배포 시나리오의 핵심:
@@ -196,7 +284,13 @@ def build_engine(cfg) -> TTSEngine:
         cfg.get("tts.edge_rate", "+10%"),
     )
     built: TTSEngine = edge
-    if engine == "elevenlabs":
+    if engine == "kokoro":
+        # 배포 기본 경로: [사전 생성 캐시(kokoro), edge 폴백]
+        built = ChainEngine([
+            KokoroEngine(cache_dir, cfg.get("tts.kokoro_voice", "bm_george")),
+            edge,
+        ])
+    elif engine == "elevenlabs":
         voice_id = cfg.get("tts.elevenlabs_voice_id", "")
         if voice_id:
             # 키가 비어 있어도 캐시 전용으로 앞에 세운다 (배포판 시나리오)
