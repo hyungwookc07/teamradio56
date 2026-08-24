@@ -24,16 +24,22 @@ namespace TeamRadio56.Replay
         {
             string replayPath = null;
             string outPath = null;
+            bool dumpPregen = false;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
                     replayPath = args[++i];
                 else if (args[i] == "--out" && i + 1 < args.Length)
                     outPath = args[++i];
+                else if (args[i] == "--dump-pregen")
+                    dumpPregen = true;
             }
+            if (dumpPregen)
+                return DumpPregen(outPath);
             if (replayPath == null)
             {
-                Console.Error.WriteLine("사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl]");
+                Console.Error.WriteLine(
+                    "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] | --dump-pregen [--out f]");
                 return 2;
             }
 
@@ -66,6 +72,33 @@ namespace TeamRadio56.Replay
                 writer.Dispose();
                 Console.Error.WriteLine(
                     $"틱 {ticks}개 처리, 수락 이벤트 {lines.Count}개 → {outPath}");
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// 사전 캐시 대상 (톤, 텍스트) 전체를 "톤\t텍스트" 정렬·중복 제거로
+        /// 출력 — 파이썬 tools/dump_pregen.py와 diff해 멘트 데이터와 슬롯
+        /// 포매팅 포팅을 검증한다.
+        /// </summary>
+        private static int DumpPregen(string outPath)
+        {
+            var set = new SortedSet<string>(StringComparer.Ordinal);
+            var pool = new TeamRadio56.Core.Logic.PhrasePool();
+            foreach (KeyValuePair<string, string> item
+                     in TeamRadio56.Core.Logic.PregenTexts.Enumerate(pool))
+            {
+                set.Add(item.Key + "\t" + item.Value);
+            }
+            TextWriter writer = outPath != null
+                ? new StreamWriter(outPath, false, new UTF8Encoding(false))
+                : Console.Out;
+            foreach (string line in set)
+                writer.WriteLine(line);
+            if (outPath != null)
+            {
+                writer.Dispose();
+                Console.Error.WriteLine($"사전 캐시 텍스트 {set.Count}개 → {outPath}");
             }
             return 0;
         }

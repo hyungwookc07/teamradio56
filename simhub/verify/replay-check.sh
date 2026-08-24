@@ -20,6 +20,19 @@ OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
 fail=0
+
+echo
+echo "▶ 멘트 풀 / 슬롯 포매팅 대조 (사전 캐시 텍스트 전체 집합)"
+python3 tools/dump_pregen.py --out "$OUT/py_pregen.txt"
+"$RUNNER" --dump-pregen --out "$OUT/cs_pregen.txt"
+if diff -q "$OUT/py_pregen.txt" "$OUT/cs_pregen.txt" > /dev/null; then
+    echo "✅ 일치 — $(wc -l < "$OUT/py_pregen.txt")개 텍스트 동일"
+else
+    echo "❌ 멘트 풀 불일치:"
+    diff "$OUT/py_pregen.txt" "$OUT/cs_pregen.txt" | head -20
+    fail=1
+fi
+
 for replay in data/replays/*.jsonl.gz; do
     name=$(basename "$replay" .jsonl.gz)
     echo
