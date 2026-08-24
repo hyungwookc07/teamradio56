@@ -29,6 +29,7 @@ import events                                    # noqa: E402
 from events import EventBus                      # noqa: E402
 from state import SessionState                   # noqa: E402
 from analyzers.traffic import TrafficAnalyzer    # noqa: E402
+from analyzers.racecontrol import RaceControlAnalyzer  # noqa: E402
 from config import load_config                   # noqa: E402
 from telemetry import Snapshot                   # noqa: E402
 
@@ -64,6 +65,7 @@ def main() -> int:
     bus = EventBus(cfg["cooldowns"])
     state = SessionState()
     traffic = TrafficAnalyzer(cfg)
+    racecontrol = RaceControlAnalyzer(cfg)
 
     accepted: list[dict] = []
     orig_push = bus.push
@@ -94,10 +96,12 @@ def main() -> int:
             if not snap.connected:
                 continue
             vclock.t = snap.t
-            # RaceState.Observe와 동일: 세션 중일 때만 세션 종류 추적
-            if snap.in_session and snap.session:
-                state.session_type = snap.session.get("session_type")
+            # main.py on_snapshot 순서: 분석기 틱 → 상태 갱신(랩 완료 감지)
             traffic.on_tick(state, snap, bus)
+            racecontrol.on_tick(state, snap, bus)
+            lap = state.update(snap)
+            if lap is not None:
+                racecontrol.on_lap(state, snap, bus)
             ticks += 1
 
     out = open(args.out, "w", encoding="utf-8") if args.out else sys.stdout

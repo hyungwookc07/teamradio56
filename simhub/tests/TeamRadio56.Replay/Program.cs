@@ -47,6 +47,7 @@ namespace TeamRadio56.Replay
             var bus = new EventBus(Cooldowns.Default(), () => clock);
             var state = new RaceState();
             var traffic = new TrafficAnalyzer(new TrafficSettings());
+            var racecontrol = new RaceControlAnalyzer();
 
             var lines = new List<string>();
             bus.Accepted = ev => lines.Add(Format(clock, ev));
@@ -57,8 +58,12 @@ namespace TeamRadio56.Replay
                 if (!connected)
                     continue;
                 clock = snap.T;
-                state.Observe(snap);
+                // main.py on_snapshot 순서: 분석기 틱 → 상태 갱신(랩 완료 감지)
                 traffic.OnTick(state, snap, bus);
+                racecontrol.OnTick(state, snap, bus);
+                LapRecord lap = state.Update(snap);
+                if (lap != null)
+                    racecontrol.OnLap(state, snap, bus);
                 ticks++;
             }
 
