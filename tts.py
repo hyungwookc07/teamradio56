@@ -119,6 +119,11 @@ class ElevenLabsEngine(TTSEngine):
                            f"11labs|{self.voice_id}|{tone}|{text}")
         if os.path.exists(path):
             return path
+        # 키 없이도 캐시 전용으로 동작 — 제작자가 미리 생성한 오디오를
+        # 배포판에 담으면, 유저는 가입/키 없이 그 캐시만 재생한다.
+        # 캐시에 없는 멘트는 None → ChainEngine이 edge-tts로 폴백.
+        if not self.api_key:
+            return None
         body = json.dumps({
             "text": text,
             "model_id": "eleven_multilingual_v2",
@@ -144,6 +149,25 @@ class ElevenLabsEngine(TTSEngine):
             return None
 
 
+class ChainEngine(TTSEngine):
+    """
+    앞 엔진이 실패하면 다음 엔진으로. 배포 시나리오의 핵심:
+    [ElevenLabs(캐시 전용도 가능), EdgeTTS] 순으로 걸면 미리 생성해 넣어둔
+    프리미엄 오디오를 우선 쓰고, 캐시에 없는 즉석 문장(LLM 멘트 등)만
+    무료 edge-tts로 낸다.
+    """
+
+    def __init__(self, engines: list):
+        self.engines = engines
+
+    def synth(self, text: str, tone: str = "casual") -> Optional[str]:
+        for engine in self.engines:
+            path = engine.synth(text, tone)
+            if path is not None:
+                return path
+        return None
+
+
 class RadioFXEngine(TTSEngine):
     """내부 엔진 출력에 무전기 효과를 입히는 래퍼. 처리 결과는 파일로 캐시."""
 
@@ -166,20 +190,23 @@ class RadioFXEngine(TTSEngine):
 def build_engine(cfg) -> TTSEngine:
     cache_dir = cfg.get("tts.cache_dir", "audio_cache")
     engine = cfg.get("tts.engine", "edge")
-    built: TTSEngine
-    if engine == "elevenlabs" and cfg.get("tts.elevenlabs_api_key", "") \
-            and cfg.get("tts.elevenlabs_voice_id", ""):
-        built = ElevenLabsEngine(cache_dir,
-                                 cfg.get("tts.elevenlabs_api_key", ""),
-                                 cfg.get("tts.elevenlabs_voice_id", ""))
-    else:
-        if engine == "elevenlabs":
-            log.warning("elevenlabs 설정 미비 — edge로 폴백")
-        built = EdgeTTSEngine(
-            cache_dir,
-            cfg.get("tts.edge_voice", "ko-KR-InJoonNeural"),
-            cfg.get("tts.edge_rate", "+10%"),
-        )
+    edge = EdgeTTSEngine(
+        cache_dir,
+        cfg.get("tts.edge_voice", "en-GB-RyanNeural"),
+        cfg.get("tts.edge_rate", "+10%"),
+    )
+    built: TTSEngine = edge
+    if engine == "elevenlabs":
+        voice_id = cfg.get("tts.elevenlabs_voice_id", "")
+        if voice_id:
+            # 키가 비어 있어도 캐시 전용으로 앞에 세운다 (배포판 시나리오)
+            eleven = ElevenLabsEngine(
+                cache_dir, cfg.get("tts.elevenlabs_api_key", ""), voice_id)
+            if not cfg.get("tts.elevenlabs_api_key", ""):
+                log.info("ElevenLabs 캐시 전용 모드 — 캐시에 없는 멘트는 edge로 폴백")
+            built = ChainEngine([eleven, edge])
+        else:
+            log.warning("elevenlabs voice_id 미설정 — edge로 폴백")
     if cfg.get("tts.radio_fx", True):
         built = RadioFXEngine(built, noise=cfg.get("tts.radio_noise", 0.004))
     return built
