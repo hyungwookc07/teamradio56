@@ -124,10 +124,11 @@ class RadioFXEngine(TTSEngine):
         src = self.inner.synth(text)
         if src is None:
             return None
-        dst = os.path.splitext(src)[0] + "_rfx.wav"
+        import radiofx
+        # 효과 버전을 파일명에 넣어 알고리즘이 바뀌면 자동 재생성
+        dst = os.path.splitext(src)[0] + f"_rfx{radiofx.VERSION}.wav"
         if os.path.exists(dst):
             return dst
-        import radiofx
         return radiofx.process(src, dst, noise=self.noise) or src
 
 
