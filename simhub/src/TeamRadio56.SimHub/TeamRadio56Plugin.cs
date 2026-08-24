@@ -35,7 +35,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.9.0-simhub-engine";
+        public const string Version = "0.9.1-simhub-engine";
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
@@ -214,6 +214,9 @@ namespace TeamRadio56.SimHub
 
         public void TestSpeak()
         {
+            // 이 줄이 로그에 없으면 버튼/UI 문제, 있는데 "발화 완료"가
+            // 없으면 TTS 문제 — 무음 진단의 분기점
+            FileLog.Info("[테스트 발화] 버튼 눌림");
             Say("Radio check. Team radio online.");
         }
 
