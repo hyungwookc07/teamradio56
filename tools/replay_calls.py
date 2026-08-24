@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import gzip
 import json
 import os
@@ -26,11 +27,17 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import events                                    # noqa: E402
-from events import EventBus                      # noqa: E402
+from events import Event, EventBus, EventType, Priority  # noqa: E402
 from state import SessionState                   # noqa: E402
 from analyzers.traffic import TrafficAnalyzer    # noqa: E402
 from analyzers.racecontrol import RaceControlAnalyzer  # noqa: E402
 from analyzers.health import HealthAnalyzer      # noqa: E402
+from analyzers.rivals import RivalAnalyzer       # noqa: E402
+from analyzers.fuel import FuelAnalyzer          # noqa: E402
+from analyzers.pace import PaceAnalyzer          # noqa: E402
+from analyzers.tyres import TyreAnalyzer         # noqa: E402
+from analyzers.strategy import StrategyEngine    # noqa: E402
+from analyzers.reporter import StatusReporter    # noqa: E402
 from config import load_config                   # noqa: E402
 from telemetry import Snapshot                   # noqa: E402
 
@@ -68,6 +75,12 @@ def main() -> int:
     traffic = TrafficAnalyzer(cfg)
     racecontrol = RaceControlAnalyzer(cfg)
     health = HealthAnalyzer(cfg)
+    rivals = RivalAnalyzer(cfg)
+    fuel = FuelAnalyzer(cfg)
+    pace = PaceAnalyzer(cfg)
+    tyres = TyreAnalyzer(cfg)
+    strategy = StrategyEngine(cfg)
+    reporter = StatusReporter(cfg)
 
     accepted: list[dict] = []
     orig_push = bus.push
@@ -82,7 +95,9 @@ def main() -> int:
                 "tone": ev.tone,
                 "key": ev.key,
                 "message": ev.message,
-                "data": ev.data,
+                # push 시점 상태를 기록 — 분석기가 나중에 dict를 변형해도
+                # (pace의 gap_trend 등) 기록이 흔들리지 않게 깊은 복사
+                "data": copy.deepcopy(ev.data),
             })
         return ok
 
@@ -101,10 +116,23 @@ def main() -> int:
             # main.py on_snapshot 순서: 분석기 틱 → 상태 갱신(랩 완료 감지)
             traffic.on_tick(state, snap, bus)
             racecontrol.on_tick(state, snap, bus)
+            rivals.on_tick(state, snap, bus)
             health.on_tick(state, snap, bus)
             lap = state.update(snap)
             if lap is not None:
+                # main.py on_lap_complete 순서 그대로
+                fuel_status = fuel.on_lap(state, snap, bus)
+                pace.on_lap(state, snap, bus, lap)
+                tyre_status = tyres.on_lap(state, snap, bus)
+                if lap.in_pits and state.is_race:
+                    bus.push(Event(
+                        type=EventType.STINT_BRIEFING, priority=Priority.NORMAL,
+                        data={}, dedup_key=f"stint_{lap.lap_number}",
+                    ))
+                strategy.on_lap(state, snap, bus, fuel_status, tyre_status)
+                reporter.on_lap(state, snap, bus, fuel_status, tyre_status)
                 racecontrol.on_lap(state, snap, bus)
+                rivals.on_lap(state, snap, bus)
                 health.on_lap(state, snap, bus)
             ticks += 1
 

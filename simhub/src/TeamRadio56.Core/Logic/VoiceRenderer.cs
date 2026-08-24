@@ -65,7 +65,8 @@ namespace TeamRadio56.Core.Logic
                 case EventTypes.FuelCritical:
                 case EventTypes.FuelWarning:
                 {
-                    int laps = Clamp(GetInt(d, "fuel_laps", 2), 1, 4);
+                    // 파이썬 int()는 절사 — 반올림하면 슬롯이 어긋난다
+                    int laps = (int)Math.Min(Math.Max(GetDouble(d, "fuel_laps", 2), 1), 4);
                     return _pool.Pick(ev.Type, new Dictionary<string, string>
                     {
                         { "fuel_laps", laps.ToString(CultureInfo.InvariantCulture) },

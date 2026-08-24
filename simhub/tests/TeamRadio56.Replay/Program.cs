@@ -49,6 +49,12 @@ namespace TeamRadio56.Replay
             var traffic = new TrafficAnalyzer(new TrafficSettings());
             var racecontrol = new RaceControlAnalyzer();
             var health = new HealthAnalyzer();
+            var rivals = new RivalAnalyzer();
+            var fuel = new FuelAnalyzer();
+            var pace = new PaceAnalyzer();
+            var tyres = new TyreAnalyzer();
+            var strategy = new StrategyEngine();
+            var reporter = new StatusReporter();
 
             var lines = new List<string>();
             bus.Accepted = ev => lines.Add(Format(clock, ev));
@@ -62,11 +68,28 @@ namespace TeamRadio56.Replay
                 // main.py on_snapshot 순서: 분석기 틱 → 상태 갱신(랩 완료 감지)
                 traffic.OnTick(state, snap, bus);
                 racecontrol.OnTick(state, snap, bus);
+                rivals.OnTick(state, snap, bus);
                 health.OnTick(state, snap, bus);
                 LapRecord lap = state.Update(snap);
                 if (lap != null)
                 {
+                    // main.py on_lap_complete 순서 그대로
+                    Dictionary<string, object> fuelStatus = fuel.OnLap(state, snap, bus);
+                    pace.OnLap(state, snap, bus, lap);
+                    Dictionary<string, object> tyreStatus = tyres.OnLap(state, snap, bus);
+                    if (lap.InPits && state.IsRace)
+                    {
+                        bus.Push(new RadioEvent
+                        {
+                            Type = EventTypes.StintBriefing,
+                            Priority = Priority.Normal,
+                            DedupKey = "stint_" + lap.LapNumber,
+                        });
+                    }
+                    strategy.OnLap(state, snap, bus, fuelStatus, tyreStatus);
+                    reporter.OnLap(state, snap, bus, fuelStatus, tyreStatus);
                     racecontrol.OnLap(state, snap, bus);
+                    rivals.OnLap(state, snap, bus);
                     health.OnLap(state, snap, bus);
                 }
                 ticks++;
@@ -137,40 +160,65 @@ namespace TeamRadio56.Replay
 
         private static string DataJson(Dictionary<string, object> data)
         {
-            var keys = new List<string>(data.Keys);
-            keys.Sort(StringComparer.Ordinal);
             var sb = new StringBuilder();
-            sb.Append('{');
-            for (int i = 0; i < keys.Count; i++)
-            {
-                if (i > 0)
-                    sb.Append(',');
-                sb.Append(Quote(keys[i])).Append(':');
-                object v = data[keys[i]];
-                if (v is string s)
-                    sb.Append(Quote(s));
-                else if (v is int n)
-                    sb.Append(n.ToString(CultureInfo.InvariantCulture));
-                else if (v is double d)
-                    sb.Append(Num(d));
-                else if (v is bool b)
-                    sb.Append(b ? "true" : "false");
-                else if (v is string[] arr)
-                {
-                    sb.Append('[');
-                    for (int j = 0; j < arr.Length; j++)
-                    {
-                        if (j > 0)
-                            sb.Append(',');
-                        sb.Append(Quote(arr[j]));
-                    }
-                    sb.Append(']');
-                }
-                else
-                    sb.Append(Quote(v == null ? "" : v.ToString()));
-            }
-            sb.Append('}');
+            WriteValue(sb, data);
             return sb.ToString();
+        }
+
+        /// <summary>파이썬 json.dumps(sort_keys=True, 구분자 컴팩트)와 동일 표기.</summary>
+        private static void WriteValue(StringBuilder sb, object v)
+        {
+            if (v == null)
+            {
+                sb.Append("null");
+            }
+            else if (v is string s)
+            {
+                sb.Append(Quote(s));
+            }
+            else if (v is int n)
+            {
+                sb.Append(n.ToString(CultureInfo.InvariantCulture));
+            }
+            else if (v is double d)
+            {
+                sb.Append(Num(d));
+            }
+            else if (v is bool b)
+            {
+                sb.Append(b ? "true" : "false");
+            }
+            else if (v is Dictionary<string, object> dict)
+            {
+                var keys = new List<string>(dict.Keys);
+                keys.Sort(StringComparer.Ordinal);
+                sb.Append('{');
+                for (int i = 0; i < keys.Count; i++)
+                {
+                    if (i > 0)
+                        sb.Append(',');
+                    sb.Append(Quote(keys[i])).Append(':');
+                    WriteValue(sb, dict[keys[i]]);
+                }
+                sb.Append('}');
+            }
+            else if (v is System.Collections.IEnumerable seq)
+            {
+                sb.Append('[');
+                bool first = true;
+                foreach (object item in seq)
+                {
+                    if (!first)
+                        sb.Append(',');
+                    first = false;
+                    WriteValue(sb, item);
+                }
+                sb.Append(']');
+            }
+            else
+            {
+                sb.Append(Quote(v.ToString()));
+            }
         }
 
         private static void AppendKv(StringBuilder sb, string key, string value, bool raw = false)
