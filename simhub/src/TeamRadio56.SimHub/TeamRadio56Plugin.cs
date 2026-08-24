@@ -14,8 +14,11 @@ using EngineHost = TeamRadio56.Core.Engine.EngineHost;
 using EngineStatus = TeamRadio56.Core.Engine.EngineStatus;
 using Rf2SharedMemoryReader = TeamRadio56.Core.Telemetry.Rf2SharedMemoryReader;
 using Snapshot = TeamRadio56.Core.Telemetry.Snapshot;
-using VehicleInfo = TeamRadio56.Core.Telemetry.VehicleInfo;
 using RF2Sizes = TeamRadio56.Core.Telemetry.RF2Sizes;
+using CrewChiefEngine = TeamRadio56.Core.Logic.CrewChiefEngine;
+using EngineSettings = TeamRadio56.Core.Logic.EngineSettings;
+using VoiceWorker = TeamRadio56.Core.Logic.VoiceWorker;
+using VoiceCache = TeamRadio56.Core.Logic.VoiceCache;
 
 namespace TeamRadio56.SimHub
 {
@@ -35,7 +38,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.9.1-simhub-engine";
+        public const string Version = "0.10.0-builtin";
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
@@ -47,6 +50,9 @@ namespace TeamRadio56.SimHub
         private readonly EngineHost _engine = new EngineHost();
         private readonly EngineStatus _engineStatus = new EngineStatus();
         private SpeechOutput _speech;
+        private CrewChiefEngine _chief;      // 내장(C#) 엔진 모드
+        private VoiceWorker _voice;
+        private AudioSink _sink;
         private DateTime _nextStatusRead = DateTime.MinValue;
         private DateTime _nextPoll = DateTime.MinValue;
         private bool _wasConnected;
@@ -150,7 +156,7 @@ namespace TeamRadio56.SimHub
             }
             else
             {
-                FileLog.Info("내장(C#) 엔진 모드 — 이식 진행 중이라 콜은 아직 나가지 않습니다");
+                InitBuiltin();
             }
             FileLog.Info("초기화 완료. 로그: {0} / 설정: {1}", FileLog.Path, SettingsStore.Path);
         }
@@ -194,11 +200,41 @@ namespace TeamRadio56.SimHub
             }
         }
 
+        /// <summary>내장(C#) 엔진 초기화 — 분석기 9종 + 보이스 워커.</summary>
+        private void InitBuiltin()
+        {
+            var cfg = new EngineSettings
+            {
+                CooldownScale = Settings.CooldownScale,
+                RequireRealtime = Settings.RequireRealtime,
+            };
+            cfg.Traffic.AlongsideM = Settings.AlongsideMeters;
+            cfg.Traffic.StartSpotterSec = Settings.StartSpotterSeconds;
+            cfg.Traffic.SideInvert = Settings.SideInvert;
+            cfg.Traffic.RaceOnly = Settings.TrafficRaceOnly;
+
+            _chief = new CrewChiefEngine(cfg,
+                Settings.LapTimeEveryLap, Settings.StatusEveryLaps);
+
+            string cacheDir = AudioSink.FindCacheDir(EngineExePath());
+            var cache = new VoiceCache(cacheDir, Settings.EdgeVoice,
+                Settings.SpeechRatePercent, "bm_george", Settings.RadioFx);
+            _sink = new AudioSink(cache, _speech);
+            _voice = new VoiceWorker(_chief.Bus, _sink);
+            _voice.Enabled = Settings.VoiceEnabled;
+            _voice.Start();
+
+            FileLog.Info("내장(C#) 엔진 모드 — 분석기 9종 활성. 오디오 캐시: {0}",
+                cacheDir ?? "(없음 — Windows TTS 폴백)");
+        }
+
         public void End(PluginManager pluginManager)
         {
             FileLog.Info("종료 — 정리 중");
             SaveSettings();
             _engine.Stop();
+            if (_voice != null)
+                _voice.Dispose();
             if (_speech != null)
                 _speech.Dispose();
             _reader.Dispose();
@@ -224,6 +260,8 @@ namespace TeamRadio56.SimHub
         {
             if (UsingPythonEngine)
                 return _engineStatus.RecentCalls();
+            if (_voice != null)
+                return _voice.RecentCalls();
             lock (_recentGate)
             {
                 return _recent.ToArray();
@@ -294,34 +332,12 @@ namespace TeamRadio56.SimHub
                     Say("Radio check. Team radio online.");
             }
 
-            if (snap == null)
-            {
-                StatusText = "게임 대기 중 — LMU 실행 + 공유 메모리 플러그인 활성화 필요";
+            if (_chief == null)
                 return;
-            }
-
-            // 모니터/메뉴에선 침묵 (설정으로 끌 수 있음)
-            if (Settings != null && Settings.RequireRealtime && !snap.Session.InRealtime)
-            {
-                StatusText = "모니터/메뉴 상태 — 주행 복귀 대기 중";
-                return;
-            }
-
-            VehicleInfo me = snap.PlayerScoring();
-            if (me == null)
-            {
-                StatusText = string.Format("세션 대기 중 (차량 {0}대, 페이즈 {1})",
-                    snap.Session.NumVehicles, snap.Session.GamePhase);
-                return;
-            }
-
-            StatusText = string.Format(
-                "{0} · 페이즈 {1} · P{2} {3} · 랩 {4} · 연료 {5:F1}L · {6:F0}km/h · 차량 {7}대",
-                snap.Session.Track, snap.Session.GamePhase, me.Place, me.Class,
-                me.TotalLaps,
-                snap.Player != null ? snap.Player.Fuel : 0.0,
-                snap.Player != null ? snap.Player.SpeedKmh : 0.0,
-                snap.Session.NumVehicles);
+            if (_voice != null && Settings != null)
+                _voice.Enabled = Settings.VoiceEnabled;
+            _chief.OnPoll(snap, _reader.Connected);
+            StatusText = _chief.StatusText;
         }
     }
 }
