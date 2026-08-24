@@ -43,27 +43,27 @@ def main() -> int:
     cfg = load_config(args.config)
     pool = PhrasePool(lines_file(cfg.get("voice.language", "en")))
     texts = sorted(set(iter_pregen_texts(pool)))
-    print(f"사전 캐시 대상: {len(texts)}개 멘트")
+    print(f"사전 캐시 대상: {len(texts)}개 멘트 (톤별)")
 
     if args.dry_run:
-        for t in texts:
-            print(" ", t)
+        for tone, t in texts:
+            print(f"  [{tone}] {t}")
         return 0
 
     engine = build_engine(cfg)
     ok = skip = fail = 0
     t0 = time.time()
-    for i, text in enumerate(texts, 1):
+    for i, (tone, text) in enumerate(texts, 1):
         # 엔진의 synth가 캐시를 확인하므로 여기선 존재 여부만 미리 보고용으로 체크
-        path = engine.synth(text)
+        path = engine.synth(text, tone)
         if path is None:
             fail += 1
-            print(f"[{i}/{len(texts)}] 실패: {text}")
+            print(f"[{i}/{len(texts)}] 실패: [{tone}] {text}")
         elif os.path.getmtime(path) < t0:
             skip += 1
         else:
             ok += 1
-            print(f"[{i}/{len(texts)}] {text}")
+            print(f"[{i}/{len(texts)}] [{tone}] {text}")
     print(f"완료: 신규 {ok}, 기존 {skip}, 실패 {fail}")
     return 1 if fail else 0
 

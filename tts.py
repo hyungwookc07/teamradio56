@@ -37,24 +37,42 @@ def _cache_path(cache_dir: str, key: str, ext: str = "mp3") -> str:
 class TTSEngine:
     """text → 오디오 파일 경로. 실패 시 None (텍스트 로그로 폴백)."""
 
-    def synth(self, text: str) -> Optional[str]:
+    def synth(self, text: str, tone: str = "casual") -> Optional[str]:
         raise NotImplementedError
 
 
 class NullTTSEngine(TTSEngine):
-    def synth(self, text: str) -> Optional[str]:
+    def synth(self, text: str, tone: str = "casual") -> Optional[str]:
         return None
 
 
 class EdgeTTSEngine(TTSEngine):
+    # 톤별 전달 (기본 속도에 더할 %, 피치) — 모든 멘트가 같은 속도·피치로
+    # 나가면 낭독(교과서 음원)처럼 들린다. 긴급 콜은 빠르고 살짝 올라가게,
+    # 평상 콜은 피치를 내려 착 가라앉게.
+    TONE_DELIVERY = {
+        "casual": (0, "-6Hz"),
+        "urgent": (14, "+4Hz"),
+    }
+
     def __init__(self, cache_dir: str, voice: str, rate: str):
         self.cache_dir = cache_dir
         self.voice = voice
-        self.rate = rate
+        self.base_rate = self._parse_rate(rate)
         os.makedirs(cache_dir, exist_ok=True)
 
-    def synth(self, text: str) -> Optional[str]:
-        path = _cache_path(self.cache_dir, f"edge|{self.voice}|{self.rate}|{text}")
+    @staticmethod
+    def _parse_rate(rate: str) -> int:
+        try:
+            return int(str(rate).replace("%", "").replace("+", "").strip() or 0)
+        except ValueError:
+            return 10
+
+    def synth(self, text: str, tone: str = "casual") -> Optional[str]:
+        extra, pitch = self.TONE_DELIVERY.get(tone, self.TONE_DELIVERY["casual"])
+        rate = f"{self.base_rate + extra:+d}%"
+        path = _cache_path(self.cache_dir,
+                           f"edge|{self.voice}|{rate}|{pitch}|{text}")
         if os.path.exists(path):
             return path
         try:
@@ -63,7 +81,11 @@ class EdgeTTSEngine(TTSEngine):
             log.warning("edge-tts 미설치 — 텍스트 출력만 합니다 (pip install edge-tts)")
             return None
         try:
-            comm = edge_tts.Communicate(text, self.voice, rate=self.rate)
+            try:
+                comm = edge_tts.Communicate(text, self.voice, rate=rate, pitch=pitch)
+            except TypeError:
+                # 구버전 edge-tts는 pitch 미지원 — 속도 차등만 적용
+                comm = edge_tts.Communicate(text, self.voice, rate=rate)
             asyncio.run(comm.save(path))
             return path
         except Exception as e:   # 네트워크 등 어떤 실패에도 앱은 계속
@@ -85,13 +107,22 @@ class ElevenLabsEngine(TTSEngine):
         self.voice_id = voice_id
         os.makedirs(cache_dir, exist_ok=True)
 
-    def synth(self, text: str) -> Optional[str]:
-        path = _cache_path(self.cache_dir, f"11labs|{self.voice_id}|{text}")
+    # 톤별 voice_settings — stability를 낮추면 전달이 더 감정적/즉흥적이 된다
+    TONE_SETTINGS = {
+        "casual": {"stability": 0.55, "similarity_boost": 0.75},
+        "urgent": {"stability": 0.35, "similarity_boost": 0.8},
+    }
+
+    def synth(self, text: str, tone: str = "casual") -> Optional[str]:
+        settings = self.TONE_SETTINGS.get(tone, self.TONE_SETTINGS["casual"])
+        path = _cache_path(self.cache_dir,
+                           f"11labs|{self.voice_id}|{tone}|{text}")
         if os.path.exists(path):
             return path
         body = json.dumps({
             "text": text,
             "model_id": "eleven_multilingual_v2",
+            "voice_settings": settings,
         }).encode("utf-8")
         req = urllib.request.Request(
             self.API_URL.format(voice_id=self.voice_id),
@@ -120,8 +151,8 @@ class RadioFXEngine(TTSEngine):
         self.inner = inner
         self.noise = noise
 
-    def synth(self, text: str) -> Optional[str]:
-        src = self.inner.synth(text)
+    def synth(self, text: str, tone: str = "casual") -> Optional[str]:
+        src = self.inner.synth(text, tone)
         if src is None:
             return None
         import radiofx
@@ -297,7 +328,7 @@ class VoiceWorker(threading.Thread):
         self._maybe_bridge(ev)
         if not self.enabled:
             return
-        path = self.engine.synth(text)
+        path = self.engine.synth(text, getattr(ev, "tone", None) or "casual")
         if path is None:
             return
         # CRITICAL 재생 중엔 끼어들 수 없음. 그 외엔 긴급 대기 이벤트가 생기면 중단.

@@ -505,6 +505,9 @@ def iter_pregen_texts(pool: PhrasePool):
             for phrase in pool.lines(pool_key, tone):
                 for slots in combos:
                     try:
-                        yield phrase.format(**slots)
+                        # 톤을 함께 넘긴다 — TTS 캐시 키가 톤별 전달
+                        # (속도/피치)을 포함하므로 같은 문장도 톤이 다르면
+                        # 다른 오디오다.
+                        yield tone, phrase.format(**slots)
                     except (KeyError, IndexError):
                         continue
