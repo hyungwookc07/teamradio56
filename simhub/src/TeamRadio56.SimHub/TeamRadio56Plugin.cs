@@ -104,11 +104,30 @@ namespace TeamRadio56.SimHub
             _engine.Stop();
         }
 
-        /// <summary>설정을 바꾼 뒤 엔진에 반영 (재시작).</summary>
+        /// <summary>
+        /// 설정을 바꾼 뒤 엔진에 반영 (재시작). 모드 전환(python↔builtin)도
+        /// 여기서 처리한다 — 이전 모드를 내리고 현재 모드로 다시 올린다.
+        /// </summary>
         public void RestartEngine()
         {
-            _engine.Stop();
-            StartEngine();
+            SaveSettings();
+            _engine.Stop();          // 파이썬 엔진이 돌고 있으면 종료
+            ShutdownBuiltin();       // 내장 엔진이 돌고 있으면 정리
+            if (UsingPythonEngine)
+                StartEngine();
+            else
+                InitBuiltin();
+        }
+
+        private void ShutdownBuiltin()
+        {
+            if (_voice != null)
+            {
+                _voice.Dispose();
+                _voice = null;
+            }
+            _sink = null;
+            _chief = null;
         }
 
         /// <summary>설정 화면에 보여줄 한 줄 상태.</summary>

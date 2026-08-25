@@ -145,30 +145,42 @@ namespace TeamRadio56.SimHub
             _engineState.Margin = new Thickness(0, 2, 0, 6);
             box.Children.Add(_engineState);
 
+            bool python = !string.Equals(S.EngineMode, "builtin",
+                                         StringComparison.OrdinalIgnoreCase);
+
             Row(box, L("row_mode"), MakeCombo(PluginSettings.EngineChoices, S.EngineMode, v =>
             {
                 S.EngineMode = v;
+                Build();       // 모드에 따라 보이는 항목이 달라진다 (실행 파일 등)
             }), L("hint_mode"));
 
-            Row(box, L("row_exe"), MakeText(S.EngineExe, v =>
+            // 실행 파일/추가 인자/시작·중지는 파이썬 엔진 모드에만 의미가 있다
+            if (python)
             {
-                S.EngineExe = v;
-            }), L("hint_exe"));
+                Row(box, L("row_exe"), MakeText(S.EngineExe, v =>
+                {
+                    S.EngineExe = v;
+                }), L("hint_exe"));
 
-            Row(box, L("row_args"), MakeText(S.EngineArgs, v =>
-            {
-                S.EngineArgs = v;
-            }), L("hint_args"));
+                Row(box, L("row_args"), MakeText(S.EngineArgs, v =>
+                {
+                    S.EngineArgs = v;
+                }), L("hint_args"));
+            }
 
             var buttons = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 6, 0, 0),
             };
-            buttons.Children.Add(MakeButton(L("btn_engine_start"), () => _plugin.StartEngine()));
-            buttons.Children.Add(MakeButton(L("btn_engine_stop"), () => _plugin.StopEngine()));
+            if (python)
+            {
+                buttons.Children.Add(MakeButton(L("btn_engine_start"), () => _plugin.StartEngine()));
+                buttons.Children.Add(MakeButton(L("btn_engine_stop"), () => _plugin.StopEngine()));
+            }
             buttons.Children.Add(MakeButton(L("btn_engine_restart"), () => _plugin.RestartEngine()));
-            buttons.Children.Add(MakeButton(L("btn_engine_log"), () => OpenFile(_plugin.EngineLogPath)));
+            if (python)
+                buttons.Children.Add(MakeButton(L("btn_engine_log"), () => OpenFile(_plugin.EngineLogPath)));
             box.Children.Add(buttons);
 
             box.Children.Add(Hint(L("engine_apply_hint")));
