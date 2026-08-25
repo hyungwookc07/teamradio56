@@ -153,7 +153,7 @@ _T = {
         # racecontrol
         "sector_yellow": "Yellow in sector {n}. No overtaking, be ready to lift.",
         "pen_clear": "Penalty served. Back to your race.",
-        "final_lap": "Last lap. Everything you've got.",
+        "final_lap": "Last lap. Bring it home.",
         "penalty_head": "Penalty — {kind}",
         "penalty_advice_drive-through": "Serve it next lap. Mind the limiter.",
         "penalty_advice_stop-and-go": "Hold the stop time in the box. Stay calm.",
@@ -164,7 +164,7 @@ _T = {
         "part_detached_rear": "Bodywork gone at the rear. Could be the wing. "
                               "Careful next corner. If the rear goes, box.",
         "part_detached": "Bodywork detached. Possible aero loss. Checking data.",
-        "wing_down": "Front wing down {mm:.0f} millimetres. Wing damage. "
+        "wing_down": "Front aero down {mm:.0f} millimetres. Splitter damage. "
                      "Careful in the fast stuff. Repair call on pace.",
         "align_severe": "Alignment is badly out. You're steering on the straights. "
                         "Box for repairs.",
@@ -262,7 +262,7 @@ _T = {
         "multi_n": "{name} {n}대",
         "sector_yellow": "섹터{n} 옐로. 추월 금지, 감속 준비.",
         "pen_clear": "페널티 클리어. 다시 니 레이스.",
-        "final_lap": "마지막 랩. 다 쏟아붓자.",
+        "final_lap": "마지막 랩. 이대로 가져오자.",
         "penalty_head": "페널티 — {kind}",
         "penalty_advice_drive-through": "다음 랩 피트 통과. 리미터 주의.",
         "penalty_advice_stop-and-go": "박스 정지 시간 준수. 침착하게.",
@@ -272,7 +272,7 @@ _T = {
         "part_detached_rear": "리어 쪽 보디 떨어졌어. 리어 윙일 수 있다. "
                               "다음 코너 조심. 리어 흐르면 바로 박스.",
         "part_detached": "보디 파츠 탈락. 에어로 손실 가능성. 데이터 확인 중.",
-        "wing_down": "프론트 윙 {mm:.0f}밀리 하락. 윙 데미지. "
+        "wing_down": "프론트 에어로 {mm:.0f}밀리 하락. 스플리터 손상. "
                      "고속 코너 조심. 수리는 페이스 보고 판단.",
         "align_severe": "얼라인 심각. 직선에서도 조향 잡아야 하는 수준. 박스에서 수리하자.",
         "align_mild": "직선에서 핸들 쏠림. 충격으로 얼라인 틀어진 듯. "

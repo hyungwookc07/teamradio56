@@ -481,7 +481,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.RaceMilestone,
                     Priority = Priority.High,
-                    Message = "Last lap. Everything you've got.",
+                    Message = "Last lap. Bring it home.",
                     DedupKey = "final_lap",
                     Ttl = 30.0,
                 };

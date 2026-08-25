@@ -390,9 +390,9 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.DamageReport,
                     Priority = Priority.High,
-                    Message = "Front wing down "
+                    Message = "Front aero down "
                               + (drop * 1000).ToString("F0", CultureInfo.InvariantCulture)
-                              + " millimetres. Wing damage. "
+                              + " millimetres. Splitter damage. "
                               + "Careful in the fast stuff. Repair call on pace.",
                     DedupKey = "wing_damage",
                     Ttl = 20.0,
