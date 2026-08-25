@@ -57,6 +57,10 @@ STOPPED_SPEED_MS = 12.0        # 이 이하로 움직이는 차는 '정지/서�
 STOPPED_PERSIST_SEC = 4.0      # 이 시간 이상 계속 저속이어야 정지/서행 확정
 MY_RACING_SPEED_MS = 25.0      # 내가 이 이상으로 달릴 때만 위 판정 적용 (피트 오해 방지)
 HAZARD_AHEAD_M = 250.0         # 전방 이 거리 안의 정지 차량은 위험 안내 1회
+# 스폰 안 된 엔트리 필터 — 프라이빗 연습/퀄리에서 LMU가 차량 배열에
+# 채워두는 미스폰/관전 슬롯은 lap_dist가 고정된 채 트랙 위에 '서 있는'
+# 것으로 보인다. 자기 위치가 이만큼 움직인 적이 있어야 실존 차량으로 취급.
+MOVED_MIN_M = 15.0
 
 
 def wrap_gap(delta_m: float, track_len: float) -> float:
@@ -95,6 +99,9 @@ class CarTrack:
     lapping: bool = False              # 동클래스인데 나를 랩 돌리러 오는 중
     backmarker: bool = False           # 내가 랩 돌리는(또는 하위 클래스) 트래픽
     slow_since: Optional[float] = None  # 저속 상태가 시작된 시각 (정지차 지속 판정)
+    first_lap_dist: Optional[float] = None  # 첫 관측 위치 (미스폰 필터 기준)
+    first_total_laps: int = 0
+    moved: bool = False                # 관측 이후 실제로 움직인 적이 있는가
     seen: bool = False                 # 첫 관측을 마쳤는가 (첫 분류는 무발화)
     last_sample_t: float = 0.0
     announced: dict = field(default_factory=dict)   # state → 마지막 발화 시각
@@ -174,10 +181,16 @@ class TrafficAnalyzer:
                 continue
             seen.add(v["id"])
             t = self._update_track(v, me, track_len, now, my_speed)
+            # 한 번도 움직인 적 없는 엔트리 = 미스폰/관전 슬롯 — 존재하지
+            # 않는 것으로 취급 (프라이빗 연습/퀄리 유령 콜의 주범)
+            if not t.moved:
+                continue
             # 정지/서행 차량(고스트 처리됐을 가능성 높음): 배틀 콜 제외,
-            # 전방이면 위험 안내 1회만
+            # 레이스에서 전방이면 위험 안내 1회만 (연습/퀄리에선 게임이
+            # 고스트 처리하므로 위험 안내도 소음)
             if self._is_stopped(t, my_speed, now):
-                self._check_stopped_hazard(t, now, bus)
+                if state.is_race:
+                    self._check_stopped_hazard(t, now, bus)
                 if t.state != FAR:
                     t.state = FAR      # 조용히 리셋 (지나갔어/떨어졌어 멘트 없이)
                 continue
@@ -296,6 +309,17 @@ class TrafficAnalyzer:
         if t is None:
             t = CarTrack(cid=v["id"], cls=v["cls"], driver=v["driver"])
             self.tracks[v["id"]] = t
+        # 미스폰 필터: 자기 위치(lap_dist/랩 수)가 실제로 변한 적이 있는가.
+        # 상대 갭이 아니라 '그 차 자신의 이동'을 본다 — 내가 움직여서 갭이
+        # 변하는 것과 구분하기 위함.
+        if t.first_lap_dist is None:
+            t.first_lap_dist = v["lap_dist"]
+            t.first_total_laps = v["total_laps"]
+        elif not t.moved and (
+                abs(v["lap_dist"] - t.first_lap_dist) > MOVED_MIN_M
+                or v["total_laps"] != t.first_total_laps):
+            t.moved = True
+
         gap_m = wrap_gap(v["lap_dist"] - me["lap_dist"], track_len)
         dt = now - t.last_sample_t
         if t.last_sample_t > 0 and 0.01 < dt <= 3.0:

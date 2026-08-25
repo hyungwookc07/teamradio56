@@ -52,6 +52,8 @@ namespace TeamRadio56.Core.Logic
         private const double StoppedPersistSec = 4.0;
         private const double MyRacingSpeedMs = 25.0;
         private const double HazardAheadM = 250.0;
+        // 미스폰/관전 슬롯 필터 — 자기 위치가 이만큼 움직인 적이 있어야 실존 차량
+        private const double MovedMinM = 15.0;
         private const double SpotClearHoldSec = 1.2;  // 깜빡임 방지
 
         /// <summary>lapDist 차이를 [-L/2, L/2) 부호 있는 거리로 보정. +면 내 앞.</summary>
@@ -125,6 +127,9 @@ namespace TeamRadio56.Core.Logic
             public bool Lapping;
             public bool Backmarker;
             public double? SlowSince;
+            public double? FirstLapDist;   // 첫 관측 위치 (미스폰 필터 기준)
+            public int FirstTotalLaps;
+            public bool Moved;             // 관측 이후 실제로 움직인 적이 있는가
             public bool Seen;
             public double LastSampleT;
             public readonly Dictionary<string, double> Announced =
@@ -224,9 +229,16 @@ namespace TeamRadio56.Core.Logic
                     continue;
                 seen.Add(v.Id);
                 CarTrack t = UpdateTrack(v, me, trackLen, now, mySpeed);
+                // 한 번도 움직인 적 없는 엔트리 = 미스폰/관전 슬롯 — 무시
+                // (프라이빗 연습/퀄리 유령 콜의 주범)
+                if (!t.Moved)
+                    continue;
                 if (IsStopped(t, mySpeed, now))
                 {
-                    CheckStoppedHazard(t, now, bus);
+                    // 정지 차량 위험 안내는 레이스에서만 (연습/퀄리는 게임이
+                    // 고스트 처리하므로 소음)
+                    if (state.IsRace)
+                        CheckStoppedHazard(t, now, bus);
                     if (t.State != Far)
                         t.State = Far;    // 조용히 리셋 (후속 멘트 없이)
                     continue;
@@ -409,6 +421,19 @@ namespace TeamRadio56.Core.Logic
                 t = new CarTrack { Cid = v.Id, Cls = v.Class, Driver = v.Driver, Seq = _nextSeq++ };
                 _tracks[v.Id] = t;
             }
+            // 미스폰 필터: 자기 위치(lap_dist/랩 수)가 실제로 변한 적이 있는가
+            if (!t.FirstLapDist.HasValue)
+            {
+                t.FirstLapDist = v.LapDist;
+                t.FirstTotalLaps = v.TotalLaps;
+            }
+            else if (!t.Moved
+                     && (Math.Abs(v.LapDist - t.FirstLapDist.Value) > MovedMinM
+                         || v.TotalLaps != t.FirstTotalLaps))
+            {
+                t.Moved = true;
+            }
+
             double gapM = WrapGap(v.LapDist - me.LapDist, trackLen);
             double dt = now - t.LastSampleT;
             if (t.LastSampleT > 0 && dt > 0.01 && dt <= 3.0)
