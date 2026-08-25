@@ -23,7 +23,8 @@ import yaml
 
 from events import Event, EventType
 from messages import (msg, class_display, gap_slot, side_slot,
-                      fuel_slot, laps_text, is_ko, set_language)
+                      fuel_slot, laps_text, seconds_text,
+                      is_ko, set_language)
 
 log = logging.getLogger("voice")
 
@@ -475,7 +476,7 @@ class VoiceGenerator:
     def _render_gap_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
         rate = d["rate"]
         gap = d["gap"]
-        gap_s = f"{gap:.1f}" if gap < 10 else f"{gap:.0f}"
+        gap_s = seconds_text(gap)   # 단위 포함 ("2.4 seconds"/"2.4초")
         if d["who"] == "behind":
             if rate <= -0.15:
                 return msg("gap_behind_closing", rate=abs(rate), gap=gap_s)

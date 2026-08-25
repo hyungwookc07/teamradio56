@@ -189,7 +189,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     double rate = GetDouble(d, "rate", 0);
                     double gap = GetDouble(d, "gap", 0);
-                    string gapS = gap < 10 ? F1(gap) : F0(gap);
+                    string gapS = SecondsText(gap);   // 단위 포함
                     if (GetStr(d, "who") == "behind")
                     {
                         if (rate <= -0.15)
@@ -225,6 +225,17 @@ namespace TeamRadio56.Core.Logic
         private static string F0(double v)
         {
             return v.ToString("F0", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>messages.py seconds_text와 동일 — "2.4 seconds"/"1 second"/"15 seconds".</summary>
+        internal static string SecondsText(double sec)
+        {
+            string v = sec < 10
+                ? sec.ToString("F1", CultureInfo.InvariantCulture)
+                : sec.ToString("F0", CultureInfo.InvariantCulture);
+            if (v.EndsWith(".0"))
+                v = v.Substring(0, v.Length - 2);
+            return v == "1" ? "1 second" : v + " seconds";
         }
 
         /// <summary>messages.py laps_text와 동일 — "1 lap"/"3 laps".</summary>

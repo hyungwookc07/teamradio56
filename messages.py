@@ -143,6 +143,18 @@ def fuel_slot(n: int):
     return laps_text(n)
 
 
+def seconds_text(sec: float) -> str:
+    """갭 초 표기 + 단위 ("2.4 seconds"/"1 second"/"15 seconds"/"2.4초").
+    10초 미만은 소수 1자리, 정각이면 소수점 생략 ("2.0"→"2") —
+    엔지니어 무전 관례이자 TTS의 "이 점 영 초" 방지."""
+    v = f"{sec:.1f}" if sec < 10 else f"{sec:.0f}"
+    if v.endswith(".0"):
+        v = v[:-2]
+    if LANG == "ko":
+        return f"{v}초"
+    return "1 second" if v == "1" else f"{v} seconds"
+
+
 def fmt_laptime(sec: float) -> str:
     m, s = divmod(sec, 60.0)
     if LANG == "ko":
@@ -357,11 +369,11 @@ _T = {
         "tyre_wear": "{wheel} 타이어 수명 {laps}. 피트 계획 반영.",
         "pace_lost": "방금 랩 {delta:.1f}초 손실. 원인 체크.",
         "pace_quick": "{delta:.1f}초 빠름. 리듬 유지.",
-        "gap_behind_closing": "뒤차 랩당 {rate:.1f}초씩 접근. 갭 {gap}초. 실수만 줄이자.",
-        "gap_behind_opening": "뒤차 갭 {gap}초. 벌어지는 중, 좋아.",
-        "gap_behind_holding": "뒤차 {gap}초. 유지 중. 리듬 좋아.",
-        "gap_ahead_closing": "앞차 갭 {gap}초. 랩당 {rate:.1f}초씩 접근 중. 갈 수 있어.",
-        "gap_ahead_opening": "앞차 {gap}초. 벌어지는 중. 무리 금지.",
-        "gap_ahead_holding": "앞차 {gap}초. 갭 유지. 리듬 그대로.",
+        "gap_behind_closing": "뒤차 랩당 {rate:.1f}초씩 접근. 갭 {gap}. 실수만 줄이자.",
+        "gap_behind_opening": "뒤차 갭 {gap}. 벌어지는 중, 좋아.",
+        "gap_behind_holding": "뒤차 {gap}. 유지 중. 리듬 좋아.",
+        "gap_ahead_closing": "앞차 갭 {gap}. 랩당 {rate:.1f}초씩 접근 중. 갈 수 있어.",
+        "gap_ahead_opening": "앞차 {gap}. 벌어지는 중. 무리 금지.",
+        "gap_ahead_holding": "앞차 {gap}. 갭 유지. 리듬 그대로.",
     },
 }
