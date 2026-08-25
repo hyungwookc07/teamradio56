@@ -52,7 +52,7 @@ namespace TeamRadio56.Core.Logic
                 int minutes = Math.Max(
                     (int)Math.Round((endEt - curEt) / 60, MidpointRounding.ToEven), 1);
                 string length;
-                if (minutes >= 120 && minutes % 60 == 0)
+                if (minutes >= 60 && minutes % 60 == 0)
                 {
                     int h = minutes / 60;
                     length = h + " hour" + (h > 1 ? "s" : "");

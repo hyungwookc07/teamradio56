@@ -281,7 +281,7 @@ class CrewChiefApp:
         mid_join = cur_et > 120 or me.get("total_laps", 0) > 0
         if 0 < end_et < 86400:
             minutes = max(int(round((end_et - cur_et) / 60)), 1)
-            if minutes >= 120 and minutes % 60 == 0:
+            if minutes >= 60 and minutes % 60 == 0:
                 h = minutes // 60
                 length = msg("brief_hours_plural" if h > 1 else "brief_hours", h=h)
             else:

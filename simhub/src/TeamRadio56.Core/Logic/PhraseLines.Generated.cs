@@ -229,16 +229,16 @@ namespace TeamRadio56.Core.Logic
                 Tone = "casual",
                 Lines = new[]
                 {
-                    "Fuel, {fuel_laps} laps.",
-                    "Fuel check. {fuel_laps} laps.",
-                    "Fuel {fuel_laps} laps. Let's plan the stop.",
-                    "{fuel_laps} laps in the tank.",
-                    "Fuel {fuel_laps} laps. Window's open.",
-                    "Fuel {fuel_laps} laps. Standing by.",
-                    "{fuel_laps} laps of fuel. Think about saving.",
-                    "Fuel {fuel_laps} laps. Lift and coast.",
+                    "Fuel, {fuel_laps}.",
+                    "Fuel check. {fuel_laps}.",
+                    "Fuel {fuel_laps}. Let's plan the stop.",
+                    "{fuel_laps} in the tank.",
+                    "Fuel {fuel_laps}. Window's open.",
+                    "Fuel {fuel_laps}. Standing by.",
+                    "{fuel_laps} of fuel. Think about saving.",
+                    "Fuel {fuel_laps}. Lift and coast.",
                     "Fuel stop in {fuel_laps}. Keep it in mind.",
-                    "Fuel {fuel_laps} laps. We'll call it with tyres.",
+                    "Fuel {fuel_laps}. We'll call it with tyres.",
                 },
             },
             new PhraseSet
@@ -247,9 +247,9 @@ namespace TeamRadio56.Core.Logic
                 Tone = "urgent",
                 Lines = new[]
                 {
-                    "Fuel {fuel_laps} laps! Start saving.",
-                    "Fuel is tight. {fuel_laps} laps.",
-                    "Fuel {fuel_laps} laps. Ease off the fights.",
+                    "Fuel {fuel_laps}! Start saving.",
+                    "Fuel is tight. {fuel_laps}.",
+                    "Fuel {fuel_laps}. Ease off the fights.",
                 },
             },
             new PhraseSet
@@ -258,13 +258,13 @@ namespace TeamRadio56.Core.Logic
                 Tone = "urgent",
                 Lines = new[]
                 {
-                    "Fuel critical. {fuel_laps} laps.",
+                    "Fuel critical. {fuel_laps}.",
                     "Fuel critical. Box within {fuel_laps}.",
-                    "Fuel {fuel_laps} laps. Full save now.",
-                    "Running dry. {fuel_laps} laps max.",
-                    "On fumes. Box within {fuel_laps} laps.",
-                    "Critical. Fuel {fuel_laps} laps.",
-                    "{fuel_laps} laps, that's all we have. Save fuel.",
+                    "Fuel {fuel_laps}. Full save now.",
+                    "Running dry. {fuel_laps} max.",
+                    "On fumes. Box within {fuel_laps}.",
+                    "Critical. Fuel {fuel_laps}.",
+                    "{fuel_laps}, that's all we have. Save fuel.",
                 },
             },
             new PhraseSet

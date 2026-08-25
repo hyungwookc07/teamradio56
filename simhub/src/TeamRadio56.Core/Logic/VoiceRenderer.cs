@@ -65,11 +65,12 @@ namespace TeamRadio56.Core.Logic
                 case EventTypes.FuelCritical:
                 case EventTypes.FuelWarning:
                 {
-                    // 파이썬 int()는 절사 — 반올림하면 슬롯이 어긋난다
+                    // 파이썬 int()는 절사 — 반올림하면 슬롯이 어긋난다.
+                    // 슬롯 값이 단위를 품는다 ("1 lap"/"3 laps") — 복수형 실수 방지
                     int laps = (int)Math.Min(Math.Max(GetDouble(d, "fuel_laps", 2), 1), 4);
                     return _pool.Pick(ev.Type, new Dictionary<string, string>
                     {
-                        { "fuel_laps", laps.ToString(CultureInfo.InvariantCulture) },
+                        { "fuel_laps", LapsText(laps) },
                     }, tone);
                 }
                 case EventTypes.PitCall:
@@ -134,7 +135,7 @@ namespace TeamRadio56.Core.Logic
                     if (d.ContainsKey("pit_window_laps"))
                     {
                         return "Pit window open. Box within "
-                               + GetInt(d, "pit_window_laps", 0) + " laps.";
+                               + LapsText(GetInt(d, "pit_window_laps", 0)) + ".";
                     }
                     return null;
                 }
@@ -156,10 +157,10 @@ namespace TeamRadio56.Core.Logic
                     if (GetStr(d, "mode") == "catch")
                     {
                         return "Car ahead in class is " + F1(diff)
-                               + " a lap slower. We catch him in " + laps + ".";
+                               + " a lap slower. We catch him in " + LapsText(laps) + ".";
                     }
                     return "Car behind in class is " + F1(diff)
-                           + " a lap quicker. With us in " + laps + " laps. Be ready.";
+                           + " a lap quicker. With us in " + LapsText(laps) + ". Be ready.";
                 }
                 case EventTypes.TyreWarning:
                 {
@@ -172,8 +173,8 @@ namespace TeamRadio56.Core.Logic
                     if (kind == "wear")
                     {
                         return GetStr(d, "wheel") + " tyre, about "
-                               + F0(GetDouble(d, "laps_left", 0))
-                               + " laps left. Factoring it in.";
+                               + LapsText(GetDouble(d, "laps_left", 0))
+                               + " left. Factoring it in.";
                     }
                     return null;
                 }
@@ -224,6 +225,13 @@ namespace TeamRadio56.Core.Logic
         private static string F0(double v)
         {
             return v.ToString("F0", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>messages.py laps_text와 동일 — "1 lap"/"3 laps".</summary>
+        internal static string LapsText(double n)
+        {
+            int i = (int)Math.Round(n, MidpointRounding.ToEven);
+            return i + " lap" + (i != 1 ? "s" : "");
         }
 
         private static int Clamp(int v, int lo, int hi)
@@ -324,8 +332,8 @@ namespace TeamRadio56.Core.Logic
             Add(slotValues, "blue_flag", Empty());
             Add(slotValues, "alongside_both", Empty());
             Add(slotValues, "side_clear", Sides());
-            Add(slotValues, "fuel_warning", Range("fuel_laps", 1, 4));
-            Add(slotValues, "fuel_critical", Range("fuel_laps", 1, 4));
+            Add(slotValues, "fuel_warning", FuelSlots());
+            Add(slotValues, "fuel_critical", FuelSlots());
             Add(slotValues, "pit_call", Empty());
             Add(slotValues, "damage", Empty());
             Add(slotValues, "penalty", Empty());
@@ -388,6 +396,19 @@ namespace TeamRadio56.Core.Logic
                 new Dictionary<string, string> { { "side", "left" } },
                 new Dictionary<string, string> { { "side", "right" } },
             };
+        }
+
+        private static List<Dictionary<string, string>> FuelSlots()
+        {
+            var list = new List<Dictionary<string, string>>();
+            for (int n = 1; n <= 4; n++)
+            {
+                list.Add(new Dictionary<string, string>
+                {
+                    { "fuel_laps", VoiceRenderer.LapsText(n) },
+                });
+            }
+            return list;
         }
 
         private static List<Dictionary<string, string>> Range(string key, int lo, int hi)

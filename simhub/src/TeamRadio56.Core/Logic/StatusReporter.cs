@@ -37,9 +37,10 @@ namespace TeamRadio56.Core.Logic
             double s = sec - m * 60.0;
             if (m >= 1)
             {
-                // 파이썬 f"{s:04.1f}" — 소수 1자리, 전체 폭 4 제로 패딩
+                // "2 01.8"은 TTS가 201.8로 읽는다 — "2 oh 1.8" (two oh one point eight)
                 return ((long)m).ToString(CultureInfo.InvariantCulture) + " "
-                       + s.ToString("00.0", CultureInfo.InvariantCulture);
+                       + (s < 10 ? "oh " : "")
+                       + s.ToString("F1", CultureInfo.InvariantCulture);
             }
             return s.ToString("F1", CultureInfo.InvariantCulture);
         }
@@ -118,9 +119,7 @@ namespace TeamRadio56.Core.Logic
             if (fuelStatus != null && fuelStatus.TryGetValue("fuel_laps", out fuelLaps)
                 && fuelLaps != null)
             {
-                parts.Add("Fuel "
-                    + ((double)fuelLaps).ToString("F0", CultureInfo.InvariantCulture)
-                    + " laps.");
+                parts.Add("Fuel " + VoiceRenderer.LapsText((double)fuelLaps) + ".");
             }
             object worstObj;
             if (tyreStatus != null && tyreStatus.TryGetValue("worst", out worstObj)
@@ -132,9 +131,7 @@ namespace TeamRadio56.Core.Logic
                     ? (double?)(double)leftObj : null;
                 if (left.HasValue && left.Value <= 20)
                 {
-                    parts.Add("Tyres "
-                        + left.Value.ToString("F0", CultureInfo.InvariantCulture)
-                        + " laps.");
+                    parts.Add("Tyres " + VoiceRenderer.LapsText(left.Value) + ".");
                 }
                 else
                 {

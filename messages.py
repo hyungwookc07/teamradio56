@@ -128,11 +128,29 @@ def penalty_reason_display(reason: str) -> str:
     return reason
 
 
+def laps_text(n) -> str:
+    """랩 수 + 단위 ("1 lap"/"3 laps"/"3랩") — 복수형 실수 방지용 슬롯 값."""
+    n = int(round(n))
+    if LANG == "ko":
+        return f"{n}랩"
+    return f"{n} lap" + ("s" if n != 1 else "")
+
+
+def fuel_slot(n: int):
+    """연료 풀의 {fuel_laps} 슬롯 — en은 단위 포함, ko는 풀에 '랩'이 있어 숫자만."""
+    if LANG == "ko":
+        return n
+    return laps_text(n)
+
+
 def fmt_laptime(sec: float) -> str:
     m, s = divmod(sec, 60.0)
     if LANG == "ko":
         return f"{int(m)}분 {s:.1f}초" if m >= 1 else f"{s:.1f}초"
-    return f"{int(m)} {s:04.1f}" if m >= 1 else f"{s:.1f}"
+    if m >= 1:
+        # "2 01.8"은 TTS가 201.8로 읽는다 — 엔지니어식 "two oh one point eight"
+        return f"{int(m)} {'oh ' if s < 10 else ''}{s:.1f}"
+    return f"{s:.1f}"
 
 
 # -- 문장 테이블 ------------------------------------------------------------
@@ -202,8 +220,8 @@ _T = {
         "status_gap_ahead": "ahead {g:.1f}",
         "status_gap_behind": "behind {g:.1f}",
         "status_gaps": "Gap {gaps}.",
-        "status_fuel": "Fuel {n:.0f} laps.",
-        "status_tyres": "Tyres {n:.0f} laps.",
+        "status_fuel": "Fuel {n}.",
+        "status_tyres": "Tyres {n}.",
         "status_tyres_good": "Tyres good.",
         # 세션 브리핑 (main)
         "kind_race": "Race", "kind_warmup": "Warmup",
@@ -227,7 +245,7 @@ _T = {
         # 렌더러 폴백 (voice.py)
         "milestone_hours": "{h} hour{s} to go. On plan.",
         "milestone_minutes": "{m} minutes to go. Rechecking fuel and tyres.",
-        "pit_window": "Pit window open. Box within {n} laps.",
+        "pit_window": "Pit window open. Box within {n}.",
         "stint_brief": "New stint. Easy on the tyres first lap, find the rhythm.",
         "rival_pit_base": "P{p} in class, car {rel}, just pitted.",
         "rival_rel_ahead": "ahead", "rival_rel_behind": "behind",
@@ -236,9 +254,9 @@ _T = {
         "rival_catch": "Car ahead in class is {diff:.1f} a lap slower. "
                        "We catch him in {laps}.",
         "rival_defend": "Car behind in class is {diff:.1f} a lap quicker. "
-                        "With us in {laps} laps. Be ready.",
+                        "With us in {laps}. Be ready.",
         "tyre_hot": "{wheel} tyre running {delta:.0f} degrees hot. Ease that side.",
-        "tyre_wear": "{wheel} tyre, about {laps:.0f} laps left. Factoring it in.",
+        "tyre_wear": "{wheel} tyre, about {laps} left. Factoring it in.",
         "pace_lost": "Lost {delta:.1f} on that lap. Checking why.",
         "pace_quick": "{delta:.1f} quicker. Keep the rhythm.",
         "gap_behind_closing": "Car behind closing {rate:.1f} a lap. Gap {gap}. "
@@ -304,8 +322,8 @@ _T = {
         "status_gap_ahead": "앞 {g:.1f}초",
         "status_gap_behind": "뒤 {g:.1f}초",
         "status_gaps": "{gaps}.",
-        "status_fuel": "연료 {n:.0f}랩.",
-        "status_tyres": "타이어 {n:.0f}랩.",
+        "status_fuel": "연료 {n}.",
+        "status_tyres": "타이어 {n}.",
         "status_tyres_good": "타이어 아직 좋아.",
         "kind_race": "레이스", "kind_warmup": "웜업",
         "kind_quali": "퀄리", "kind_practice": "연습",
@@ -327,16 +345,16 @@ _T = {
         "brief_out": "준비되면 나가자.",
         "milestone_hours": "남은 시간 {h}시간{s}. 계획대로.",
         "milestone_minutes": "{m}분 남았어. 연료, 타이어 재계산 중.",
-        "pit_window": "피트 윈도우 오픈. 늦어도 {n}랩 안에 박스.",
+        "pit_window": "피트 윈도우 오픈. 늦어도 {n} 안에 박스.",
         "stint_brief": "새 스틴트야. 첫 랩은 타이어 아끼고, 리듬부터 찾자.",
         "rival_pit_base": "클래스 {rel} P{p} 차, 방금 피트 들어갔어.",
         "rival_rel_ahead": "앞", "rival_rel_behind": "뒤",
         "rival_pit_undercut": " 언더컷 노리는 거야. 우리 타이밍도 앞당길지 판단할게.",
         "rival_pit_gap": " 나오면 갭 다시 계산해서 불러줄게.",
-        "rival_catch": "클래스 앞차, 랩당 {diff:.1f}초 느림. {laps}랩 안에 잡는다.",
-        "rival_defend": "클래스 뒤차, 랩당 {diff:.1f}초 빠름. {laps}랩 뒤 도착. 준비.",
+        "rival_catch": "클래스 앞차, 랩당 {diff:.1f}초 느림. {laps} 안에 잡는다.",
+        "rival_defend": "클래스 뒤차, 랩당 {diff:.1f}초 빠름. {laps} 뒤 도착. 준비.",
         "tyre_hot": "{wheel} 타이어 {delta:.0f}도 높음. 그쪽 코너 아껴.",
-        "tyre_wear": "{wheel} 타이어 수명 {laps:.0f}랩. 피트 계획 반영.",
+        "tyre_wear": "{wheel} 타이어 수명 {laps}. 피트 계획 반영.",
         "pace_lost": "방금 랩 {delta:.1f}초 손실. 원인 체크.",
         "pace_quick": "{delta:.1f}초 빠름. 리듬 유지.",
         "gap_behind_closing": "뒤차 랩당 {rate:.1f}초씩 접근. 갭 {gap}초. 실수만 줄이자.",

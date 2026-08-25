@@ -17,7 +17,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
-from messages import msg, fmt_laptime
+from messages import msg, fmt_laptime, laps_text
 from state import SessionState
 from telemetry import Snapshot
 
@@ -80,11 +80,11 @@ class StatusReporter:
         if gaps:
             parts.append(msg("status_gaps", gaps=", ".join(gaps)))
         if fuel_status and fuel_status.get("fuel_laps") is not None:
-            parts.append(msg("status_fuel", n=fuel_status["fuel_laps"]))
+            parts.append(msg("status_fuel", n=laps_text(fuel_status["fuel_laps"])))
         if tyre_status and tyre_status.get("worst"):
             left = tyre_status["worst"].get("laps_left")
             if left is not None and left <= 20:
-                parts.append(msg("status_tyres", n=left))
+                parts.append(msg("status_tyres", n=laps_text(left)))
             else:
                 parts.append(msg("status_tyres_good"))
         if not parts:

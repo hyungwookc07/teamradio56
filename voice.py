@@ -23,7 +23,7 @@ import yaml
 
 from events import Event, EventType
 from messages import (msg, class_display, gap_slot, side_slot,
-                      is_ko, set_language)
+                      fuel_slot, laps_text, is_ko, set_language)
 
 log = logging.getLogger("voice")
 
@@ -353,12 +353,12 @@ class VoiceGenerator:
 
     def _render_fuel_critical(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("fuel_critical", {
-            "fuel_laps": int(min(max(d["fuel_laps"], 1), 4)),
+            "fuel_laps": fuel_slot(int(min(max(d["fuel_laps"], 1), 4))),
         }, tone)
 
     def _render_fuel_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self.pool.pick("fuel_warning", {
-            "fuel_laps": int(min(max(d["fuel_laps"], 1), 4)),
+            "fuel_laps": fuel_slot(int(min(max(d["fuel_laps"], 1), 4))),
         }, tone)
 
     def _render_pit_call(self, d: dict, tone: str = "casual") -> Optional[str]:
@@ -438,7 +438,7 @@ class VoiceGenerator:
     def _render_lap_analysis(self, d: dict, tone: str = "casual") -> Optional[str]:
         # 템플릿 폴백: 판단형 최소 멘트
         if d.get("pit_window_laps") is not None:
-            return msg("pit_window", n=d["pit_window_laps"])
+            return msg("pit_window", n=laps_text(d["pit_window_laps"]))
         return None
 
     def _render_stint_briefing(self, d: dict, tone: str = "casual") -> Optional[str]:
@@ -453,8 +453,8 @@ class VoiceGenerator:
 
     def _render_rival_pace(self, d: dict, tone: str = "casual") -> Optional[str]:
         if d["mode"] == "catch":
-            return msg("rival_catch", diff=d["diff"], laps=d["laps"])
-        return msg("rival_defend", diff=d["diff"], laps=d["laps"])
+            return msg("rival_catch", diff=d["diff"], laps=laps_text(d["laps"]))
+        return msg("rival_defend", diff=d["diff"], laps=laps_text(d["laps"]))
 
     def _render_tyre_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
         from messages import wheel_display
@@ -463,7 +463,7 @@ class VoiceGenerator:
                        delta=d["delta"])
         if d.get("kind") == "wear":
             return msg("tyre_wear", wheel=wheel_display(d["wheel"]),
-                       laps=d["laps_left"])
+                       laps=laps_text(d["laps_left"]))
         return None
 
     def _render_pace_comment(self, d: dict, tone: str = "casual") -> Optional[str]:
@@ -514,8 +514,8 @@ def iter_pregen_texts(pool: PhrasePool):
         "blue_flag": [{}],
         "alongside_both": [{}],
         "side_clear": [{"side": s} for s in SIDES],
-        "fuel_warning": [{"fuel_laps": n} for n in range(1, 5)],
-        "fuel_critical": [{"fuel_laps": n} for n in range(1, 5)],
+        "fuel_warning": [{"fuel_laps": fuel_slot(n)} for n in range(1, 5)],
+        "fuel_critical": [{"fuel_laps": fuel_slot(n)} for n in range(1, 5)],
         "pit_call": [{}],
         "damage": [{}],
         "penalty": [{}],
