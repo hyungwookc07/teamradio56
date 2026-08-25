@@ -29,6 +29,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from telemetry import SharedMemoryTelemetry, ReplayTelemetry  # noqa: E402
 
+# 차량별 첫 관측 기준 (실존 판별: 좌표/진행도가 이후 얼마나 움직였나)
+_first: dict[int, tuple] = {}
+
+CONTROL_NAMES = {255: "없음", 0: "로컬", 1: "AI", 2: "원격", 3: "리플레이"}
+
+
+def _movement(v) -> tuple[float, float]:
+    """첫 관측 대비 (좌표 이동 m, lapDist 이동 m)."""
+    pos = v.get("pos") or [0.0, 0.0, 0.0]
+    base = _first.setdefault(v["id"], (list(pos), v["lap_dist"]))
+    d_pos = ((pos[0] - base[0][0]) ** 2 + (pos[1] - base[0][1]) ** 2
+             + (pos[2] - base[0][2]) ** 2) ** 0.5
+    return d_pos, abs(v["lap_dist"] - base[1])
+
 
 def dump(snap) -> None:
     ses = snap.session
@@ -45,14 +59,26 @@ def dump(snap) -> None:
               f"limiter={p.get('speed_limiter')} "
               f"wear={[w['wear'] for w in (p.get('wheels') or [])]}")
     print(f"{'순위':>4} {'드라이버':<16} {'클래스':<12} {'랩':>3} {'lapDist':>8} "
-          f"{'tbNext':>7} {'estLap':>7} {'pathLat':>7} {'핏':>2} {'차고':>2} {'완주':>2}")
+          f"{'tbNext':>7} {'estLap':>7} {'pathLat':>7} {'핏':>2} {'차고':>2} {'완주':>2} "
+          f"{'조종':<5} {'채점':>2} {'Δ좌표':>7} {'ΔlapD':>7}")
+    ghosts = []
     for v in sorted(snap.vehicles, key=lambda x: x["place"])[:14]:
         me_mark = "→" if v["is_player"] else " "
+        d_pos, d_lap = _movement(v)
+        ctrl = CONTROL_NAMES.get(v.get("control", -1), "-")   # "-" = 미기록/미지값
         print(f"{me_mark}P{v['place']:<3} {v['driver'][:15]:<16} {v['cls'][:11]:<12} "
               f"{v['total_laps']:>3} {v['lap_dist']:>8.1f} "
               f"{v['time_behind_next']:>7.2f} {v['estimated_lap']:>7.1f} "
               f"{v.get('path_lat', 0):>7.2f} "
-              f"{int(v['in_pits']):>2} {int(v['in_garage']):>2} {v['finish_status']:>2}")
+              f"{int(v['in_pits']):>2} {int(v['in_garage']):>2} {v['finish_status']:>2} "
+              f"{ctrl:<5} {int(v.get('server_scored', 0)):>2} "
+              f"{d_pos:>7.1f} {d_lap:>7.1f}")
+        # 프라이빗 세션 판별의 핵심: 타이밍(lapDist)은 움직이는데 좌표가 고정
+        if not v["is_player"] and d_lap > 50 and d_pos < 5:
+            ghosts.append(v["driver"])
+    if ghosts:
+        print(f"⚠ 타이밍 전용(물리적 부재) 의심: {', '.join(ghosts)}"
+              " — 프라이빗 세션의 '달리는 유령'. 트래픽 콜에서 자동 제외됩니다.")
 
 
 def main() -> int:

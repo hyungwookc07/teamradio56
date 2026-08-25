@@ -101,6 +101,10 @@ def _vehicle_scoring_to_dict(v) -> dict:
         "lap_start_et": round(v.mLapStartET, 3),
         "pos": [round(v.mPos.x, 1), round(v.mPos.y, 1), round(v.mPos.z, 1)],
         "in_garage": bool(v.mInGarageStall),
+        # 조종 주체 — 프라이빗 세션 판별 후보 신호 (진단용).
+        # ISI 관례: -1(255)=없음, 0=로컬 플레이어, 1=로컬 AI, 2=원격, 3=리플레이
+        "control": v.mControl,
+        "server_scored": bool(v.mServerScored),
     }
 
 
