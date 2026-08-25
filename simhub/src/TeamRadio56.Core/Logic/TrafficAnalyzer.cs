@@ -52,7 +52,9 @@ namespace TeamRadio56.Core.Logic
         private const double StoppedPersistSec = 4.0;
         private const double MyRacingSpeedMs = 25.0;
         private const double HazardAheadM = 250.0;
-        // 미스폰/관전 슬롯 필터 — 자기 위치가 이만큼 움직인 적이 있어야 실존 차량
+        // 물리적 실존 필터 — 프라이빗 연습/퀄리의 타이밍 전용 엔트리는
+        // lap_dist는 갱신되지만 월드 좌표(mPos)는 안 움직인다. 좌표가
+        // 이만큼 움직인 적이 있어야 실존 차량으로 취급.
         private const double MovedMinM = 15.0;
         private const double SpotClearHoldSec = 1.2;  // 깜빡임 방지
 
@@ -127,9 +129,10 @@ namespace TeamRadio56.Core.Logic
             public bool Lapping;
             public bool Backmarker;
             public double? SlowSince;
-            public double? FirstLapDist;   // 첫 관측 위치 (미스폰 필터 기준)
+            public double[] FirstPos;      // 첫 관측 월드 좌표 (실존 필터 기준)
+            public double? FirstLapDist;   // pos 없는 데이터용 폴백 기준
             public int FirstTotalLaps;
-            public bool Moved;             // 관측 이후 실제로 움직인 적이 있는가
+            public bool Moved;             // 관측 이후 물리적으로 움직인 적이 있는가
             public bool Seen;
             public double LastSampleT;
             public readonly Dictionary<string, double> Announced =
@@ -421,17 +424,30 @@ namespace TeamRadio56.Core.Logic
                 t = new CarTrack { Cid = v.Id, Cls = v.Class, Driver = v.Driver, Seq = _nextSeq++ };
                 _tracks[v.Id] = t;
             }
-            // 미스폰 필터: 자기 위치(lap_dist/랩 수)가 실제로 변한 적이 있는가
+            // 실존 필터: 월드 좌표가 실제로 움직인 적이 있는가. lap_dist는
+            // 타이밍 전용 엔트리도 갱신되므로 기준이 못 된다.
+            double[] pos = v.Pos != null && v.Pos.Length >= 3 ? v.Pos : null;
             if (!t.FirstLapDist.HasValue)
             {
                 t.FirstLapDist = v.LapDist;
                 t.FirstTotalLaps = v.TotalLaps;
+                t.FirstPos = pos != null ? (double[])pos.Clone() : null;
             }
-            else if (!t.Moved
-                     && (Math.Abs(v.LapDist - t.FirstLapDist.Value) > MovedMinM
-                         || v.TotalLaps != t.FirstTotalLaps))
+            else if (!t.Moved)
             {
-                t.Moved = true;
+                if (t.FirstPos != null && pos != null)
+                {
+                    double dx = pos[0] - t.FirstPos[0];
+                    double dy = pos[1] - t.FirstPos[1];
+                    double dz = pos[2] - t.FirstPos[2];
+                    if (dx * dx + dy * dy + dz * dz > MovedMinM * MovedMinM)
+                        t.Moved = true;
+                }
+                else if (Math.Abs(v.LapDist - t.FirstLapDist.Value) > MovedMinM
+                         || v.TotalLaps != t.FirstTotalLaps)
+                {
+                    t.Moved = true;    // pos 없는 데이터(구버전 녹화) 폴백
+                }
             }
 
             double gapM = WrapGap(v.LapDist - me.LapDist, trackLen);

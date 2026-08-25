@@ -175,6 +175,7 @@ namespace TeamRadio56.Replay
                 EstimatedLap = D(v, "estimated_lap"),
                 TimeIntoLap = D(v, "time_into_lap"),
                 InGarage = B(v, "in_garage"),
+                Pos = Doubles(v, "pos"),
             };
         }
 
@@ -220,6 +221,19 @@ namespace TeamRadio56.Replay
             return e.TryGetProperty(key, out JsonElement v)
                    && v.ValueKind == JsonValueKind.String
                 ? v.GetString() : "";
+        }
+
+        private static double[] Doubles(JsonElement e, string key)
+        {
+            if (!e.TryGetProperty(key, out JsonElement v)
+                || v.ValueKind != JsonValueKind.Array)
+            {
+                return new double[0];
+            }
+            var list = new List<double>();
+            foreach (JsonElement x in v.EnumerateArray())
+                list.Add(x.GetDouble());
+            return list.ToArray();
         }
 
         private static byte[] Bytes(JsonElement e, string key)

@@ -57,9 +57,10 @@ STOPPED_SPEED_MS = 12.0        # 이 이하로 움직이는 차는 '정지/서�
 STOPPED_PERSIST_SEC = 4.0      # 이 시간 이상 계속 저속이어야 정지/서행 확정
 MY_RACING_SPEED_MS = 25.0      # 내가 이 이상으로 달릴 때만 위 판정 적용 (피트 오해 방지)
 HAZARD_AHEAD_M = 250.0         # 전방 이 거리 안의 정지 차량은 위험 안내 1회
-# 스폰 안 된 엔트리 필터 — 프라이빗 연습/퀄리에서 LMU가 차량 배열에
-# 채워두는 미스폰/관전 슬롯은 lap_dist가 고정된 채 트랙 위에 '서 있는'
-# 것으로 보인다. 자기 위치가 이만큼 움직인 적이 있어야 실존 차량으로 취급.
+# 물리적 실존 필터 — 프라이빗 연습/퀄리에서 다른 참가자는 타이밍(lap_dist)만
+# 갱신되고 내 트랙에는 물리적으로 없다. 미스폰/관전 슬롯도 마찬가지.
+# 월드 좌표(mPos)가 이만큼 움직인 적이 있어야 실존 차량으로 취급한다 —
+# lap_dist는 타이밍 전용 엔트리도 움직이므로 판정 기준이 못 된다.
 MOVED_MIN_M = 15.0
 
 
@@ -99,9 +100,10 @@ class CarTrack:
     lapping: bool = False              # 동클래스인데 나를 랩 돌리러 오는 중
     backmarker: bool = False           # 내가 랩 돌리는(또는 하위 클래스) 트래픽
     slow_since: Optional[float] = None  # 저속 상태가 시작된 시각 (정지차 지속 판정)
-    first_lap_dist: Optional[float] = None  # 첫 관측 위치 (미스폰 필터 기준)
+    first_pos: Optional[list] = None   # 첫 관측 월드 좌표 (실존 필터 기준)
+    first_lap_dist: Optional[float] = None  # pos 없는 데이터용 폴백 기준
     first_total_laps: int = 0
-    moved: bool = False                # 관측 이후 실제로 움직인 적이 있는가
+    moved: bool = False                # 관측 이후 물리적으로 움직인 적이 있는가
     seen: bool = False                 # 첫 관측을 마쳤는가 (첫 분류는 무발화)
     last_sample_t: float = 0.0
     announced: dict = field(default_factory=dict)   # state → 마지막 발화 시각
@@ -309,16 +311,24 @@ class TrafficAnalyzer:
         if t is None:
             t = CarTrack(cid=v["id"], cls=v["cls"], driver=v["driver"])
             self.tracks[v["id"]] = t
-        # 미스폰 필터: 자기 위치(lap_dist/랩 수)가 실제로 변한 적이 있는가.
-        # 상대 갭이 아니라 '그 차 자신의 이동'을 본다 — 내가 움직여서 갭이
-        # 변하는 것과 구분하기 위함.
+        # 실존 필터: 월드 좌표가 실제로 움직인 적이 있는가. lap_dist는
+        # 프라이빗 세션의 타이밍 전용 엔트리(트랙에 물리적으로 없는 차)도
+        # 갱신되므로 기준이 못 된다 — 좌표가 안 움직이면 유령이다.
+        pos = v.get("pos")
         if t.first_lap_dist is None:
             t.first_lap_dist = v["lap_dist"]
             t.first_total_laps = v["total_laps"]
-        elif not t.moved and (
-                abs(v["lap_dist"] - t.first_lap_dist) > MOVED_MIN_M
-                or v["total_laps"] != t.first_total_laps):
-            t.moved = True
+            t.first_pos = list(pos) if pos and len(pos) >= 3 else None
+        elif not t.moved:
+            if t.first_pos is not None and pos and len(pos) >= 3:
+                dx = pos[0] - t.first_pos[0]
+                dy = pos[1] - t.first_pos[1]
+                dz = pos[2] - t.first_pos[2]
+                if dx * dx + dy * dy + dz * dz > MOVED_MIN_M ** 2:
+                    t.moved = True
+            elif (abs(v["lap_dist"] - t.first_lap_dist) > MOVED_MIN_M
+                  or v["total_laps"] != t.first_total_laps):
+                t.moved = True    # pos 없는 데이터(구버전 녹화) 폴백
 
         gap_m = wrap_gap(v["lap_dist"] - me["lap_dist"], track_len)
         dt = now - t.last_sample_t
