@@ -69,13 +69,19 @@ namespace TeamRadio56.SimHub
             get { return UsingPythonEngine ? _engineStatus.GetBool("connected") : _reader.Connected; }
         }
 
+        // 실제로 "돌고 있는" 모드 — 설정값이 아니라 Init/RestartEngine에서만
+        // 갱신된다. 설정 콤보만 바꾸고 아직 전환 전인 어정쩡한 상태에서
+        // Tick이 반대 분기로 새는 것을 막는다.
+        private string _activeMode;
+
         /// <summary>파이썬 엔진 모드로 동작 중인가 (C# 이식 완료 전 기본값).</summary>
         public bool UsingPythonEngine
         {
             get
             {
-                return Settings != null
-                    && !string.Equals(Settings.EngineMode, "builtin",
+                string mode = _activeMode
+                    ?? (Settings != null ? Settings.EngineMode : null);
+                return !string.Equals(mode, "builtin",
                                       StringComparison.OrdinalIgnoreCase);
             }
         }
@@ -113,6 +119,7 @@ namespace TeamRadio56.SimHub
             SaveSettings();
             _engine.Stop();          // 파이썬 엔진이 돌고 있으면 종료
             ShutdownBuiltin();       // 내장 엔진이 돌고 있으면 정리
+            _activeMode = Settings != null ? Settings.EngineMode : null;
             if (UsingPythonEngine)
                 StartEngine();
             else
@@ -150,6 +157,7 @@ namespace TeamRadio56.SimHub
         {
             FileLog.Banner(Version);
             Settings = SettingsStore.Load();
+            _activeMode = Settings.EngineMode;
 
             string layoutError = Rf2SharedMemoryReader.VerifyLayout();
             _layoutOk = layoutError == null;
@@ -357,12 +365,15 @@ namespace TeamRadio56.SimHub
                     Say("Radio check. Team radio online.");
             }
 
-            if (_chief == null)
+            // RestartEngine(UI 스레드)이 도중에 갈아끼울 수 있어 로컬로 잡는다
+            CrewChiefEngine chief = _chief;
+            VoiceWorker voice = _voice;
+            if (chief == null)
                 return;
-            if (_voice != null && Settings != null)
-                _voice.Enabled = Settings.VoiceEnabled;
-            _chief.OnPoll(snap, _reader.Connected);
-            StatusText = _chief.StatusText;
+            if (voice != null && Settings != null)
+                voice.Enabled = Settings.VoiceEnabled;
+            chief.OnPoll(snap, _reader.Connected);
+            StatusText = chief.StatusText;
         }
     }
 }

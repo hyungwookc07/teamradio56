@@ -150,8 +150,11 @@ namespace TeamRadio56.SimHub
 
             Row(box, L("row_mode"), MakeCombo(PluginSettings.EngineChoices, S.EngineMode, v =>
             {
+                if (string.Equals(S.EngineMode, v, StringComparison.OrdinalIgnoreCase))
+                    return;
                 S.EngineMode = v;
-                Build();       // 모드에 따라 보이는 항목이 달라진다 (실행 파일 등)
+                _plugin.RestartEngine();   // 즉시 전환 (이전 모드 정리 → 새 모드 기동)
+                Build();                   // 모드에 따라 보이는 항목이 달라진다
             }), L("hint_mode"));
 
             // 실행 파일/추가 인자/시작·중지는 파이썬 엔진 모드에만 의미가 있다
