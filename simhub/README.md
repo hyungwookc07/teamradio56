@@ -213,6 +213,34 @@ diff한다. 분석기를 고치면 파이썬을 먼저 고치고 이 회귀로 C
 파이썬 버전(저장소 루트)은 레퍼런스 겸 실차 튜닝용으로 유지한다 —
 버그는 파이썬에서 먼저 잡고 회귀로 C#을 따라오게 하는 게 빠르다.
 
+## 오버레이 (SimHub 프로퍼티)
+
+플러그인이 Dash Studio/LED에서 쓸 수 있는 프로퍼티를 노출한다
+(`TeamRadio56Plugin.이름`으로 보임). **엔진 모드와 무관하게** 공유 메모리에서
+직접 계산되므로 스포터 표시가 5Hz로 즉답한다.
+
+| 프로퍼티 | 타입 | 의미 |
+|---|---|---|
+| `LastRadio` / `LastRadioAgeSec` | string / double | 마지막 무전 텍스트 / 경과 초 (자막 페이드용) |
+| `SpotterLeft` / `SpotterRight` | bool | 좌/우 나란히 (유령 차 필터 적용) |
+| `NearestAheadM` / `NearestBehindM` | double | 앞/뒤 최근접 실존 차 거리 m (없으면 -1) |
+| `GapAheadSec` / `GapBehindSec` | double | 동클래스 앞/뒤 시간 갭 (없으면 -1) |
+| `Position` / `ClassPosition` | int | 전체 / 클래스 순위 |
+| `HasDamage` / `HasFuelIssue` | bool | 진행 중 이슈 (경고 칩·LED 트리거) |
+| `Connected` / `InSession` / `EngineMode` | — | 상태 |
+
+권장 오버레이 구성 (Dash Studio에서 10분 조립, 전부 선택식):
+
+1. **무전 자막** — 하단 중앙 텍스트, `LastRadio` 바인딩,
+   Visibility에 `[TeamRadio56Plugin.LastRadioAgeSec] < 6`
+2. **스포터 바** — 화면 좌/우 가장자리 빨간 바,
+   Visibility에 `SpotterLeft` / `SpotterRight`
+3. **상태 칩** — 상단 `P[ClassPosition]`, `▲[GapAheadSec]s ▼[GapBehindSec]s`,
+   `HasDamage`일 때만 DAMAGE 칩 표시
+
+완성한 대시는 우클릭 → Export로 `.simhubdash`를 만들어 배포 zip에 동봉하면
+유저는 더블클릭 임포트로 끝난다.
+
 ## 생성물 재생성
 
 `rf2data.py`가 바뀌거나 아이콘을 고칠 때 (손으로 수정하지 말 것):

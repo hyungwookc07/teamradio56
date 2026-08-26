@@ -19,6 +19,7 @@ using CrewChiefEngine = TeamRadio56.Core.Logic.CrewChiefEngine;
 using EngineSettings = TeamRadio56.Core.Logic.EngineSettings;
 using VoiceWorker = TeamRadio56.Core.Logic.VoiceWorker;
 using VoiceCache = TeamRadio56.Core.Logic.VoiceCache;
+using OverlayState = TeamRadio56.Core.Logic.OverlayState;
 
 namespace TeamRadio56.SimHub
 {
@@ -53,6 +54,8 @@ namespace TeamRadio56.SimHub
         private CrewChiefEngine _chief;      // 내장(C#) 엔진 모드
         private VoiceWorker _voice;
         private AudioSink _sink;
+        // 오버레이 프로퍼티용 실시간 상태 — 엔진 모드와 무관하게 공유 메모리에서
+        private readonly OverlayState _overlay = new OverlayState();
         private DateTime _nextStatusRead = DateTime.MinValue;
         private DateTime _nextPoll = DateTime.MinValue;
         private bool _wasConnected;
@@ -173,6 +176,7 @@ namespace TeamRadio56.SimHub
 
             _speech = new SpeechOutput();
             StatusText = "대기 중";
+            AttachOverlayProperties();
 
             if (UsingPythonEngine)
             {
@@ -288,6 +292,83 @@ namespace TeamRadio56.SimHub
             _reader.Dispose();
         }
 
+        // -- 오버레이 프로퍼티 --------------------------------------------------
+
+        private void UpdateOverlay(Snapshot snap)
+        {
+            if (!_reader.Connected || snap == null)
+            {
+                _overlay.Reset();
+                return;
+            }
+            double alongside = Settings != null ? Settings.AlongsideMeters : 4.6;
+            bool invert = Settings != null && Settings.SideInvert;
+            _overlay.Update(snap, alongside, invert);
+        }
+
+        /// <summary>
+        /// Dash Studio/LED 등에서 쓸 프로퍼티 노출. 이름은
+        /// "TeamRadio56Plugin.이름"으로 보인다.
+        /// </summary>
+        private void AttachOverlayProperties()
+        {
+            this.AttachDelegate("Connected", () => IsConnected);
+            this.AttachDelegate("EngineMode", () => UsingPythonEngine ? "python" : "builtin");
+            this.AttachDelegate("InSession", () => _overlay.InSession);
+            this.AttachDelegate("LastRadio", () => LastRadioText());
+            this.AttachDelegate("LastRadioAgeSec", () => LastRadioAgeSec());
+            this.AttachDelegate("SpotterLeft", () => _overlay.SpotterLeft);
+            this.AttachDelegate("SpotterRight", () => _overlay.SpotterRight);
+            this.AttachDelegate("NearestAheadM", () => _overlay.NearestAheadM);
+            this.AttachDelegate("NearestBehindM", () => _overlay.NearestBehindM);
+            this.AttachDelegate("GapAheadSec", () => _overlay.GapAheadSec);
+            this.AttachDelegate("GapBehindSec", () => _overlay.GapBehindSec);
+            this.AttachDelegate("Position", () => _overlay.Position);
+            this.AttachDelegate("ClassPosition", () => _overlay.ClassPosition);
+            this.AttachDelegate("HasDamage", () => HasIssue("damage"));
+            this.AttachDelegate("HasFuelIssue", () => HasIssue("fuel"));
+        }
+
+        private string RawLastCall()
+        {
+            string[] calls = RecentCalls();
+            return calls != null && calls.Length > 0 ? calls[calls.Length - 1] : "";
+        }
+
+        /// <summary>최근 무전 텍스트 ("HH:mm:ss  텍스트"에서 시각 제거).</summary>
+        private string LastRadioText()
+        {
+            string raw = RawLastCall();
+            int sep = raw.IndexOf("  ", StringComparison.Ordinal);
+            return sep > 0 ? raw.Substring(sep + 2) : raw;
+        }
+
+        /// <summary>최근 무전이 나간 뒤 경과 초 (자막 페이드아웃용). 없으면 -1.</summary>
+        private double LastRadioAgeSec()
+        {
+            string raw = RawLastCall();
+            if (raw.Length < 8)
+                return -1;
+            TimeSpan t;
+            if (!TimeSpan.TryParse(raw.Substring(0, 8), out t))
+                return -1;
+            double age = (DateTime.Now.TimeOfDay - t).TotalSeconds;
+            if (age < 0)
+                age += 86400;      // 자정 넘김
+            return Math.Round(age, 1);
+        }
+
+        private bool HasIssue(string key)
+        {
+            if (UsingPythonEngine)
+            {
+                string issues = _engineStatus.Get("issues") ?? "";
+                return ("," + issues + ",").Contains("," + key + ",");
+            }
+            CrewChiefEngine chief = _chief;
+            return chief != null && chief.State.Issues.ContainsKey(key);
+        }
+
         // -- 설정 화면에서 호출 ------------------------------------------------
 
         public void SaveSettings()
@@ -365,10 +446,14 @@ namespace TeamRadio56.SimHub
             if (UsingPythonEngine)
             {
                 TickEngineMode();
+                // 오버레이 프로퍼티는 엔진 모드에서도 공유 메모리에서 직접
+                // (스포터 표시는 1초 주기 상태 파일로는 늦다)
+                UpdateOverlay(_reader.Poll());
                 return;
             }
 
             Snapshot snap = _reader.Poll();
+            UpdateOverlay(snap);
 
             if (_reader.Connected != _wasConnected)
             {

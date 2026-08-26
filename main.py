@@ -202,7 +202,9 @@ class CrewChiefApp:
         if not self.status.path:
             return
         fields = {"running": True, "state": state_text,
-                  "connected": snap is not None}
+                  "connected": snap is not None,
+                  # 오버레이/프로퍼티용: 진행 중 이슈 키 목록 (damage,fuel,...)
+                  "issues": ",".join(self.state.issues.keys())}
         me = snap.player_scoring() if snap is not None else None
         if snap is not None and me is not None:
             fields.update({

@@ -23,6 +23,13 @@ namespace SimHub.Plugins
         void End(PluginManager pluginManager);
     }
 
+    // 실제 SimHub의 프로퍼티 노출 확장 (Dash Studio 등에서 사용)
+    public static class PluginExtensions
+    {
+        public static void AttachDelegate<T>(this IPlugin plugin, string name,
+                                             Func<T> valueProvider) { }
+    }
+
     public interface IDataPlugin
     {
         void DataUpdate(PluginManager pluginManager, ref GameData data);
