@@ -71,7 +71,11 @@ DEFAULTS: dict[str, Any] = {
         "pace_delta_sec": 0.7,        # 평소 대비 랩타임 편차가 이 이상이면 코멘트
         "gap_change_sec_per_lap": 0.4,  # 갭 변화율이 이 이상이면 코멘트
         "traffic_eta_sec": 10.0,      # 접근 예고: 도달 예상 N초 이내 (3~10초 권장)
-        "traffic_race_only": False,   # true면 연습/퀄리(고스트 많음)에선 트래픽 콜 끔
+        "traffic_race_only": True,    # 연습/퀄리는 트래픽 콜 끔 — LMU 온라인
+                                      # 연습/퀄리는 프라이빗 트랙(타이밍만 공유)이라
+                                      # 다른 참가자가 물리적으로 없는데 좌표는
+                                      # 스트리밍돼 유령 콜이 난다 (실차 확인).
+                                      # 트랙을 공유하는 세션이면 false로.
         "sector_yellow_calls": True,  # LMU가 mSectorFlag를 이상하게 채우면 false로
         "proximity_m": 50.0,          # 근접(NEARBY) 진입 거리 (m)
         "alongside_m": 4.6,           # 나란히 기준 거리 (m) = 차 한 대 길이 (진짜 오버랩).

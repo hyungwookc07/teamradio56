@@ -10,7 +10,7 @@ namespace TeamRadio56.Core.Logic
         public double ProximityM = 50.0;
         public double AlongsideM = 4.6;
         public double EtaWarnSec = 10.0;
-        public bool RaceOnly = false;
+        public bool RaceOnly = true;
         public bool SideInvert = false;
         public double StartSpotterSec = 45.0;
     }
@@ -52,9 +52,9 @@ namespace TeamRadio56.Core.Logic
         private const double StoppedPersistSec = 4.0;
         private const double MyRacingSpeedMs = 25.0;
         private const double HazardAheadM = 250.0;
-        // 물리적 실존 필터 — 프라이빗 연습/퀄리의 타이밍 전용 엔트리는
-        // lap_dist는 갱신되지만 월드 좌표(mPos)는 안 움직인다. 좌표가
-        // 이만큼 움직인 적이 있어야 실존 차량으로 취급.
+        // 이동 필터 — 미스폰/관전 슬롯(좌표 고정)을 걸러낸다.
+        // 주의(실차 확인): LMU는 프라이빗 세션에서도 좌표를 스트리밍하므로
+        // 프라이빗 유령은 RaceOnly(기본 켜짐)가 담당한다.
         private const double MovedMinM = 15.0;
         private const double SpotClearHoldSec = 1.2;  // 깜빡임 방지
 

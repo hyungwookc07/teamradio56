@@ -53,7 +53,7 @@ namespace TeamRadio56.Core.Config
         public double AlongsideMeters { get; set; } = 4.6;    // 나란히 기준(실제 오버랩)
         public double StartSpotterSeconds { get; set; } = 45; // 스타트 스포터 모드
         public bool SideInvert { get; set; } = false;         // 좌우 콜이 반대면
-        public bool TrafficRaceOnly { get; set; } = false;    // 연습/퀄리에선 끔
+        public bool TrafficRaceOnly { get; set; } = true;     // 연습/퀄리는 프라이빗(유령 콜) — 기본 차단
 
         // -- HUD 대체 정기 무전 -------------------------------------------
         public bool LapTimeEveryLap { get; set; } = false;
