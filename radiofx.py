@@ -30,7 +30,11 @@ _warned = False
 
 # 캐시 파일명에 들어간다 — 효과 알고리즘/파라미터를 바꾸면 반드시 올릴 것.
 # (안 올리면 기존 "_rfxN.wav" 캐시가 그대로 재생돼 변경이 안 들린다.)
-VERSION = 2
+VERSION = 3
+
+# 출력 샘플레이트 — 무전 대역이 2.7kHz 이하라 8kHz(나이퀴스트 4kHz)면
+# 손실 없이 담긴다. 파일 크기 1/3 = 배포 캐시 경량화.
+TARGET_SR = 8000
 
 BAND_LO_HZ = 350.0      # 무전 대역 하한
 BAND_HI_HZ = 2700.0     # 무전 대역 상한 (좁을수록 "무전답다")
@@ -137,7 +141,14 @@ def process(src_path: str, dst_path: str, noise: float = 0.004) -> Optional[str]
 
     x = np.concatenate([click, x, np.zeros(int(sr * 0.03)), burst])
 
-    # 7) 정규화 후 저장
+    # 7) 8kHz로 리샘플 — 대역 제한(≤2.7kHz)이라 손실 없음, 파일 1/3
+    if sr > TARGET_SR:
+        src_t = np.arange(len(x)) / sr
+        dst_t = np.arange(int(len(x) * TARGET_SR / sr)) / TARGET_SR
+        x = np.interp(dst_t, src_t, x)
+        sr = TARGET_SR
+
+    # 8) 정규화 후 저장
     x = 0.9 * x / max(float(np.max(np.abs(x))), 1e-6)
     try:
         sf.write(dst_path, x.astype(np.float32), sr, subtype="PCM_16")

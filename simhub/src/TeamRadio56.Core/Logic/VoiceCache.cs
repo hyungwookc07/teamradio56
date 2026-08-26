@@ -19,7 +19,7 @@ namespace TeamRadio56.Core.Logic
     /// </summary>
     public sealed class VoiceCache
     {
-        private const int RadioFxVersion = 2;   // radiofx.py VERSION과 일치
+        private const int RadioFxVersion = 3;   // radiofx.py VERSION과 일치
 
         // EdgeTTSEngine.TONE_DELIVERY와 일치 (기본 속도에 더할 %, 피치)
         private static readonly Dictionary<string, KeyValuePair<int, string>> ToneDelivery =
