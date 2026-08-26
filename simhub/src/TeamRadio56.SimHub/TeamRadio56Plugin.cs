@@ -243,8 +243,22 @@ namespace TeamRadio56.SimHub
             _chief = new CrewChiefEngine(cfg,
                 Settings.LapTimeEveryLap, Settings.StatusEveryLaps);
 
-            string cacheDir = AudioSink.FindCacheDir(EngineExePath(),
-                Settings != null ? Settings.EngineArgs : null);
+            // 명시 설정이 최우선, 비어 있으면 자동 탐색 (파이썬 설정 잔여값은
+            // 마지막 폴백일 뿐 — builtin은 원칙적으로 여기에 기대지 않는다)
+            string cacheDir = null;
+            if (Settings != null && !string.IsNullOrEmpty(Settings.AudioCacheDir))
+            {
+                if (System.IO.Directory.Exists(Settings.AudioCacheDir))
+                    cacheDir = Settings.AudioCacheDir;
+                else
+                    FileLog.Warn("설정된 오디오 캐시 폴더가 없습니다: "
+                                 + Settings.AudioCacheDir + " — 자동 탐색으로 폴백");
+            }
+            if (cacheDir == null)
+            {
+                cacheDir = AudioSink.FindCacheDir(EngineExePath(),
+                    Settings != null ? Settings.EngineArgs : null);
+            }
             var cache = new VoiceCache(cacheDir, Settings.EdgeVoice,
                 Settings.SpeechRatePercent, "bm_george", Settings.RadioFx);
             _sink = new AudioSink(cache, _speech);

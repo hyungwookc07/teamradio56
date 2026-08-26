@@ -157,6 +157,15 @@ namespace TeamRadio56.SimHub
                 Build();                   // 모드에 따라 보이는 항목이 달라진다
             }), L("hint_mode"));
 
+            // builtin 모드: 사전 생성 오디오 캐시 폴더 (비우면 자동 탐색)
+            if (!python)
+            {
+                Row(box, L("row_cache_dir"), MakeText(S.AudioCacheDir, v =>
+                {
+                    S.AudioCacheDir = v;
+                }), L("hint_cache_dir"));
+            }
+
             // 실행 파일/추가 인자/시작·중지는 파이썬 엔진 모드에만 의미가 있다
             if (python)
             {

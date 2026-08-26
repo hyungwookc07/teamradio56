@@ -34,6 +34,11 @@ namespace TeamRadio56.Core.Config
 
         // -- 음성 --------------------------------------------------------
         public bool VoiceEnabled { get; set; } = true;
+        /// <summary>
+        /// 사전 생성 오디오 캐시 폴더 (builtin 모드용). 비우면 자동 탐색:
+        /// DLL 옆 → teamradio56-engine\ → 엔진 실행 파일/스크립트 옆.
+        /// </summary>
+        public string AudioCacheDir { get; set; } = "";
         public double Volume { get; set; } = 0.9;
         public string EdgeVoice { get; set; } = "en-GB-RyanNeural";
         public int SpeechRatePercent { get; set; } = 10;      // edge-tts "+10%"
