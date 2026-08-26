@@ -19,3 +19,5 @@ simhub/**/bin/
 simhub/**/obj/
 *.user
 simhub/verify/stubout/
+# Kokoro 등 로컬 TTS 모델 (수백 MB — 도구가 자동 다운로드)
+models/
