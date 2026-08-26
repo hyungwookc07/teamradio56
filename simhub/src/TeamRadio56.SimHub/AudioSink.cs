@@ -25,10 +25,12 @@ namespace TeamRadio56.SimHub
         }
 
         /// <summary>
-        /// 오디오 캐시 폴더 자동 탐색 — DLL 옆 audio_cache,
-        /// 엔진 폴더(teamradio56-engine)\audio_cache 순.
+        /// 오디오 캐시 폴더 자동 탐색 — DLL 옆, 엔진 폴더(teamradio56-engine),
+        /// 엔진 실행 파일 옆, 그리고 추가 인자의 스크립트(main.py) 옆 순.
+        /// 소스 모드에선 실행 파일이 venv의 python.exe라 ③으론 못 찾고,
+        /// 추가 인자에 든 main.py 경로가 저장소(=audio_cache 위치)를 가리킨다.
         /// </summary>
-        public static string FindCacheDir(string engineExePath)
+        public static string FindCacheDir(string engineExePath, string engineArgs = null)
         {
             var candidates = new System.Collections.Generic.List<string>();
             try
@@ -52,12 +54,42 @@ namespace TeamRadio56.SimHub
                 }
             }
             catch (Exception) { }
+            try
+            {
+                string scriptDir = ScriptDirFromArgs(engineArgs);
+                if (scriptDir != null)
+                    candidates.Add(Path.Combine(scriptDir, "audio_cache"));
+            }
+            catch (Exception) { }
             foreach (string dir in candidates)
             {
                 if (Directory.Exists(dir))
                     return dir;
             }
             return null;
+        }
+
+        /// <summary>추가 인자에서 첫 경로(보통 main.py)의 폴더를 뽑는다.</summary>
+        private static string ScriptDirFromArgs(string args)
+        {
+            if (string.IsNullOrEmpty(args))
+                return null;
+            string path = args.Trim();
+            if (path.StartsWith("\""))
+            {
+                int end = path.IndexOf('"', 1);
+                if (end > 1)
+                    path = path.Substring(1, end - 1);
+            }
+            else
+            {
+                int space = path.IndexOf(' ');
+                if (space > 0)
+                    path = path.Substring(0, space);
+            }
+            if (path.Length == 0)
+                return null;
+            return Path.GetDirectoryName(path);
         }
 
         public void Speak(string text, string tone, bool urgent)

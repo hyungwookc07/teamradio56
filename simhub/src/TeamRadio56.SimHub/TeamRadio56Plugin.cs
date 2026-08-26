@@ -243,7 +243,8 @@ namespace TeamRadio56.SimHub
             _chief = new CrewChiefEngine(cfg,
                 Settings.LapTimeEveryLap, Settings.StatusEveryLaps);
 
-            string cacheDir = AudioSink.FindCacheDir(EngineExePath());
+            string cacheDir = AudioSink.FindCacheDir(EngineExePath(),
+                Settings != null ? Settings.EngineArgs : null);
             var cache = new VoiceCache(cacheDir, Settings.EdgeVoice,
                 Settings.SpeechRatePercent, "bm_george", Settings.RadioFx);
             _sink = new AudioSink(cache, _speech);
