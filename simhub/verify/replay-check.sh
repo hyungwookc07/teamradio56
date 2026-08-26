@@ -33,6 +33,27 @@ else
     fail=1
 fi
 
+echo
+echo "▶ 오디오 캐시 파일명 규약 대조 (md5 앞 20자 등)"
+python3 tools/dump_pregen.py --cache-names --out "$OUT/py_names.txt"
+"$RUNNER" --dump-cache-names --out "$OUT/cs_names.txt"
+if diff -q "$OUT/py_names.txt" "$OUT/cs_names.txt" > /dev/null; then
+    echo "✅ 일치 — $(wc -l < "$OUT/py_names.txt")개 파일명 동일"
+else
+    echo "❌ 캐시 파일명 불일치 — builtin이 배포 캐시를 못 찾게 됩니다:"
+    diff "$OUT/py_names.txt" "$OUT/cs_names.txt" | head -10
+    fail=1
+fi
+
+# 생성된 오디오 캐시가 로컬에 있으면 실제 Resolve까지 확인 (선택 게이트)
+if [ -d audio_cache ] && ls audio_cache/*_rfx3.wav > /dev/null 2>&1; then
+    echo
+    echo "▶ 실캐시 Resolve 확인 (audio_cache/)"
+    if ! "$RUNNER" --check-cache audio_cache; then
+        fail=1
+    fi
+fi
+
 for replay in data/replays/*.jsonl.gz; do
     name=$(basename "$replay" .jsonl.gz)
     echo

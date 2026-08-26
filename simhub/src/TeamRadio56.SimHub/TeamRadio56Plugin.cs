@@ -270,8 +270,19 @@ namespace TeamRadio56.SimHub
             _voice.Enabled = Settings.VoiceEnabled;
             _voice.Start();
 
+            int cacheFiles = 0;
+            if (cacheDir != null)
+            {
+                try
+                {
+                    cacheFiles = System.IO.Directory
+                        .GetFiles(cacheDir, "*_rfx*.wav").Length;
+                }
+                catch (Exception) { }
+            }
             FileLog.Info("내장(C#) 엔진 모드 — 분석기 9종 활성. 오디오 캐시: {0}",
-                cacheDir ?? "(없음 — Windows TTS 폴백)");
+                cacheDir == null ? "(없음 — Windows TTS 폴백)"
+                                 : cacheDir + " (무전 효과본 " + cacheFiles + "개)");
             if (string.Equals(Settings.VoiceLanguage, "ko",
                               StringComparison.OrdinalIgnoreCase))
             {

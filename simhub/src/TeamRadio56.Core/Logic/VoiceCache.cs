@@ -11,11 +11,12 @@ namespace TeamRadio56.Core.Logic
     /// 파이썬 tts.py의 오디오 캐시 키 규약 포팅 — 사전 생성된 오디오 파일을
     /// 텍스트+톤으로 찾는다. 합성은 하지 않는다 (합성/사전 생성은 파이썬 도구).
     ///
-    /// 키 규약 (tts.py와 반드시 일치):
+    /// 키 규약 (tts.py _cache_path와 반드시 일치):
     ///   edge   : md5("edge|{voice}|{rate}|{pitch}|{text}") .mp3
     ///   kokoro : md5("kokoro|{voice}|{tone}|{text}") .wav
     ///   11labs : md5("11labs|{voice_id}|{tone}|{text}") .mp3
-    /// 무전 효과 적용본은 같은 이름 + "_rfx{VERSION}.wav" (VERSION=2).
+    /// 파일명은 md5 hex의 앞 20자만 쓴다 (hexdigest()[:20]).
+    /// 무전 효과 적용본은 같은 이름 + "_rfx{VERSION}.wav" (VERSION=3).
     /// </summary>
     public sealed class VoiceCache
     {
@@ -73,6 +74,16 @@ namespace TeamRadio56.Core.Logic
             return null;
         }
 
+        /// <summary>
+        /// (톤, 텍스트)가 찾게 될 캐시 파일명(원본 기준, 폴더 제외) —
+        /// 파이썬 _cache_path와의 파일명 규약 대조(replay-check)용.
+        /// </summary>
+        public IEnumerable<string> CandidateFileNames(string text, string tone)
+        {
+            foreach (string basePath in CandidateBases(text, tone ?? "casual"))
+                yield return Path.GetFileName(basePath);
+        }
+
         private IEnumerable<string> CandidateBases(string text, string tone)
         {
             // 배포 캐시(kokoro) 우선 — ChainEngine [kokoro, edge]와 같은 순서
@@ -96,7 +107,8 @@ namespace TeamRadio56.Core.Logic
                 var sb = new StringBuilder(hash.Length * 2);
                 foreach (byte b in hash)
                     sb.Append(b.ToString("x2", CultureInfo.InvariantCulture));
-                return Path.Combine(_cacheDir, sb + "." + ext);
+                // 파이썬 _cache_path는 hexdigest()[:20] — 반드시 20자로 자른다
+                return Path.Combine(_cacheDir, sb.ToString(0, 20) + "." + ext);
             }
         }
     }

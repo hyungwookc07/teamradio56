@@ -92,9 +92,17 @@ namespace TeamRadio56.SimHub
             return Path.GetDirectoryName(path);
         }
 
+        private int _missLogged;
+
         public void Speak(string text, string tone, bool urgent)
         {
             string path = _cache != null ? _cache.Resolve(text, tone) : null;
+            if (path == null && _missLogged < 10)
+            {
+                // 캐시 전멸(경로/규약 문제)인지 개별 미스인지 로그로 구분 가능하게
+                _missLogged++;
+                FileLog.Info("캐시 미스 — Windows TTS 폴백: [" + tone + "] " + text);
+            }
             if (path != null && path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
             {
                 try

@@ -25,6 +25,8 @@ namespace TeamRadio56.Replay
             string replayPath = null;
             string outPath = null;
             bool dumpPregen = false;
+            bool dumpCacheNames = false;
+            string checkCacheDir = null;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
@@ -33,13 +35,22 @@ namespace TeamRadio56.Replay
                     outPath = args[++i];
                 else if (args[i] == "--dump-pregen")
                     dumpPregen = true;
+                else if (args[i] == "--dump-cache-names")
+                    dumpCacheNames = true;
+                else if (args[i] == "--check-cache" && i + 1 < args.Length)
+                    checkCacheDir = args[++i];
             }
             if (dumpPregen)
                 return DumpPregen(outPath);
+            if (dumpCacheNames)
+                return DumpCacheNames(outPath);
+            if (checkCacheDir != null)
+                return CheckCache(checkCacheDir);
             if (replayPath == null)
             {
                 Console.Error.WriteLine(
-                    "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] | --dump-pregen [--out f]");
+                    "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] | --dump-pregen [--out f]"
+                    + " | --dump-cache-names [--out f] | --check-cache <오디오캐시폴더>");
                 return 2;
             }
 
@@ -134,6 +145,79 @@ namespace TeamRadio56.Replay
                 Console.Error.WriteLine($"사전 캐시 텍스트 {set.Count}개 → {outPath}");
             }
             return 0;
+        }
+
+        /// <summary>
+        /// 사전 캐시 전 항목의 캐시 파일명(kokoro/edge)을 덤프 —
+        /// 파이썬 dump_pregen.py --cache-names 출력과 diff해 파일명 규약
+        /// (md5 앞 20자 등)이 어긋나지 않았는지 검증한다.
+        /// 보이스/속도는 PluginSettings 기본값 고정.
+        /// </summary>
+        private static int DumpCacheNames(string outPath)
+        {
+            var cache = new VoiceCache("", "en-GB-RyanNeural", 10);
+            var set = new SortedSet<string>(StringComparer.Ordinal);
+            var pool = new TeamRadio56.Core.Logic.PhrasePool();
+            foreach (KeyValuePair<string, string> item
+                     in TeamRadio56.Core.Logic.PregenTexts.Enumerate(pool))
+            {
+                var names = new List<string>(cache.CandidateFileNames(item.Value, item.Key));
+                set.Add(item.Key + "\t" + string.Join("\t", names) + "\t" + item.Value);
+            }
+            TextWriter writer = outPath != null
+                ? new StreamWriter(outPath, false, new UTF8Encoding(false))
+                : Console.Out;
+            foreach (string line in set)
+                writer.WriteLine(line);
+            if (outPath != null)
+            {
+                writer.Dispose();
+                Console.Error.WriteLine($"캐시 파일명 {set.Count}줄 → {outPath}");
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// 실제 오디오 캐시 폴더에 대해 사전 캐시 전 항목을 Resolve —
+        /// builtin 모드가 배포 캐시를 몇 개나 찾는지 확인하는 진단 도구.
+        /// </summary>
+        private static int CheckCache(string cacheDir)
+        {
+            var cache = new VoiceCache(cacheDir, "en-GB-RyanNeural", 10);
+            if (!cache.Available)
+            {
+                Console.Error.WriteLine("캐시 폴더가 없습니다: " + cacheDir);
+                return 2;
+            }
+            int total = 0, hit = 0, rfx = 0;
+            var misses = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var pool = new TeamRadio56.Core.Logic.PhrasePool();
+            foreach (KeyValuePair<string, string> item
+                     in TeamRadio56.Core.Logic.PregenTexts.Enumerate(pool))
+            {
+                if (!seen.Add(item.Key + "\t" + item.Value))
+                    continue;   // 파이썬 pregen과 같은 기준: (톤, 텍스트) 유일
+                total++;
+                string path = cache.Resolve(item.Value, item.Key);
+                if (path == null)
+                {
+                    if (misses.Count < 5)
+                        misses.Add("  [" + item.Key + "] " + item.Value);
+                    continue;
+                }
+                hit++;
+                if (path.EndsWith("_rfx3.wav", StringComparison.OrdinalIgnoreCase))
+                    rfx++;
+            }
+            Console.WriteLine($"캐시 히트 {hit}/{total} (무전 효과본 {rfx}) — {cacheDir}");
+            if (hit < total)
+            {
+                Console.WriteLine("미스 예시:");
+                foreach (string m in misses)
+                    Console.WriteLine(m);
+            }
+            return hit == total ? 0 : 1;
         }
 
         private static string Format(double t, RadioEvent ev)
