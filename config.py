@@ -39,7 +39,8 @@ DEFAULTS: dict[str, Any] = {
         "driver_name": "드라이버",   # 멘트에서 부르는 호칭
     },
     "tts": {
-        "engine": "edge",           # edge | elevenlabs
+        # kokoro(기본) = 동봉 사전 생성 캐시 우선 + 캐시 미스 edge 폴백
+        "engine": "kokoro",         # kokoro | edge | elevenlabs
         "edge_voice": "en-GB-RyanNeural",   # 영국 레이스 엔지니어 톤
         "edge_rate": "+10%",
         "elevenlabs_api_key": "",
@@ -168,6 +169,7 @@ class Config:
 PLUGIN_SETTINGS_MAP = {
     "VoiceEnabled": "voice.enabled",
     "VoiceLanguage": "voice.language",
+    "VoiceEngine": "tts.engine",
     "Volume": "voice.volume",
     "EdgeVoice": "tts.edge_voice",
     "RadioFx": "tts.radio_fx",

@@ -39,7 +39,16 @@ namespace TeamRadio56.SimHub
             _timer.Interval = TimeSpan.FromSeconds(1);
             _timer.Tick += (s, e) => Refresh();
             Loaded += (s, e) => { Refresh(); _timer.Start(); };
-            Unloaded += (s, e) => _timer.Stop();
+            Unloaded += (s, e) =>
+            {
+                _timer.Stop();
+                // 디바운스 중이던 저장이 있으면 화면을 떠날 때 마저 쓴다
+                if (_saveTimer != null && _saveTimer.IsEnabled)
+                {
+                    _saveTimer.Stop();
+                    _plugin.SaveSettings();
+                }
+            };
         }
 
         private PluginSettings S { get { return _plugin.Settings; } }
@@ -49,9 +58,28 @@ namespace TeamRadio56.SimHub
             return Loc.L(key);
         }
 
+        private DispatcherTimer _saveTimer;
+
+        /// <summary>
+        /// 저장 디바운스 — 슬라이더 드래그 한 번에 수십 번 파일을 쓰면
+        /// UI가 버벅인다. 마지막 변경 후 잠깐 쉬면 한 번만 저장.
+        /// </summary>
         private void Save()
         {
-            _plugin.SaveSettings();
+            if (_saveTimer == null)
+            {
+                _saveTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(600),
+                };
+                _saveTimer.Tick += (s, e) =>
+                {
+                    _saveTimer.Stop();
+                    _plugin.SaveSettings();
+                };
+            }
+            _saveTimer.Stop();
+            _saveTimer.Start();
         }
 
         // -- 화면 구성 -------------------------------------------------------
@@ -75,7 +103,7 @@ namespace TeamRadio56.SimHub
                     if (S != null)
                         S.UiLanguage = v;
                     Loc.Lang = v;
-                    Build();       // 새 언어로 재조립
+                    RebuildLater();   // 콤보 이벤트가 끝난 뒤 새 언어로 재조립
                 });
             ((FrameworkElement)langCombo).Width = 80;
             ((FrameworkElement)langCombo).Margin = new Thickness(16, 4, 0, 0);
@@ -153,8 +181,21 @@ namespace TeamRadio56.SimHub
                 if (string.Equals(S.EngineMode, v, StringComparison.OrdinalIgnoreCase))
                     return;
                 S.EngineMode = v;
-                _plugin.RestartEngine();   // 즉시 전환 (이전 모드 정리 → 새 모드 기동)
-                Build();                   // 모드에 따라 보이는 항목이 달라진다
+                // 재시작은 프로세스 종료 대기 등으로 수 초 걸릴 수 있다 —
+                // UI 스레드에서 돌리면 화면 전체가 얼어붙으므로 백그라운드로
+                RebuildLater();            // 모드에 따라 보이는 항목이 달라진다
+                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        _plugin.RestartEngine();   // 즉시 전환 (이전 모드 정리 → 새 모드 기동)
+                    }
+                    catch (Exception ex)
+                    {
+                        FileLog.Error("모드 전환 실패", ex);
+                    }
+                    Dispatcher.BeginInvoke(new Action(Refresh));
+                });
             }), L("hint_mode"));
 
             // builtin 모드: 사전 생성 오디오 캐시 폴더 (비우면 자동 탐색)
@@ -212,6 +253,12 @@ namespace TeamRadio56.SimHub
             {
                 S.VoiceEnabled = v;
             }), L("hint_voice_on"));
+
+            Row(box, L("row_voice_engine"),
+                MakeCombo(PluginSettings.VoiceEngineChoices, S.VoiceEngine, v =>
+                {
+                    S.VoiceEngine = v;
+                }), L("hint_voice_engine"));
 
             Row(box, L("row_voice"), MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
             {
@@ -328,44 +375,54 @@ namespace TeamRadio56.SimHub
 
         // -- 상태 갱신 -------------------------------------------------------
 
+        /// <summary>
+        /// 콤보 이벤트 처리 중에 Content를 갈아끼우면 열려 있던 드랍다운이
+        /// 고장난다(선택이 씹히거나 팝업이 남음) — 이벤트가 끝난 뒤로 미룬다.
+        /// </summary>
+        private void RebuildLater()
+        {
+            Dispatcher.BeginInvoke(new Action(Build), DispatcherPriority.Background);
+        }
+
+        /// <summary>같은 값 재대입으로 매초 레이아웃이 출렁이지 않게.</summary>
+        private static void SetText(TextBlock block, string text, Brush brush)
+        {
+            if (!string.Equals(block.Text, text, StringComparison.Ordinal))
+                block.Text = text;
+            if (!ReferenceEquals(block.Foreground, brush))
+                block.Foreground = brush;
+        }
+
         private void Refresh()
         {
             try
             {
                 bool connected = _plugin.IsConnected;
-                _connection.Text = connected ? L("conn_on") : L("conn_off");
-                _connection.Foreground = connected ? Ok : Off;
-                _status.Text = _plugin.StatusText ?? "";
+                SetText(_connection, connected ? L("conn_on") : L("conn_off"),
+                        connected ? Ok : Off);
+                SetText(_status, _plugin.StatusText ?? "", Fg);
 
                 if (_plugin.UsingPythonEngine)
                 {
                     string error = _plugin.EngineError;
                     if (!string.IsNullOrEmpty(error))
-                    {
-                        _engineState.Text = L("engine_error") + error;
-                        _engineState.Foreground = Off;
-                    }
+                        SetText(_engineState, L("engine_error") + error, Off);
                     else if (_plugin.EngineRunning)
-                    {
-                        _engineState.Text = L("engine_running") + _plugin.EngineExePath();
-                        _engineState.Foreground = Ok;
-                    }
+                        SetText(_engineState,
+                                L("engine_running") + _plugin.EngineExePath(), Ok);
                     else
-                    {
-                        _engineState.Text = L("engine_stopped") + _plugin.EngineExePath();
-                        _engineState.Foreground = Dim;
-                    }
+                        SetText(_engineState,
+                                L("engine_stopped") + _plugin.EngineExePath(), Dim);
                 }
                 else
                 {
-                    _engineState.Text = L("engine_builtin");
-                    _engineState.Foreground = Dim;
+                    SetText(_engineState, L("engine_builtin"), Dim);
                 }
 
                 string[] calls = _plugin.RecentCalls();
-                _recent.Text = calls.Length == 0
+                SetText(_recent, calls.Length == 0
                     ? L("no_recent")
-                    : L("recent_title") + "\n  " + string.Join("\n  ", calls);
+                    : L("recent_title") + "\n  " + string.Join("\n  ", calls), Dim);
             }
             catch (Exception)
             {

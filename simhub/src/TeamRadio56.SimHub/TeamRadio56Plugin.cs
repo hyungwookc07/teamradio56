@@ -39,7 +39,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.11.0-i18n";
+        public const string Version = "0.12.0-voice";
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
@@ -117,16 +117,22 @@ namespace TeamRadio56.SimHub
         /// 설정을 바꾼 뒤 엔진에 반영 (재시작). 모드 전환(python↔builtin)도
         /// 여기서 처리한다 — 이전 모드를 내리고 현재 모드로 다시 올린다.
         /// </summary>
+        private readonly object _restartGate = new object();
+
         public void RestartEngine()
         {
-            SaveSettings();
-            _engine.Stop();          // 파이썬 엔진이 돌고 있으면 종료
-            ShutdownBuiltin();       // 내장 엔진이 돌고 있으면 정리
-            _activeMode = Settings != null ? Settings.EngineMode : null;
-            if (UsingPythonEngine)
-                StartEngine();
-            else
-                InitBuiltin();
+            // 설정 화면이 백그라운드 스레드에서 부른다 — 겹쳐 부르면 순서대로
+            lock (_restartGate)
+            {
+                SaveSettings();
+                _engine.Stop();          // 파이썬 엔진이 돌고 있으면 종료
+                ShutdownBuiltin();       // 내장 엔진이 돌고 있으면 정리
+                _activeMode = Settings != null ? Settings.EngineMode : null;
+                if (UsingPythonEngine)
+                    StartEngine();
+                else
+                    InitBuiltin();
+            }
         }
 
         private void ShutdownBuiltin()
@@ -264,7 +270,8 @@ namespace TeamRadio56.SimHub
                     Settings != null ? Settings.EngineArgs : null);
             }
             var cache = new VoiceCache(cacheDir, Settings.EdgeVoice,
-                Settings.SpeechRatePercent, "bm_george", Settings.RadioFx);
+                Settings.SpeechRatePercent, "bm_george", Settings.RadioFx,
+                Settings.VoiceEngine);
             _sink = new AudioSink(cache, _speech);
             _voice = new VoiceWorker(_chief.Bus, _sink);
             _voice.Enabled = Settings.VoiceEnabled;

@@ -35,6 +35,11 @@ namespace TeamRadio56.Core.Config
         // -- 음성 --------------------------------------------------------
         public bool VoiceEnabled { get; set; } = true;
         /// <summary>
+        /// kokoro = 동봉 사전 생성 캐시 음성 우선(권장, 캐시 미스는 edge 폴백),
+        /// edge = edge-tts 보이스만. 엔진에도 전달된다 (tts.engine).
+        /// </summary>
+        public string VoiceEngine { get; set; } = "kokoro";
+        /// <summary>
         /// 사전 생성 오디오 캐시 폴더 (builtin 모드용). 비우면 자동 탐색:
         /// DLL 옆 → teamradio56-engine\ → 엔진 실행 파일/스크립트 옆.
         /// </summary>
@@ -94,6 +99,8 @@ namespace TeamRadio56.Core.Config
         };
 
         public static readonly string[] ChatterChoices = { "quiet", "normal", "chatty" };
+
+        public static readonly string[] VoiceEngineChoices = { "kokoro", "edge" };
 
         public static readonly string[] VoiceLanguageChoices = { "en", "ko" };
 

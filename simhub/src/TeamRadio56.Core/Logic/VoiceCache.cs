@@ -35,15 +35,20 @@ namespace TeamRadio56.Core.Logic
         private readonly int _edgeBaseRate;
         private readonly string _kokoroVoice;
         private readonly bool _radioFx;
+        private readonly bool _edgeOnly;
 
         public VoiceCache(string cacheDir, string edgeVoice, int edgeBaseRatePercent,
-                          string kokoroVoice = "bm_george", bool radioFx = true)
+                          string kokoroVoice = "bm_george", bool radioFx = true,
+                          string enginePref = "kokoro")
         {
             _cacheDir = cacheDir;
             _edgeVoice = edgeVoice;
             _edgeBaseRate = edgeBaseRatePercent;
             _kokoroVoice = kokoroVoice;
             _radioFx = radioFx;
+            // 파이썬 build_engine과 같은 규칙: edge를 고르면 kokoro 캐시를 안 본다
+            _edgeOnly = string.Equals(enginePref, "edge",
+                                      StringComparison.OrdinalIgnoreCase);
         }
 
         public bool Available
@@ -87,7 +92,8 @@ namespace TeamRadio56.Core.Logic
         private IEnumerable<string> CandidateBases(string text, string tone)
         {
             // 배포 캐시(kokoro) 우선 — ChainEngine [kokoro, edge]와 같은 순서
-            yield return CachePath("kokoro|" + _kokoroVoice + "|" + tone + "|" + text, "wav");
+            if (!_edgeOnly)
+                yield return CachePath("kokoro|" + _kokoroVoice + "|" + tone + "|" + text, "wav");
 
             KeyValuePair<int, string> delivery;
             if (!ToneDelivery.TryGetValue(tone, out delivery))
