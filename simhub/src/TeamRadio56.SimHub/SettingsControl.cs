@@ -414,10 +414,14 @@ namespace TeamRadio56.SimHub
                 S.RequireRealtime = v;
             }), L("hint_realtime"));
 
-            Row(box, L("row_speech_log"), MakeCheck(S.SpeechLog, v =>
+            // 발화 기록(JSONL)은 파이썬 엔진 전용 — builtin은 플러그인 로그에 항상 남는다
+            if (!string.Equals(S.EngineMode, "builtin", StringComparison.OrdinalIgnoreCase))
             {
-                S.SpeechLog = v;
-            }), L("hint_speech_log"));
+                Row(box, L("row_speech_log"), MakeCheck(S.SpeechLog, v =>
+                {
+                    S.SpeechLog = v;
+                }), L("hint_speech_log"));
+            }
         }
 
         // -- 상태 갱신 -------------------------------------------------------
