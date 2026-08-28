@@ -547,6 +547,7 @@ namespace TeamRadio56.SimHub
                 });
             }
             parent.Children.Add(row);
+            return row;   // 호출부가 Visibility를 토글할 수 있게
         }
 
         private UIElement MakeCheck(bool value, Action<bool> setter)
