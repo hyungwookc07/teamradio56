@@ -39,7 +39,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.12.0-voice";
+        public const string Version = "0.12.1-ui";
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;

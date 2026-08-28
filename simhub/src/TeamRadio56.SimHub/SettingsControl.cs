@@ -135,7 +135,7 @@ namespace TeamRadio56.SimHub
             BuildChatter(root);
             BuildTraffic(root);
             BuildReports(root);
-            BuildLlm(root);
+            // LLM 섹션은 C# 포팅 전까지 보류 — 기능이 준비되면 BuildLlm(root) 복원
             BuildBehaviour(root);
 
             Content = new ScrollViewer
@@ -260,20 +260,26 @@ namespace TeamRadio56.SimHub
             bool edge = string.Equals(S.VoiceEngine, "edge",
                                       StringComparison.OrdinalIgnoreCase);
 
+            // 조건부 줄들은 항상 만들어 두고 Visibility만 바꾼다 —
+            // 콤보 이벤트에서 화면 전체를 재조립하면 지연/씹힘이 생긴다
+            TextBlock koWarn = null;
+            StackPanel voiceRow = null, rateRow = null;
+
             Row(box, L("row_voice_lang"),
                 MakeCombo(PluginSettings.VoiceLanguageChoices, S.VoiceLanguage, v =>
                 {
                     S.VoiceLanguage = v;
-                    RebuildLater();   // builtin+ko 경고 표시가 달라진다
+                    if (koWarn != null)
+                        koWarn.Visibility = builtin && v.StartsWith("ko")
+                            ? Visibility.Visible : Visibility.Collapsed;
                 }, Choice("choice_lang_")), L("hint_voice_lang"));
 
-            if (builtin && string.Equals(S.VoiceLanguage, "ko",
-                                         StringComparison.OrdinalIgnoreCase))
-            {
-                var warn = Hint(L("builtin_ko_warn"));
-                warn.Foreground = Off;
-                box.Children.Add(warn);
-            }
+            koWarn = Hint(L("builtin_ko_warn"));
+            koWarn.Foreground = Off;
+            koWarn.Visibility = builtin && string.Equals(S.VoiceLanguage, "ko",
+                                    StringComparison.OrdinalIgnoreCase)
+                ? Visibility.Visible : Visibility.Collapsed;
+            box.Children.Add(koWarn);
 
             Row(box, L("row_voice_on"), MakeCheck(S.VoiceEnabled, v =>
             {
@@ -284,23 +290,27 @@ namespace TeamRadio56.SimHub
                 MakeCombo(PluginSettings.VoiceEngineChoices, S.VoiceEngine, v =>
                 {
                     S.VoiceEngine = v;
-                    RebuildLater();   // 보이스/말 속도는 edge에서만 의미 있다
+                    // 보이스/말 속도는 edge에서만 의미 있다 — 그 자리에서 토글
+                    bool e = string.Equals(v, "edge", StringComparison.OrdinalIgnoreCase);
+                    if (voiceRow != null)
+                        voiceRow.Visibility = e ? Visibility.Visible : Visibility.Collapsed;
+                    if (rateRow != null)
+                        rateRow.Visibility = e ? Visibility.Visible : Visibility.Collapsed;
                 }, Choice("choice_")), L("hint_voice_engine"));
 
             // 보이스와 말 속도는 edge-tts 전용 — kokoro 캐시 음성엔 영향이 없다
-            if (edge)
-            {
-                Row(box, L("row_voice"),
-                    MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
-                    {
-                        S.EdgeVoice = v;
-                    }, Choice("voice_")), L("hint_voice"));
-
-                Row(box, L("row_rate"), MakeSlider(-20, 40, 5, S.SpeechRatePercent, v =>
+            voiceRow = Row(box, L("row_voice"),
+                MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
                 {
-                    S.SpeechRatePercent = (int)Math.Round(v);
-                }, "{0:+0;-0;0}%"));
-            }
+                    S.EdgeVoice = v;
+                }, Choice("voice_")), L("hint_voice"));
+            voiceRow.Visibility = edge ? Visibility.Visible : Visibility.Collapsed;
+
+            rateRow = Row(box, L("row_rate"), MakeSlider(-20, 40, 5, S.SpeechRatePercent, v =>
+            {
+                S.SpeechRatePercent = (int)Math.Round(v);
+            }, "{0:+0;-0;0}%"));
+            rateRow.Visibility = edge ? Visibility.Visible : Visibility.Collapsed;
 
             // builtin 재생(SoundPlayer)은 볼륨/노이즈 조절이 없다 —
             // 노이즈는 캐시에 이미 구워져 있고, 볼륨은 윈도우 믹서로
@@ -432,7 +442,8 @@ namespace TeamRadio56.SimHub
         /// </summary>
         private void RebuildLater()
         {
-            Dispatcher.BeginInvoke(new Action(Build), DispatcherPriority.Background);
+            // Background 우선순위는 렌더링이 바쁘면 밀릴 수 있다 — Normal로
+            Dispatcher.BeginInvoke(new Action(Build), DispatcherPriority.Normal);
         }
 
         /// <summary>같은 값 재대입으로 매초 레이아웃이 출렁이지 않게.</summary>
@@ -509,7 +520,7 @@ namespace TeamRadio56.SimHub
             };
         }
 
-        private void Row(StackPanel parent, string label, UIElement control, string hint = null)
+        private StackPanel Row(StackPanel parent, string label, UIElement control, string hint = null)
         {
             var row = new StackPanel
             {
