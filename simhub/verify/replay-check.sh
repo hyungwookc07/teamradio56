@@ -21,17 +21,19 @@ trap 'rm -rf "$OUT"' EXIT
 
 fail=0
 
-echo
-echo "▶ 멘트 풀 / 슬롯 포매팅 대조 (사전 캐시 텍스트 전체 집합)"
-python3 tools/dump_pregen.py --out "$OUT/py_pregen.txt"
-"$RUNNER" --dump-pregen --out "$OUT/cs_pregen.txt"
-if diff -q "$OUT/py_pregen.txt" "$OUT/cs_pregen.txt" > /dev/null; then
-    echo "✅ 일치 — $(wc -l < "$OUT/py_pregen.txt")개 텍스트 동일"
-else
-    echo "❌ 멘트 풀 불일치:"
-    diff "$OUT/py_pregen.txt" "$OUT/cs_pregen.txt" | head -20
-    fail=1
-fi
+for lang in en ko; do
+    echo
+    echo "▶ 멘트 풀 / 슬롯 포매팅 대조 ($lang, 사전 캐시 텍스트 전체 집합)"
+    python3 tools/dump_pregen.py --lang "$lang" --out "$OUT/py_pregen_$lang.txt"
+    "$RUNNER" --dump-pregen --lang "$lang" --out "$OUT/cs_pregen_$lang.txt"
+    if diff -q "$OUT/py_pregen_$lang.txt" "$OUT/cs_pregen_$lang.txt" > /dev/null; then
+        echo "✅ 일치 — $(wc -l < "$OUT/py_pregen_$lang.txt")개 텍스트 동일"
+    else
+        echo "❌ 멘트 풀 불일치 ($lang):"
+        diff "$OUT/py_pregen_$lang.txt" "$OUT/cs_pregen_$lang.txt" | head -20
+        fail=1
+    fi
+done
 
 echo
 echo "▶ 오디오 캐시 파일명 규약 대조 (md5 앞 20자 등)"
@@ -56,13 +58,17 @@ fi
 
 for replay in data/replays/*.jsonl.gz; do
     name=$(basename "$replay" .jsonl.gz)
-    echo
-    echo "▶ 리플레이: $name"
-    python3 tools/replay_calls.py --replay "$replay" --out "$OUT/py_$name.jsonl"
-    "$RUNNER" --replay "$replay" --out "$OUT/cs_$name.jsonl"
-    if ! python3 tools/compare_calls.py "$OUT/py_$name.jsonl" "$OUT/cs_$name.jsonl"; then
-        fail=1
-    fi
+    for lang in en ko; do
+        echo
+        echo "▶ 리플레이: $name ($lang)"
+        python3 tools/replay_calls.py --replay "$replay" --lang "$lang" \
+            --out "$OUT/py_${name}_$lang.jsonl"
+        "$RUNNER" --replay "$replay" --lang "$lang" --out "$OUT/cs_${name}_$lang.jsonl"
+        if ! python3 tools/compare_calls.py \
+            "$OUT/py_${name}_$lang.jsonl" "$OUT/cs_${name}_$lang.jsonl"; then
+            fail=1
+        fi
+    done
 done
 
 echo

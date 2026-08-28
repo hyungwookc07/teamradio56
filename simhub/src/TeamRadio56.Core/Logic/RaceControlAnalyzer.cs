@@ -255,8 +255,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.SectorYellow,
                     Priority = Priority.High,
-                    Message = "Yellow in sector " + (i + 1)
-                              + ". No overtaking, be ready to lift.",
+                    Message = Messages.Get("sector_yellow", "n", i + 1),
                     DedupKey = "syellow_" + i,
                     Ttl = 15.0,
                     Tone = "urgent",
@@ -328,7 +327,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.Penalty,
                     Priority = Priority.Normal,
-                    Message = "Penalty served. Back to your race.",
+                    Message = Messages.Get("pen_clear"),
                     DedupKey = "pen_clear",
                     Ttl = 20.0,
                     Tone = "casual",
@@ -361,22 +360,21 @@ namespace TeamRadio56.Core.Logic
             {
                 string kind = detail[0];
                 string reason = detail[1];
-                string head = "Penalty — " + kind
-                    + (reason.Length > 0 ? ", " + reason : "");
+                string reasonD = reason.Length > 0
+                    ? Messages.PenaltyReasonDisplay(reason) : "";
+                string head = Messages.Get("penalty_head",
+                        "kind", Messages.PenaltyKindDisplay(kind))
+                    + (reasonD.Length > 0 ? ", " + reasonD : "");
                 string advice;
                 switch (kind)
                 {
                     case "drive-through":
-                        advice = "Serve it next lap. Mind the limiter.";
-                        break;
                     case "stop-and-go":
-                        advice = "Hold the stop time in the box. Stay calm.";
-                        break;
                     case "time penalty":
-                        advice = "Added to the result. We claw it back on pace.";
+                        advice = Messages.Get("penalty_advice_" + kind);
                         break;
                     default:
-                        advice = "I'll call the timing.";
+                        advice = Messages.Get("penalty_advice_default");
                         break;
                 }
                 message = head + ". " + advice;
@@ -481,7 +479,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.RaceMilestone,
                     Priority = Priority.High,
-                    Message = "Last lap. Bring it home.",
+                    Message = Messages.Get("final_lap"),
                     DedupKey = "final_lap",
                     Ttl = 30.0,
                 };

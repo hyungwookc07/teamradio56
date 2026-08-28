@@ -257,29 +257,31 @@ namespace TeamRadio56.SimHub
             // 직관성 원칙: 지금 조합에서 의미 없는 항목은 아예 보여주지 않는다
             bool builtin = string.Equals(S.EngineMode, "builtin",
                                          StringComparison.OrdinalIgnoreCase);
-            bool edge = string.Equals(S.VoiceEngine, "edge",
-                                      StringComparison.OrdinalIgnoreCase);
 
             // 조건부 줄들은 항상 만들어 두고 Visibility만 바꾼다 —
-            // 콤보 이벤트에서 화면 전체를 재조립하면 지연/씹힘이 생긴다
-            TextBlock koWarn = null;
+            // 콤보 이벤트에서 화면 전체를 재조립하면 지연/씹힘이 생긴다.
+            // 보이스/말 속도는 edge 엔진이거나 멘트 언어가 ko일 때 의미가 있다
+            // (kokoro는 영어 전용이라 ko 멘트는 자동으로 edge 합성).
             StackPanel voiceRow = null, rateRow = null;
+            Action syncVoiceRows = () =>
+            {
+                bool show = string.Equals(S.VoiceEngine, "edge",
+                                StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(S.VoiceLanguage, "ko",
+                                StringComparison.OrdinalIgnoreCase);
+                Visibility v = show ? Visibility.Visible : Visibility.Collapsed;
+                if (voiceRow != null)
+                    voiceRow.Visibility = v;
+                if (rateRow != null)
+                    rateRow.Visibility = v;
+            };
 
             Row(box, L("row_voice_lang"),
                 MakeCombo(PluginSettings.VoiceLanguageChoices, S.VoiceLanguage, v =>
                 {
                     S.VoiceLanguage = v;
-                    if (koWarn != null)
-                        koWarn.Visibility = builtin && v.StartsWith("ko")
-                            ? Visibility.Visible : Visibility.Collapsed;
+                    syncVoiceRows();
                 }, Choice("choice_lang_")), L("hint_voice_lang"));
-
-            koWarn = Hint(L("builtin_ko_warn"));
-            koWarn.Foreground = Off;
-            koWarn.Visibility = builtin && string.Equals(S.VoiceLanguage, "ko",
-                                    StringComparison.OrdinalIgnoreCase)
-                ? Visibility.Visible : Visibility.Collapsed;
-            box.Children.Add(koWarn);
 
             Row(box, L("row_voice_on"), MakeCheck(S.VoiceEnabled, v =>
             {
@@ -290,27 +292,20 @@ namespace TeamRadio56.SimHub
                 MakeCombo(PluginSettings.VoiceEngineChoices, S.VoiceEngine, v =>
                 {
                     S.VoiceEngine = v;
-                    // 보이스/말 속도는 edge에서만 의미 있다 — 그 자리에서 토글
-                    bool e = string.Equals(v, "edge", StringComparison.OrdinalIgnoreCase);
-                    if (voiceRow != null)
-                        voiceRow.Visibility = e ? Visibility.Visible : Visibility.Collapsed;
-                    if (rateRow != null)
-                        rateRow.Visibility = e ? Visibility.Visible : Visibility.Collapsed;
+                    syncVoiceRows();
                 }, Choice("choice_")), L("hint_voice_engine"));
 
-            // 보이스와 말 속도는 edge-tts 전용 — kokoro 캐시 음성엔 영향이 없다
             voiceRow = Row(box, L("row_voice"),
                 MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
                 {
                     S.EdgeVoice = v;
                 }, Choice("voice_")), L("hint_voice"));
-            voiceRow.Visibility = edge ? Visibility.Visible : Visibility.Collapsed;
 
             rateRow = Row(box, L("row_rate"), MakeSlider(-20, 40, 5, S.SpeechRatePercent, v =>
             {
                 S.SpeechRatePercent = (int)Math.Round(v);
             }, "{0:+0;-0;0}%"));
-            rateRow.Visibility = edge ? Visibility.Visible : Visibility.Collapsed;
+            syncVoiceRows();
 
             // builtin 재생(SoundPlayer)은 볼륨/노이즈 조절이 없다 —
             // 노이즈는 캐시에 이미 구워져 있고, 볼륨은 윈도우 믹서로

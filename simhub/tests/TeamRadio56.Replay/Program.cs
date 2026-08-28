@@ -27,12 +27,16 @@ namespace TeamRadio56.Replay
             bool dumpPregen = false;
             bool dumpCacheNames = false;
             string checkCacheDir = null;
+            bool gec = false;
+            string synthText = null;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
                     replayPath = args[++i];
                 else if (args[i] == "--out" && i + 1 < args.Length)
                     outPath = args[++i];
+                else if (args[i] == "--lang" && i + 1 < args.Length)
+                    Messages.SetLanguage(args[++i]);   // 분석기/풀 생성 전에
                 else if (args[i] == "--dump-pregen")
                     dumpPregen = true;
                 else if (args[i] == "--dump-cache-names")
@@ -40,24 +44,25 @@ namespace TeamRadio56.Replay
                 else if (args[i] == "--check-cache" && i + 1 < args.Length)
                     checkCacheDir = args[++i];
                 else if (args[i] == "--gec")
-                {
-                    // 파이썬 edge_tts.DRM.generate_sec_ms_gec와 대조용
-                    Console.WriteLine(EdgeTtsClient.GenerateSecMsGec());
-                    return 0;
-                }
+                    gec = true;
                 else if (args[i] == "--synth" && i + 1 < args.Length)
-                {
-                    string text = args[++i];
-                    string dst = outPath ?? "synth_test.mp3";
-                    for (int j = i + 1; j + 1 < args.Length; j++)
-                        if (args[j] == "--out") dst = args[j + 1];
-                    bool ok = EdgeTtsClient.Synthesize(
-                        text, "en-GB-RyanNeural", "+10%", "-6Hz", dst);
-                    Console.WriteLine(ok
-                        ? "OK " + new FileInfo(dst).Length + " bytes → " + dst
-                        : "FAIL: " + (EdgeTtsClient.LastError ?? "?"));
-                    return ok ? 0 : 1;
-                }
+                    synthText = args[++i];
+            }
+            if (gec)
+            {
+                // 파이썬 edge_tts.DRM.generate_sec_ms_gec와 대조용
+                Console.WriteLine(EdgeTtsClient.GenerateSecMsGec());
+                return 0;
+            }
+            if (synthText != null)
+            {
+                string dst = outPath ?? "synth_test.mp3";
+                bool ok = EdgeTtsClient.Synthesize(
+                    synthText, "en-GB-RyanNeural", "+10%", "-6Hz", dst);
+                Console.WriteLine(ok
+                    ? "OK " + new FileInfo(dst).Length + " bytes → " + dst
+                    : "FAIL: " + (EdgeTtsClient.LastError ?? "?"));
+                return ok ? 0 : 1;
             }
             if (dumpPregen)
                 return DumpPregen(outPath);
@@ -68,8 +73,9 @@ namespace TeamRadio56.Replay
             if (replayPath == null)
             {
                 Console.Error.WriteLine(
-                    "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] | --dump-pregen [--out f]"
-                    + " | --dump-cache-names [--out f] | --check-cache <오디오캐시폴더>");
+                    "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] [--lang en|ko]"
+                    + " | --dump-pregen [--out f] | --dump-cache-names [--out f]"
+                    + " | --check-cache <오디오캐시폴더> | --gec | --synth <텍스트>");
                 return 2;
             }
 

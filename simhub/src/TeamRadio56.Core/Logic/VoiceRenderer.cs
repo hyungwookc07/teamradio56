@@ -47,8 +47,8 @@ namespace TeamRadio56.Core.Logic
                     int g = Clamp(GetInt(d, "gap_sec", 4), 1, 6);
                     return _pool.Pick("traffic_approach", new Dictionary<string, string>
                     {
-                        { "cls", TrafficAnalyzer.ClassName(GetStr(d, "cls")) },
-                        { "gap", g + " second" + (g > 1 ? "s" : "") },
+                        { "cls", Messages.ClassDisplay(GetStr(d, "cls")) },
+                        { "gap", Messages.GapSlot(g) },
                     }, tone);
                 }
                 case EventTypes.TrafficClose:
@@ -59,7 +59,7 @@ namespace TeamRadio56.Core.Logic
                         return null;
                     return _pool.Pick(pool, new Dictionary<string, string>
                     {
-                        { "cls", TrafficAnalyzer.ClassName(GetStr(d, "cls")) },
+                        { "cls", Messages.ClassDisplay(GetStr(d, "cls")) },
                     }, tone);
                 }
                 case EventTypes.FuelCritical:
@@ -70,7 +70,7 @@ namespace TeamRadio56.Core.Logic
                     int laps = (int)Math.Min(Math.Max(GetDouble(d, "fuel_laps", 2), 1), 4);
                     return _pool.Pick(ev.Type, new Dictionary<string, string>
                     {
-                        { "fuel_laps", LapsText(laps) },
+                        { "fuel_laps", Messages.FuelSlot(laps) },
                     }, tone);
                 }
                 case EventTypes.PitCall:
@@ -96,7 +96,7 @@ namespace TeamRadio56.Core.Logic
                         return null;
                     return _pool.Pick(pool, new Dictionary<string, string>
                     {
-                        { "side", GetStr(d, "side") },
+                        { "side", Messages.SideSlot(GetStr(d, "side")) },
                     }, tone);
                 }
                 case EventTypes.RaceEnd:
@@ -126,29 +126,31 @@ namespace TeamRadio56.Core.Logic
                     if (m >= 60)
                     {
                         int h = m / 60;
-                        return h + " hour" + (h > 1 ? "s" : "") + " to go. On plan.";
+                        return Messages.Get("milestone_hours", "h", h,
+                            "s", (h > 1 && !Messages.IsKo) ? "s" : "");
                     }
-                    return m + " minutes to go. Rechecking fuel and tyres.";
+                    return Messages.Get("milestone_minutes", "m", m);
                 }
                 case EventTypes.LapAnalysis:
                 {
                     if (d.ContainsKey("pit_window_laps"))
                     {
-                        return "Pit window open. Box within "
-                               + LapsText(GetInt(d, "pit_window_laps", 0)) + ".";
+                        return Messages.Get("pit_window",
+                            "n", Messages.LapsText(GetInt(d, "pit_window_laps", 0)));
                     }
                     return null;
                 }
                 case EventTypes.StintBriefing:
-                    return "New stint. Easy on the tyres first lap, find the rhythm.";
+                    return Messages.Get("stint_brief");
                 case EventTypes.RivalPit:
                 {
-                    string rel = GetStr(d, "rel") == "앞" ? "ahead" : "behind";
-                    string baseText = "P" + GetInt(d, "their_class_place", 0)
-                        + " in class, car " + rel + ", just pitted.";
+                    string rel = Messages.Get(GetStr(d, "rel") == "앞"
+                        ? "rival_rel_ahead" : "rival_rel_behind");
+                    string baseText = Messages.Get("rival_pit_base",
+                        "rel", rel, "p", GetInt(d, "their_class_place", 0));
                     if (GetBool(d, "undercut_risk"))
-                        return baseText + " Undercut attempt. I'll look at our timing.";
-                    return baseText + " I'll call the gap when he's out.";
+                        return baseText + Messages.Get("rival_pit_undercut");
+                    return baseText + Messages.Get("rival_pit_gap");
                 }
                 case EventTypes.RivalPace:
                 {
@@ -156,25 +158,26 @@ namespace TeamRadio56.Core.Logic
                     int laps = GetInt(d, "laps", 0);
                     if (GetStr(d, "mode") == "catch")
                     {
-                        return "Car ahead in class is " + F1(diff)
-                               + " a lap slower. We catch him in " + LapsText(laps) + ".";
+                        return Messages.Get("rival_catch",
+                            "diff", diff, "laps", Messages.LapsText(laps));
                     }
-                    return "Car behind in class is " + F1(diff)
-                           + " a lap quicker. With us in " + LapsText(laps) + ". Be ready.";
+                    return Messages.Get("rival_defend",
+                        "diff", diff, "laps", Messages.LapsText(laps));
                 }
                 case EventTypes.TyreWarning:
                 {
                     string kind = GetStr(d, "kind");
                     if (kind == "temp_imbalance")
                     {
-                        return GetStr(d, "hot_wheel") + " tyre running "
-                               + F0(GetDouble(d, "delta", 0)) + " degrees hot. Ease that side.";
+                        return Messages.Get("tyre_hot",
+                            "wheel", Messages.WheelDisplay(GetStr(d, "hot_wheel")),
+                            "delta", GetDouble(d, "delta", 0));
                     }
                     if (kind == "wear")
                     {
-                        return GetStr(d, "wheel") + " tyre, about "
-                               + LapsText(GetDouble(d, "laps_left", 0))
-                               + " left. Factoring it in.";
+                        return Messages.Get("tyre_wear",
+                            "wheel", Messages.WheelDisplay(GetStr(d, "wheel")),
+                            "laps", Messages.LapsText(GetDouble(d, "laps_left", 0)));
                     }
                     return null;
                 }
@@ -182,33 +185,33 @@ namespace TeamRadio56.Core.Logic
                 {
                     double delta = Math.Abs(GetDouble(d, "delta", 0));
                     if (GetStr(d, "direction") == "slower")
-                        return "Lost " + F1(delta) + " on that lap. Checking why.";
-                    return F1(delta) + " quicker. Keep the rhythm.";
+                        return Messages.Get("pace_lost", "delta", delta);
+                    return Messages.Get("pace_quick", "delta", delta);
                 }
                 case EventTypes.GapComment:
                 {
                     double rate = GetDouble(d, "rate", 0);
                     double gap = GetDouble(d, "gap", 0);
-                    string gapS = SecondsText(gap);   // 단위 포함
+                    string gapS = Messages.SecondsText(gap);   // 단위 포함
                     if (GetStr(d, "who") == "behind")
                     {
                         if (rate <= -0.15)
                         {
-                            return "Car behind closing " + F1(Math.Abs(rate))
-                                   + " a lap. Gap " + gapS + ". Just no mistakes.";
+                            return Messages.Get("gap_behind_closing",
+                                "rate", Math.Abs(rate), "gap", gapS);
                         }
                         if (rate >= 0.15)
-                            return "Gap behind " + gapS + " and opening. Good.";
-                        return "Gap behind " + gapS + ", holding. Rhythm's good.";
+                            return Messages.Get("gap_behind_opening", "gap", gapS);
+                        return Messages.Get("gap_behind_holding", "gap", gapS);
                     }
                     if (rate <= -0.15)
                     {
-                        return "Gap ahead " + gapS + ", closing " + F1(Math.Abs(rate))
-                               + " a lap. We can get him.";
+                        return Messages.Get("gap_ahead_closing",
+                            "rate", Math.Abs(rate), "gap", gapS);
                     }
                     if (rate >= 0.15)
-                        return "Gap ahead " + gapS + " and opening. Don't overdo it.";
-                    return "Gap ahead " + gapS + ", holding. Keep the rhythm.";
+                        return Messages.Get("gap_ahead_opening", "gap", gapS);
+                    return Messages.Get("gap_ahead_holding", "gap", gapS);
                 }
                 default:
                     return null;    // 렌더러 없는 이벤트 (LLM 전용 등) — 침묵
@@ -227,22 +230,16 @@ namespace TeamRadio56.Core.Logic
             return v.ToString("F0", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>messages.py seconds_text와 동일 — "2.4 seconds"/"1 second"/"15 seconds".</summary>
+        /// <summary>Messages.SecondsText 위임 (기존 호출부 호환).</summary>
         internal static string SecondsText(double sec)
         {
-            string v = sec < 10
-                ? sec.ToString("F1", CultureInfo.InvariantCulture)
-                : sec.ToString("F0", CultureInfo.InvariantCulture);
-            if (v.EndsWith(".0"))
-                v = v.Substring(0, v.Length - 2);
-            return v == "1" ? "1 second" : v + " seconds";
+            return Messages.SecondsText(sec);
         }
 
-        /// <summary>messages.py laps_text와 동일 — "1 lap"/"3 laps".</summary>
+        /// <summary>Messages.LapsText 위임 (기존 호출부 호환).</summary>
         internal static string LapsText(double n)
         {
-            int i = (int)Math.Round(n, MidpointRounding.ToEven);
-            return i + " lap" + (i != 1 ? "s" : "");
+            return Messages.LapsText(n);
         }
 
         private static int Clamp(int v, int lo, int hi)
@@ -314,7 +311,9 @@ namespace TeamRadio56.Core.Logic
     {
         public static IEnumerable<KeyValuePair<string, string>> Enumerate(PhrasePool pool)
         {
-            string[] classes = { "Hypercar", "LMP2", "GT3", "GTE", "faster car", "" };
+            string[] classes = Messages.IsKo
+                ? new[] { "하이퍼카", "엘엠피 투", "GT3", "GTE", "상위 클래스", "" }
+                : new[] { "Hypercar", "LMP2", "GT3", "GTE", "faster car", "" };
 
             var slotValues = new List<KeyValuePair<string, List<Dictionary<string, string>>>>();
 
@@ -328,7 +327,7 @@ namespace TeamRadio56.Core.Logic
                     approach.Add(new Dictionary<string, string>
                     {
                         { "cls", c },
-                        { "gap", g + " second" + (g > 1 ? "s" : "") },
+                        { "gap", Messages.GapSlot(g) },
                     });
                 }
             }
@@ -404,8 +403,8 @@ namespace TeamRadio56.Core.Logic
         {
             return new List<Dictionary<string, string>>
             {
-                new Dictionary<string, string> { { "side", "left" } },
-                new Dictionary<string, string> { { "side", "right" } },
+                new Dictionary<string, string> { { "side", Messages.SideSlot("left") } },
+                new Dictionary<string, string> { { "side", Messages.SideSlot("right") } },
             };
         }
 
@@ -416,7 +415,7 @@ namespace TeamRadio56.Core.Logic
             {
                 list.Add(new Dictionary<string, string>
                 {
-                    { "fuel_laps", VoiceRenderer.LapsText(n) },
+                    { "fuel_laps", Messages.FuelSlot(n) },
                 });
             }
             return list;

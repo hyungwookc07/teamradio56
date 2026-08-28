@@ -144,11 +144,8 @@ namespace TeamRadio56.Core.Logic
             {
                 Type = EventTypes.FuelSave,
                 Priority = Priority.Normal,
-                Message = "No-stop target "
-                          + target.ToString("F1", CultureInfo.InvariantCulture)
-                          + " litres a lap. Save "
-                          + delta.ToString("F1", CultureInfo.InvariantCulture)
-                          + " — lift and coast, short shift.",
+                Message = Messages.Get("fuel_save",
+                    "target", target, "delta", delta),
             };
             ev.Data["target"] = Math.Round(target, 2);
             ev.Data["delta"] = Math.Round(delta, 2);

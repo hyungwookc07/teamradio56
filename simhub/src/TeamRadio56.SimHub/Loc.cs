@@ -38,8 +38,8 @@ namespace TeamRadio56.SimHub
             { "btn_engine_restart", "엔진 재시작" },
             { "btn_engine_log", "엔진 로그" },
             { "engine_hint", "python = 검증된 파이썬 엔진을 플러그인이 자식 프로세스로 띄웁니다 "
-                             + "(전체 기능, 현재 권장). builtin = C# 내장 — 판단/콜은 이식 완료, "
-                             + "LLM 멘트와 한국어는 아직 python 모드에서만." },
+                             + "(전체 기능). builtin = C# 내장 — 판단/콜·캐시 음성·edge 합성·"
+                             + "한국어까지 이식 완료, LLM 멘트만 python 모드에서." },
             { "engine_apply_hint", "설정을 바꾸면 [엔진 재시작]을 눌러야 엔진에 반영됩니다." },
             { "row_mode", "모드" },
             { "hint_mode", "바꾸면 즉시 전환됩니다" },
@@ -59,7 +59,7 @@ namespace TeamRadio56.SimHub
             { "row_voice", "보이스" },
             { "hint_voice", "멘트 언어와 안 맞으면 자동 보정합니다" },
             // 콤보 선택지 표시명 — 저장값은 그대로, 화면에만 설명을 붙인다
-            { "choice_python", "python — 전체 기능 (LLM 멘트·한국어 포함)" },
+            { "choice_python", "python — 전체 기능 (LLM 멘트 포함)" },
             { "choice_builtin", "builtin — 간편 (설치 없음, 캐시 음성)" },
             { "choice_kokoro", "kokoro — 동봉 크루치프 음성 (권장)" },
             { "choice_edge", "edge — 온라인 TTS (아래 보이스 선택)" },
@@ -75,7 +75,6 @@ namespace TeamRadio56.SimHub
             { "voice_en-US-ChristopherNeural", "Christopher — 미국 남성, 저음" },
             { "voice_en-AU-WilliamNeural", "William — 호주 남성" },
             { "voice_ko-KR-InJoonNeural", "인준 — 한국어 남성" },
-            { "builtin_ko_warn", "builtin 모드는 아직 영어 멘트 전용입니다 — 한국어는 python 엔진에서" },
             { "llm_builtin_note", "LLM 멘트(자유 문장 브리핑·격려)는 python 엔진 모드에서만 동작합니다" },
             { "row_rate", "말 속도" },
             { "row_volume", "볼륨" },
@@ -118,8 +117,8 @@ namespace TeamRadio56.SimHub
             { "engine_error", "엔진 오류 — " },
             { "engine_running", "엔진 실행 중 · " },
             { "engine_stopped", "엔진 중지됨 · " },
-            { "engine_builtin", "내장(C#) 엔진 동작 중 — 판단/콜 이식 완료 "
-                                + "(LLM 멘트·한국어는 python 모드)" },
+            { "engine_builtin", "내장(C#) 엔진 동작 중 — 판단/콜·음성·한국어 이식 완료 "
+                                + "(LLM 멘트만 python 모드)" },
             { "no_recent", "최근 무전 없음" },
             { "recent_title", "최근 무전" },
         };
@@ -143,8 +142,8 @@ namespace TeamRadio56.SimHub
             { "btn_engine_restart", "Restart engine" },
             { "btn_engine_log", "Engine log" },
             { "engine_hint", "python = the plugin runs the proven Python engine as a child "
-                             + "process (full features, recommended). builtin = native C# — "
-                             + "calls are fully ported; LLM lines and Korean still need python mode." },
+                             + "process (full features). builtin = native C# — calls, cached voice, "
+                             + "edge synthesis and Korean are ported; only LLM lines need python." },
             { "engine_apply_hint", "After changing settings, press [Restart engine] to apply." },
             { "row_mode", "Mode" },
             { "hint_mode", "switches immediately" },
@@ -163,7 +162,7 @@ namespace TeamRadio56.SimHub
             { "hint_voice_engine", "then [Restart engine]" },
             { "row_voice", "Voice" },
             { "hint_voice", "auto-corrected if it doesn't match the radio language" },
-            { "choice_python", "python — full features (LLM radio, Korean)" },
+            { "choice_python", "python — full features (incl. LLM radio)" },
             { "choice_builtin", "builtin — simple (no install, cached voice)" },
             { "choice_kokoro", "kokoro — bundled crew chief voice (recommended)" },
             { "choice_edge", "edge — online TTS (pick a voice below)" },
@@ -179,7 +178,6 @@ namespace TeamRadio56.SimHub
             { "voice_en-US-ChristopherNeural", "Christopher — American male, deep" },
             { "voice_en-AU-WilliamNeural", "William — Australian male" },
             { "voice_ko-KR-InJoonNeural", "InJoon — Korean male" },
-            { "builtin_ko_warn", "builtin mode is English-only for now — use the python engine for Korean" },
             { "llm_builtin_note", "LLM radio (free-form briefings, encouragement) only works in python engine mode" },
             { "row_rate", "Speech rate" },
             { "row_volume", "Volume" },
@@ -222,8 +220,8 @@ namespace TeamRadio56.SimHub
             { "engine_error", "Engine error — " },
             { "engine_running", "Engine running · " },
             { "engine_stopped", "Engine stopped · " },
-            { "engine_builtin", "Native (C#) engine running — calls fully ported "
-                                + "(LLM lines & Korean need python mode)" },
+            { "engine_builtin", "Built-in C# engine running — calls, voice and Korean ported "
+                                + "(only LLM lines need python mode)" },
             { "no_recent", "No recent radio" },
             { "recent_title", "Recent radio" },
         };

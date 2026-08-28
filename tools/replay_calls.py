@@ -62,13 +62,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--replay", required=True)
     parser.add_argument("--out", default=None)
+    parser.add_argument("--lang", default="en", choices=("en", "ko"),
+                        help="C# Messages와 문장 단위 대조 — 양쪽 같은 언어로")
     args = parser.parse_args()
 
     # 존재하지 않는 경로 → 항상 DEFAULTS 사용 (회귀 결정성)
     cfg = load_config("__defaults_only__")
-    # 회귀는 언어 en 고정 — C# 쪽 Messages(en)와 문장 단위로 비교되므로
     from messages import set_language
-    set_language("en")
+    set_language(args.lang)
 
     vclock = _VirtualTime()
     events.time = vclock          # events.py의 time.monotonic() 호출을 가로챔

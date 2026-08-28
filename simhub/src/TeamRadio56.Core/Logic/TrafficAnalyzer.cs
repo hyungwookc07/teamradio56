@@ -91,27 +91,10 @@ namespace TeamRadio56.Core.Logic
             return 0;   // 서열 불명
         }
 
-        // voice.py CLASS_NAMES — 다중 종합 문장의 클래스 표기
-        private static readonly KeyValuePair<string, string>[] ClassNames =
-        {
-            new KeyValuePair<string, string>("hypercar", "Hypercar"),
-            new KeyValuePair<string, string>("lmh", "Hypercar"),
-            new KeyValuePair<string, string>("lmdh", "Hypercar"),
-            new KeyValuePair<string, string>("lmp2", "LMP2"),
-            new KeyValuePair<string, string>("lmgt3", "GT3"),
-            new KeyValuePair<string, string>("gt3", "GT3"),
-            new KeyValuePair<string, string>("gte", "GTE"),
-        };
-
+        /// <summary>클래스 표기 — Messages.ClassDisplay 위임 (기존 호출부 호환).</summary>
         public static string ClassName(string cls)
         {
-            string c = (cls ?? "").ToLowerInvariant();
-            foreach (KeyValuePair<string, string> kv in ClassNames)
-            {
-                if (c.Contains(kv.Key))
-                    return kv.Value;
-            }
-            return "faster car";
+            return Messages.ClassDisplay(cls);
         }
 
         private sealed class CarTrack
@@ -408,7 +391,7 @@ namespace TeamRadio56.Core.Logic
             {
                 Type = EventTypes.TrafficUpdate,
                 Priority = Priority.High,
-                Message = "Stopped car ahead. Change your line early.",
+                Message = Messages.Get("stopped_hazard"),
                 DedupKey = "hazard_" + t.Cid,
                 Ttl = 8.0,
                 Tone = "urgent",
@@ -795,17 +778,19 @@ namespace TeamRadio56.Core.Logic
                     continue;
                 if (st == Alongside)
                 {
-                    string side = cars[0].Side == "left" ? "on your left"
-                        : cars[0].Side == "right" ? "on your right" : "alongside";
-                    clauses.Add(ClassName(cars[0].Cls) + " " + side);
+                    string key = cars[0].Side == "left" ? "multi_alongside_left"
+                        : cars[0].Side == "right" ? "multi_alongside_right"
+                        : "multi_alongside";
+                    clauses.Add(Messages.Get(key,
+                        "cls", Messages.ClassDisplay(cars[0].Cls)));
                 }
                 else if (st == NearbyBehind)
                 {
-                    clauses.Add(NamesOf(cars) + " behind");
+                    clauses.Add(Messages.Get("multi_behind", "names", NamesOf(cars)));
                 }
                 else
                 {
-                    clauses.Add(NamesOf(cars) + " closing");
+                    clauses.Add(Messages.Get("multi_closing", "names", NamesOf(cars)));
                 }
             }
             if (clauses.Count == 0)
@@ -819,7 +804,8 @@ namespace TeamRadio56.Core.Logic
                     break;
                 }
             }
-            string tail = (aheadFree && clauses.Count >= 2) ? " Ahead is clear." : "";
+            string tail = (aheadFree && clauses.Count >= 2)
+                ? Messages.Get("multi_ahead_clear") : "";
             return string.Join(". ", clauses) + "." + tail;
         }
 
@@ -830,7 +816,7 @@ namespace TeamRadio56.Core.Logic
             var counts = new Dictionary<string, int>();
             foreach (CarTrack c in cars)
             {
-                string key = ClassName(c.Cls);
+                string key = Messages.ClassDisplay(c.Cls);
                 if (!counts.ContainsKey(key))
                 {
                     counts[key] = 0;
@@ -843,11 +829,11 @@ namespace TeamRadio56.Core.Logic
             {
                 int n = counts[name];
                 if (n == 1)
-                    parts.Add("one " + name);
+                    parts.Add(Messages.Get("multi_one", "name", name));
                 else if (n == 2)
-                    parts.Add("two " + name + "s");
+                    parts.Add(Messages.Get("multi_two", "name", name));
                 else
-                    parts.Add(n + " " + name + "s");
+                    parts.Add(Messages.Get("multi_n", "name", name, "n", n));
             }
             return string.Join(", ", parts);
         }

@@ -23,7 +23,8 @@ namespace TeamRadio56.Core.Logic
         public PhrasePool(Random rng = null)
         {
             _rng = rng ?? new Random();
-            foreach (PhraseSet set in PhraseLines.All)
+            // 언어는 시작(엔진 초기화) 때 정해진다 — Messages.SetLanguage 이후 생성할 것
+            foreach (PhraseSet set in Messages.IsKo ? PhraseLines.Ko : PhraseLines.All)
             {
                 List<PhraseSet> list;
                 if (!_pools.TryGetValue(set.Pool, out list))

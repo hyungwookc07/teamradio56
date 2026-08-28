@@ -31,19 +31,6 @@ namespace TeamRadio56.Core.Logic
             get { return _laptimeOn || _statusLaps > 0; }
         }
 
-        private static string FmtLaptime(double sec)
-        {
-            double m = Math.Floor(sec / 60.0);
-            double s = sec - m * 60.0;
-            if (m >= 1)
-            {
-                // "2 01.8"은 TTS가 201.8로 읽는다 — "2 oh 1.8" (two oh one point eight)
-                return ((long)m).ToString(CultureInfo.InvariantCulture) + " "
-                       + (s < 10 ? "oh " : "")
-                       + s.ToString("F1", CultureInfo.InvariantCulture);
-            }
-            return s.ToString("F1", CultureInfo.InvariantCulture);
-        }
 
         public void OnLap(RaceState state, Snapshot snap, EventBus bus,
                           Dictionary<string, object> fuelStatus,
@@ -67,9 +54,10 @@ namespace TeamRadio56.Core.Logic
                     }
                 }
                 bool isBest = validCount >= 2 && lap.LapTime <= best;
-                string text = "Last lap " + FmtLaptime(lap.LapTime) + ".";
+                string text = Messages.Get("last_lap_report",
+                    "t", Messages.FmtLaptime(lap.LapTime));
                 if (isBest)
-                    text += " Best lap.";
+                    text += Messages.Get("best_lap_suffix");
                 bus.Push(new RadioEvent
                 {
                     Type = EventTypes.LapTimeReport,
@@ -107,19 +95,20 @@ namespace TeamRadio56.Core.Logic
         {
             var parts = new List<string>();
             if (lap.ClassPlace > 0)
-                parts.Add("P" + lap.ClassPlace + ".");
+                parts.Add(Messages.Get("status_pos", "p", lap.ClassPlace));
             var gaps = new List<string>();
             if (0 <= lap.GapAhead && lap.GapAhead <= 60)
-                gaps.Add("ahead " + lap.GapAhead.ToString("F1", CultureInfo.InvariantCulture));
+                gaps.Add(Messages.Get("status_gap_ahead", "g", lap.GapAhead));
             if (0 <= lap.GapBehind && lap.GapBehind <= 60)
-                gaps.Add("behind " + lap.GapBehind.ToString("F1", CultureInfo.InvariantCulture));
+                gaps.Add(Messages.Get("status_gap_behind", "g", lap.GapBehind));
             if (gaps.Count > 0)
-                parts.Add("Gap " + string.Join(", ", gaps) + ".");
+                parts.Add(Messages.Get("status_gaps", "gaps", string.Join(", ", gaps)));
             object fuelLaps;
             if (fuelStatus != null && fuelStatus.TryGetValue("fuel_laps", out fuelLaps)
                 && fuelLaps != null)
             {
-                parts.Add("Fuel " + VoiceRenderer.LapsText((double)fuelLaps) + ".");
+                parts.Add(Messages.Get("status_fuel",
+                    "n", Messages.LapsText((double)fuelLaps)));
             }
             object worstObj;
             if (tyreStatus != null && tyreStatus.TryGetValue("worst", out worstObj)
@@ -131,11 +120,12 @@ namespace TeamRadio56.Core.Logic
                     ? (double?)(double)leftObj : null;
                 if (left.HasValue && left.Value <= 20)
                 {
-                    parts.Add("Tyres " + VoiceRenderer.LapsText(left.Value) + ".");
+                    parts.Add(Messages.Get("status_tyres",
+                        "n", Messages.LapsText(left.Value)));
                 }
                 else
                 {
-                    parts.Add("Tyres good.");
+                    parts.Add(Messages.Get("status_tyres_good"));
                 }
             }
             if (parts.Count == 0)

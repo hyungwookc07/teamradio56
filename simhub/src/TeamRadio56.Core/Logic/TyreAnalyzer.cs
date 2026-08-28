@@ -108,7 +108,8 @@ namespace TeamRadio56.Core.Logic
                         Type = EventTypes.Damage,
                         Priority = Priority.Critical,
                         DedupKey = "flat_" + i,
-                        Message = "Puncture, " + WheelNames[i] + "! Box now, take it easy.",
+                        Message = Messages.Get("puncture_now",
+                            "wheel", Messages.WheelName(i)),
                     };
                     ev.Data["wheel"] = WheelNames[i];
                     bus.Push(ev);

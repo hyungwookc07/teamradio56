@@ -31,15 +31,15 @@ namespace TeamRadio56.Core.Logic
             SessionInfo ses = snap.Session;
             int stype = ses.SessionType;
             bool isRace = stype >= 10;
-            string kind = isRace ? "Race"
-                : stype == 9 ? "Warmup"
-                : stype >= 5 ? "Qualifying" : "Practice";
+            string kind = Messages.Get(isRace ? "kind_race"
+                : stype == 9 ? "kind_warmup"
+                : stype >= 5 ? "kind_quali" : "kind_practice");
             string track = (ses.Track ?? "").Trim();
             var parts = new List<string>
             {
                 track.Length > 0
-                    ? track + ". " + kind + " session."
-                    : "Radio check. " + kind + " session.",
+                    ? Messages.Get("brief_track", "track", track, "kind", kind)
+                    : Messages.Get("brief_radio", "kind", kind),
             };
 
             // 세션 길이 — 시간제(잔여 기준)와 랩제 구분. 미기입 거대값은 무시.
@@ -55,17 +55,19 @@ namespace TeamRadio56.Core.Logic
                 if (minutes >= 60 && minutes % 60 == 0)
                 {
                     int h = minutes / 60;
-                    length = h + " hour" + (h > 1 ? "s" : "");
+                    length = Messages.Get(h > 1 ? "brief_hours_plural" : "brief_hours",
+                        "h", h);
                 }
                 else
                 {
-                    length = minutes + " minutes";
+                    length = Messages.Get("brief_minutes", "m", minutes);
                 }
-                parts.Add(length + " " + (midJoin ? "remaining" : "long") + ".");
+                parts.Add(Messages.Get(midJoin ? "brief_len_remaining" : "brief_len_long",
+                    "length", length));
             }
             else if (0 < maxLaps && maxLaps < 10000)
             {
-                parts.Add(maxLaps + " laps.");
+                parts.Add(Messages.Get("brief_laps", "n", maxLaps));
             }
 
             if (isRace)
@@ -79,30 +81,23 @@ namespace TeamRadio56.Core.Logic
                 int cp = RaceState.ClassPlaceOf(snap, me);
                 if (clsCount > 1)
                 {
-                    parts.Add("P" + cp + " of " + clsCount + " in class"
-                              + (midJoin ? "." : " on the grid."));
+                    parts.Add(Messages.Get(midJoin ? "brief_grid_mid" : "brief_grid",
+                        "cp", cp, "n", clsCount));
                 }
             }
 
             double rain = ses.Raining;
             if (rain >= 0.05)
-                parts.Add("It's raining, watch the grip.");
+                parts.Add(Messages.Get("brief_rain"));
             else if (ses.TrackTemp > 0)
-            {
-                parts.Add("Track "
-                    + ses.TrackTemp.ToString("F0", CultureInfo.InvariantCulture)
-                    + " degrees.");
-            }
+                parts.Add(Messages.Get("brief_temp", "t", ses.TrackTemp));
 
             double fuel = snap.Player != null ? snap.Player.Fuel : 0.0;
             if (fuel != 0.0)
-            {
-                parts.Add("Fuel "
-                    + fuel.ToString("F0", CultureInfo.InvariantCulture) + " litres.");
-            }
+                parts.Add(Messages.Get("brief_fuel", "f", fuel));
 
-            parts.Add(midJoin ? "Carry on."
-                : isRace ? "Calm first lap." : "Out when you're ready.");
+            parts.Add(Messages.Get(midJoin ? "brief_carry_on"
+                : isRace ? "brief_calm" : "brief_out"));
             bus.Push(new RadioEvent
             {
                 Type = EventTypes.SessionBriefing,

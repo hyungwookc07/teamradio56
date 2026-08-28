@@ -39,7 +39,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.12.1-ui";
+        public const string Version = "0.13.0-ko";
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
@@ -240,6 +240,9 @@ namespace TeamRadio56.SimHub
         /// <summary>내장(C#) 엔진 초기화 — 분석기 9종 + 보이스 워커.</summary>
         private void InitBuiltin()
         {
+            // 멘트 언어 — 분석기/멘트 풀 생성 전에 정해야 한다
+            TeamRadio56.Core.Logic.Messages.SetLanguage(Settings.VoiceLanguage);
+
             var cfg = new EngineSettings
             {
                 CooldownScale = Settings.CooldownScale,
@@ -284,9 +287,19 @@ namespace TeamRadio56.SimHub
                 }
                 catch (Exception) { cacheDir = null; }
             }
-            var cache = new VoiceCache(cacheDir, Settings.EdgeVoice,
+            // 파이썬 build_engine과 같은 자동 보정 — 멘트 언어와 보이스 불일치,
+            // kokoro는 영어 전용이라 ko 멘트는 edge로
+            bool ko = string.Equals(Settings.VoiceLanguage, "ko",
+                                    StringComparison.OrdinalIgnoreCase);
+            string edgeVoice = Settings.EdgeVoice ?? "en-GB-RyanNeural";
+            if (ko && !edgeVoice.StartsWith("ko"))
+                edgeVoice = "ko-KR-InJoonNeural";
+            else if (!ko && edgeVoice.StartsWith("ko"))
+                edgeVoice = "en-GB-RyanNeural";
+            string enginePref = ko ? "edge" : Settings.VoiceEngine;
+            var cache = new VoiceCache(cacheDir, edgeVoice,
                 Settings.SpeechRatePercent, "bm_george", Settings.RadioFx,
-                Settings.VoiceEngine);
+                enginePref);
             _sink = new AudioSink(cache, _speech, Settings.Volume);
             _voice = new VoiceWorker(_chief.Bus, _sink);
             _voice.Enabled = Settings.VoiceEnabled;
@@ -302,15 +315,14 @@ namespace TeamRadio56.SimHub
                 }
                 catch (Exception) { }
             }
-            FileLog.Info("내장(C#) 엔진 모드 — 분석기 9종 활성. 오디오 캐시: {0}",
+            FileLog.Info("내장(C#) 엔진 모드 — 분석기 9종 활성, 멘트 언어 {0}. "
+                + "오디오 캐시: {1}",
+                TeamRadio56.Core.Logic.Messages.Lang,
                 cacheDir == null ? "(없음 — Windows TTS 폴백)"
                                  : cacheDir + " (무전 효과본 " + cacheFiles + "개)");
-            if (string.Equals(Settings.VoiceLanguage, "ko",
-                              StringComparison.OrdinalIgnoreCase))
-            {
-                FileLog.Warn("내장 엔진은 아직 영어 멘트만 지원합니다 — "
-                             + "한국어 멘트는 python 엔진 모드를 사용하세요");
-            }
+            if (ko)
+                FileLog.Info("한국어 멘트 — kokoro 캐시는 영어 전용이라 edge 합성 사용 ("
+                             + edgeVoice + ")");
         }
 
         public void End(PluginManager pluginManager)

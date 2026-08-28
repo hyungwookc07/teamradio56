@@ -240,8 +240,8 @@ namespace TeamRadio56.Core.Logic
                     {
                         Type = EventTypes.WheelDamage,
                         Priority = Priority.Critical,
-                        Message = WheelNames[i]
-                                  + " wheel is gone! Careful, bring it to the pits slowly.",
+                        Message = Messages.Get("wheel_gone",
+                            "wheel", Messages.WheelName(i)),
                         DedupKey = "wheel_det_" + i,
                         Tone = "urgent",
                         Ttl = 10.0,
@@ -299,14 +299,16 @@ namespace TeamRadio56.Core.Logic
             for (int i = 0; i < nw; i++)
             {
                 if (wheels[i].Detached)
-                    detached.Add(WheelNames[i]);
+                    detached.Add(Messages.WheelName(i));
                 else if (wheels[i].Flat)
-                    flats.Add(WheelNames[i]);
+                    flats.Add(Messages.WheelName(i));
             }
             if (detached.Count > 0)
-                problems.Add(string.Join("/", detached) + " wheel damage");
+                problems.Add(Messages.Get("item_wheel_damage",
+                    "names", string.Join("/", detached)));
             if (flats.Count > 0)
-                problems.Add(string.Join("/", flats) + " puncture");
+                problems.Add(Messages.Get("item_puncture",
+                    "names", string.Join("/", flats)));
 
             // 충격 전후 공기압 비교 — 서서히 새는 누출 조기 발견
             if (_prePressures != null)
@@ -319,7 +321,8 @@ namespace TeamRadio56.Core.Logic
                         && _prePressures[i] - wheels[i].Pressure >= ImpactPressureDropKpa)
                     {
                         _punctureWarned.Add(i);
-                        problems.Add(WheelNames[i] + " losing pressure");
+                        problems.Add(Messages.Get("item_losing_pressure",
+                            "name", Messages.WheelName(i)));
                     }
                 }
             }
@@ -331,30 +334,31 @@ namespace TeamRadio56.Core.Logic
             for (int i = 0; i < Math.Min(dents.Length, 8); i++)
             {
                 if (dents[i] >= 2)
-                    heavyZones.Add(DentZones[i]);
+                    heavyZones.Add(Messages.ZoneDisplay(DentZones[i]));
                 if (dents[i] == 1)
                     light = true;
             }
             if (heavyZones.Count > 0)
-                problems.Add("heavy bodywork damage, " + string.Join("/", heavyZones));
+                problems.Add(Messages.Get("item_heavy_body",
+                    "zones", string.Join("/", heavyZones)));
 
             string message;
             if (problems.Count > 0)
             {
                 bool needBox = detached.Count > 0 || flats.Count > 0;
-                string advice = needBox
-                    ? "Prepare to box."
-                    : "Keep pace, I'll make the repair call.";
-                message = "Check done. " + string.Join(", ", problems) + ". " + advice;
+                string advice = Messages.Get(needBox
+                    ? "report_advice_box" : "report_advice_keep");
+                message = Messages.Get("report_problems",
+                    "problems", string.Join(", ", problems), "advice", advice);
                 state.SetIssue("damage", "점검 결과: " + string.Join(", ", problems));
             }
             else if (light)
             {
-                message = "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on.";
+                message = Messages.Get("report_marks");
             }
             else
             {
-                message = "Check done. No damage, car is clean. Carry on.";
+                message = Messages.Get("report_clean");
             }
             bus.Push(new RadioEvent
             {
@@ -390,10 +394,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.DamageReport,
                     Priority = Priority.High,
-                    Message = "Front aero down "
-                              + (drop * 1000).ToString("F0", CultureInfo.InvariantCulture)
-                              + " millimetres. Splitter damage. "
-                              + "Careful in the fast stuff. Repair call on pace.",
+                    Message = Messages.Get("wing_down", "mm", drop * 1000),
                     DedupKey = "wing_damage",
                     Ttl = 20.0,
                     Tone = "casual",
@@ -436,8 +437,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.DamageReport,
                     Priority = Priority.Critical,
-                    Message = "Alignment is badly out. You're steering on the straights. "
-                              + "Box for repairs.",
+                    Message = Messages.Get("align_severe"),
                     DedupKey = "align_severe",
                     Tone = "urgent",
                     Ttl = 15.0,
@@ -453,8 +453,7 @@ namespace TeamRadio56.Core.Logic
             {
                 Type = EventTypes.DamageReport,
                 Priority = Priority.High,
-                Message = "Steering pull on the straights. Alignment's off from that hit. "
-                          + "It'll eat the tyre. Repair call on pace.",
+                Message = Messages.Get("align_mild"),
                 DedupKey = "align_damage",
                 Ttl = 20.0,
                 Tone = "casual",
@@ -497,8 +496,7 @@ namespace TeamRadio56.Core.Logic
             {
                 Type = EventTypes.DamageReport,
                 Priority = Priority.Critical,
-                Message = "Rear keeps stepping out. Looks damage-related. "
-                          + "Don't push, recommend box.",
+                Message = Messages.Get("rear_instab"),
                 DedupKey = "rear_instab",
                 Tone = "urgent",
                 Ttl = 15.0,
@@ -548,8 +546,8 @@ namespace TeamRadio56.Core.Logic
                     {
                         Type = EventTypes.TyreWarning,
                         Priority = Priority.High,
-                        Message = WheelNames[i] + " losing pressure. Slow puncture. "
-                                  + "We change it next stop.",
+                        Message = Messages.Get("slow_puncture",
+                            "wheel", Messages.WheelName(i)),
                         DedupKey = "slowpunc_" + i,
                         Ttl = 20.0,
                         Tone = "casual",
@@ -592,13 +590,13 @@ namespace TeamRadio56.Core.Logic
             double oil = p.OilTemp;
             if (p.Overheating || water >= _waterWarn || oil >= _oilWarn)
             {
-                string what = water >= _waterWarn ? "Water temp"
-                    : oil >= _oilWarn ? "Oil temp" : "Engine temp";
+                string what = Messages.Get(water >= _waterWarn ? "engine_what_water"
+                    : oil >= _oilWarn ? "engine_what_oil" : "engine_what_engine");
                 var ev = new RadioEvent
                 {
                     Type = EventTypes.EngineWarning,
                     Priority = Priority.High,
-                    Message = what + " climbing. Get out of the slipstream, give it air.",
+                    Message = Messages.Get("engine_warn", "what", what),
                     Ttl = 30.0,
                 };
                 ev.Data["water"] = water;
@@ -624,9 +622,7 @@ namespace TeamRadio56.Core.Logic
                     {
                         Type = EventTypes.BrakeWarning,
                         Priority = Priority.Normal,
-                        Message = "Brakes averaging "
-                                  + avgBrake.ToString("F0", CultureInfo.InvariantCulture)
-                                  + " degrees. Brake a touch earlier, cool them.",
+                        Message = Messages.Get("brake_warn", "t", avgBrake),
                         Ttl = 30.0,
                     };
                     ev.Data["avg_brake"] = (int)Math.Round(avgBrake, MidpointRounding.ToEven);
@@ -668,8 +664,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.LapAnalysis,
                     Priority = Priority.Normal,
-                    Message = "Damage is costing " + deltaS + " a lap. "
-                              + "We repair at the next stop. It pays off.",
+                    Message = Messages.Get("repair_cost", "delta", delta),
                     DedupKey = "repair_" + _impactLap.Value,
                 };
                 ev.Data["triggers"] = new[]
@@ -688,7 +683,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.Damage,
                     Priority = Priority.Normal,
-                    Message = "That contact — no effect on pace. Forget it.",
+                    Message = Messages.Get("dmg_no_effect"),
                     DedupKey = "dmg_ok_" + _impactLap.Value,
                     Ttl = 30.0,
                 });

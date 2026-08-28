@@ -268,8 +268,9 @@ class RaceControlAnalyzer:
     def _emit_penalty(self, n: int, now: float, state: SessionState,
                       bus: EventBus) -> None:
         detail = None
-        for t, msg in reversed(self._recent_msgs):
-            detail = _parse_penalty(msg)
+        # 주의: 루프 변수를 msg로 쓰면 messages.msg 함수를 가린다 (실크래시)
+        for _t, raw in reversed(self._recent_msgs):
+            detail = _parse_penalty(raw)
             if detail:
                 break
         if detail:
