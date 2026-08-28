@@ -58,6 +58,17 @@ namespace TeamRadio56.SimHub
             return Loc.L(key);
         }
 
+        /// <summary>콤보 표시명: "{prefix}{값}" Loc 키가 있으면 그걸, 없으면 값 그대로.</summary>
+        private static Func<string, string> Choice(string prefix)
+        {
+            return v =>
+            {
+                string key = prefix + v;
+                string text = Loc.L(key);
+                return text == key ? v : text;
+            };
+        }
+
         private DispatcherTimer _saveTimer;
 
         /// <summary>
@@ -104,8 +115,8 @@ namespace TeamRadio56.SimHub
                         S.UiLanguage = v;
                     Loc.Lang = v;
                     RebuildLater();   // 콤보 이벤트가 끝난 뒤 새 언어로 재조립
-                });
-            ((FrameworkElement)langCombo).Width = 80;
+                }, v => v == "ko" ? "한국어" : "English");
+            ((FrameworkElement)langCombo).Width = 100;
             ((FrameworkElement)langCombo).Margin = new Thickness(16, 4, 0, 0);
             header.Children.Add(langCombo);
             root.Children.Add(header);
@@ -196,7 +207,7 @@ namespace TeamRadio56.SimHub
                     }
                     Dispatcher.BeginInvoke(new Action(Refresh));
                 });
-            }), L("hint_mode"));
+            }, Choice("choice_")), L("hint_mode"));
 
             // builtin 모드: 사전 생성 오디오 캐시 폴더 (비우면 자동 탐색)
             if (!python)
@@ -243,11 +254,26 @@ namespace TeamRadio56.SimHub
         {
             StackPanel box = Section(root, L("sec_voice"));
 
+            // 직관성 원칙: 지금 조합에서 의미 없는 항목은 아예 보여주지 않는다
+            bool builtin = string.Equals(S.EngineMode, "builtin",
+                                         StringComparison.OrdinalIgnoreCase);
+            bool edge = string.Equals(S.VoiceEngine, "edge",
+                                      StringComparison.OrdinalIgnoreCase);
+
             Row(box, L("row_voice_lang"),
                 MakeCombo(PluginSettings.VoiceLanguageChoices, S.VoiceLanguage, v =>
                 {
                     S.VoiceLanguage = v;
-                }), L("hint_voice_lang"));
+                    RebuildLater();   // builtin+ko 경고 표시가 달라진다
+                }, Choice("choice_lang_")), L("hint_voice_lang"));
+
+            if (builtin && string.Equals(S.VoiceLanguage, "ko",
+                                         StringComparison.OrdinalIgnoreCase))
+            {
+                var warn = Hint(L("builtin_ko_warn"));
+                warn.Foreground = Off;
+                box.Children.Add(warn);
+            }
 
             Row(box, L("row_voice_on"), MakeCheck(S.VoiceEnabled, v =>
             {
@@ -258,32 +284,46 @@ namespace TeamRadio56.SimHub
                 MakeCombo(PluginSettings.VoiceEngineChoices, S.VoiceEngine, v =>
                 {
                     S.VoiceEngine = v;
-                }), L("hint_voice_engine"));
+                    RebuildLater();   // 보이스/말 속도는 edge에서만 의미 있다
+                }, Choice("choice_")), L("hint_voice_engine"));
 
-            Row(box, L("row_voice"), MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
+            // 보이스와 말 속도는 edge-tts 전용 — kokoro 캐시 음성엔 영향이 없다
+            if (edge)
             {
-                S.EdgeVoice = v;
-            }), L("hint_voice"));
+                Row(box, L("row_voice"),
+                    MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
+                    {
+                        S.EdgeVoice = v;
+                    }, Choice("voice_")), L("hint_voice"));
 
-            Row(box, L("row_rate"), MakeSlider(-20, 40, 5, S.SpeechRatePercent, v =>
-            {
-                S.SpeechRatePercent = (int)Math.Round(v);
-            }, "{0:+0;-0;0}%"));
+                Row(box, L("row_rate"), MakeSlider(-20, 40, 5, S.SpeechRatePercent, v =>
+                {
+                    S.SpeechRatePercent = (int)Math.Round(v);
+                }, "{0:+0;-0;0}%"));
+            }
 
-            Row(box, L("row_volume"), MakeSlider(0.1, 1.0, 0.05, S.Volume, v =>
+            // builtin 재생(SoundPlayer)은 볼륨/노이즈 조절이 없다 —
+            // 노이즈는 캐시에 이미 구워져 있고, 볼륨은 윈도우 믹서로
+            if (!builtin)
             {
-                S.Volume = v;
-            }, "{0:P0}"));
+                Row(box, L("row_volume"), MakeSlider(0.1, 1.0, 0.05, S.Volume, v =>
+                {
+                    S.Volume = v;
+                }, "{0:P0}"));
+            }
 
             Row(box, L("row_radiofx"), MakeCheck(S.RadioFx, v =>
             {
                 S.RadioFx = v;
             }), L("hint_radiofx"));
 
-            Row(box, L("row_noise"), MakeSlider(0.0, 0.02, 0.002, S.RadioNoise, v =>
+            if (!builtin)
             {
-                S.RadioNoise = v;
-            }, "{0:0.000}"), L("hint_noise"));
+                Row(box, L("row_noise"), MakeSlider(0.0, 0.02, 0.002, S.RadioNoise, v =>
+                {
+                    S.RadioNoise = v;
+                }, "{0:0.000}"), L("hint_noise"));
+            }
         }
 
         private void BuildChatter(StackPanel root)
@@ -292,7 +332,7 @@ namespace TeamRadio56.SimHub
             Row(box, L("row_preset"), MakeCombo(PluginSettings.ChatterChoices, S.ChatterPreset, v =>
             {
                 S.ChatterPreset = v;
-            }), L("hint_preset"));
+            }, Choice("choice_")), L("hint_preset"));
             box.Children.Add(Hint(L("chatter_hint")));
         }
 
@@ -340,6 +380,13 @@ namespace TeamRadio56.SimHub
         private void BuildLlm(StackPanel root)
         {
             StackPanel box = Section(root, L("sec_llm"));
+
+            // builtin 모드는 LLM 미지원 — 죽은 설정을 늘어놓는 대신 한 줄로 안내
+            if (string.Equals(S.EngineMode, "builtin", StringComparison.OrdinalIgnoreCase))
+            {
+                box.Children.Add(Hint(L("llm_builtin_note")));
+                return;
+            }
             box.Children.Add(Hint(L("llm_hint")));
 
             Row(box, L("row_llm_on"), MakeCheck(S.LlmEnabled, v =>
@@ -537,31 +584,36 @@ namespace TeamRadio56.SimHub
             return panel;
         }
 
-        private UIElement MakeCombo(string[] items, string selected, Action<string> setter)
+        private UIElement MakeCombo(string[] items, string selected, Action<string> setter,
+                                    Func<string, string> display = null)
         {
+            // display: 저장값(items)은 그대로 두고 화면에만 설명 붙은 이름을 보여준다
             var combo = new ComboBox
             {
-                Width = 240,
+                Width = display == null ? 240 : 320,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            var values = new System.Collections.Generic.List<string>(items);
             int index = -1;
-            for (int i = 0; i < items.Length; i++)
+            for (int i = 0; i < values.Count; i++)
             {
-                combo.Items.Add(items[i]);
-                if (string.Equals(items[i], selected, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(values[i], selected, StringComparison.OrdinalIgnoreCase))
                     index = i;
             }
             if (index < 0 && !string.IsNullOrEmpty(selected))
             {
-                combo.Items.Add(selected);     // 목록에 없는 값도 유지
-                index = combo.Items.Count - 1;
+                values.Add(selected);          // 목록에 없는 값도 유지
+                index = values.Count - 1;
             }
+            foreach (string v in values)
+                combo.Items.Add(display != null ? display(v) : v);
             combo.SelectedIndex = index;
             combo.SelectionChanged += (s, e) =>
             {
-                if (combo.SelectedItem != null)
+                int i = combo.SelectedIndex;
+                if (i >= 0 && i < values.Count)
                 {
-                    setter(combo.SelectedItem.ToString());
+                    setter(values[i]);
                     Save();
                 }
             };
