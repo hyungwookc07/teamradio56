@@ -39,6 +39,25 @@ namespace TeamRadio56.Replay
                     dumpCacheNames = true;
                 else if (args[i] == "--check-cache" && i + 1 < args.Length)
                     checkCacheDir = args[++i];
+                else if (args[i] == "--gec")
+                {
+                    // 파이썬 edge_tts.DRM.generate_sec_ms_gec와 대조용
+                    Console.WriteLine(EdgeTtsClient.GenerateSecMsGec());
+                    return 0;
+                }
+                else if (args[i] == "--synth" && i + 1 < args.Length)
+                {
+                    string text = args[++i];
+                    string dst = outPath ?? "synth_test.mp3";
+                    for (int j = i + 1; j + 1 < args.Length; j++)
+                        if (args[j] == "--out") dst = args[j + 1];
+                    bool ok = EdgeTtsClient.Synthesize(
+                        text, "en-GB-RyanNeural", "+10%", "-6Hz", dst);
+                    Console.WriteLine(ok
+                        ? "OK " + new FileInfo(dst).Length + " bytes → " + dst
+                        : "FAIL: " + (EdgeTtsClient.LastError ?? "?"));
+                    return ok ? 0 : 1;
+                }
             }
             if (dumpPregen)
                 return DumpPregen(outPath);

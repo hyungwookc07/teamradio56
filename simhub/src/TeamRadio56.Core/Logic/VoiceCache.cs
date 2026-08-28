@@ -80,6 +80,33 @@ namespace TeamRadio56.Core.Logic
         }
 
         /// <summary>
+        /// 런타임 edge 합성에 필요한 정보 — 결과를 저장할 캐시 경로(mp3)와
+        /// 톤이 반영된 전달 파라미터. 파이썬 EdgeTTSEngine과 같은 키라
+        /// 여기서 합성해 둔 파일은 파이썬 엔진에서도 캐시 히트한다.
+        /// </summary>
+        public bool EdgeSynthTarget(string text, string tone,
+                                    out string path, out string rate, out string pitch)
+        {
+            path = rate = pitch = null;
+            if (!Available || string.IsNullOrEmpty(text))
+                return false;
+            KeyValuePair<int, string> delivery;
+            if (!ToneDelivery.TryGetValue(tone ?? "casual", out delivery))
+                delivery = ToneDelivery["casual"];
+            rate = (_edgeBaseRate + delivery.Key)
+                .ToString("+0;-0", CultureInfo.InvariantCulture) + "%";
+            pitch = delivery.Value;
+            path = CachePath(
+                "edge|" + _edgeVoice + "|" + rate + "|" + pitch + "|" + text, "mp3");
+            return true;
+        }
+
+        public string EdgeVoice
+        {
+            get { return _edgeVoice; }
+        }
+
+        /// <summary>
         /// (톤, 텍스트)가 찾게 될 캐시 파일명(원본 기준, 폴더 제외) —
         /// 파이썬 _cache_path와의 파일명 규약 대조(replay-check)용.
         /// </summary>

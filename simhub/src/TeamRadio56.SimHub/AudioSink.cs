@@ -7,21 +7,27 @@ using TeamRadio56.Core.Logic;
 namespace TeamRadio56.SimHub
 {
     /// <summary>
-    /// 내장(C#) 엔진의 발화 출력 — 사전 생성 오디오 캐시(무전 효과 wav)를
-    /// 우선 재생하고, 캐시에 없으면 Windows TTS(SpeechOutput)로 폴백한다.
-    ///
-    /// SoundPlayer는 wav만 지원하지만, 무전 효과가 켜진 캐시는 전부 wav라
-    /// 충분하다 (mp3 원본만 있는 항목은 TTS 폴백).
+    /// 내장(C#) 엔진의 발화 출력 — 3단 폴백:
+    ///   1) 사전 생성 오디오 캐시 (무전 효과 wav 우선, mp3도 재생)
+    ///   2) 캐시 미스 → edge 서비스로 런타임 합성 (mp3, 캐시에 저장돼 재사용)
+    ///   3) 오프라인/실패 → Windows TTS(SpeechOutput)
+    /// 파이썬 엔진의 ChainEngine[캐시 → edge] + SAPI 폴백과 같은 구조.
+    /// 런타임 합성분에는 아직 무전 효과가 안 입혀진다 (캐시 항목만).
     /// </summary>
     public sealed class AudioSink : IVoiceSink, IDisposable
     {
         private readonly VoiceCache _cache;
         private readonly SpeechOutput _fallback;
+        private readonly Mp3Player _mp3 = new Mp3Player();
+        private readonly double _volume;
+        private int _synthFailLogged;
+        private DateTime _synthBlockedUntil = DateTime.MinValue;
 
-        public AudioSink(VoiceCache cache, SpeechOutput fallback)
+        public AudioSink(VoiceCache cache, SpeechOutput fallback, double volume = 0.9)
         {
             _cache = cache;
             _fallback = fallback;
+            _volume = volume;
         }
 
         /// <summary>
@@ -97,12 +103,36 @@ namespace TeamRadio56.SimHub
         public void Speak(string text, string tone, bool urgent)
         {
             string path = _cache != null ? _cache.Resolve(text, tone) : null;
-            if (path == null && _missLogged < 10)
+
+            if (path == null && _cache != null && DateTime.UtcNow >= _synthBlockedUntil)
             {
-                // 캐시 전멸(경로/규약 문제)인지 개별 미스인지 로그로 구분 가능하게
-                _missLogged++;
-                FileLog.Info("캐시 미스 — Windows TTS 폴백: [" + tone + "] " + text);
+                // 캐시 미스 — edge로 런타임 합성해 캐시에 저장 (파이썬과 같은 키)
+                string target, rate, pitch;
+                if (_cache.EdgeSynthTarget(text, tone, out target, out rate, out pitch))
+                {
+                    if (EdgeTtsClient.Synthesize(text, _cache.EdgeVoice, rate, pitch, target))
+                    {
+                        path = target;
+                        if (_missLogged < 10)
+                        {
+                            _missLogged++;
+                            FileLog.Info("캐시 미스 — edge 합성: [" + tone + "] " + text);
+                        }
+                    }
+                    else
+                    {
+                        // 오프라인이면 콜마다 타임아웃으로 막히지 않게 잠시 끈다
+                        _synthBlockedUntil = DateTime.UtcNow.AddSeconds(120);
+                        if (_synthFailLogged < 5)
+                        {
+                            _synthFailLogged++;
+                            FileLog.Warn("edge 합성 실패(" + (EdgeTtsClient.LastError ?? "?")
+                                         + ") — 2분간 Windows TTS로: " + text);
+                        }
+                    }
+                }
             }
+
             if (path != null && path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
             {
                 try
@@ -118,12 +148,20 @@ namespace TeamRadio56.SimHub
                     FileLog.Error("캐시 오디오 재생 실패 — TTS 폴백: " + path, ex);
                 }
             }
+            else if (path != null)
+            {
+                if (_mp3.PlaySync(path, _volume))
+                    return;
+                FileLog.Error("mp3 재생 실패 — TTS 폴백: " + path, null);
+            }
+
             if (_fallback != null)
                 _fallback.Say(text);
         }
 
         public void Dispose()
         {
+            _mp3.Dispose();
         }
     }
 }

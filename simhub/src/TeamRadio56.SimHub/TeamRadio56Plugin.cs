@@ -269,10 +269,25 @@ namespace TeamRadio56.SimHub
                 cacheDir = AudioSink.FindCacheDir(EngineExePath(),
                     Settings != null ? Settings.EngineArgs : null);
             }
+            if (cacheDir == null)
+            {
+                // 동봉 캐시가 없어도 런타임 edge 합성 결과를 모아둘 곳은 필요하다
+                try
+                {
+                    string dllDir = System.IO.Path.GetDirectoryName(
+                        System.Reflection.Assembly.GetExecutingAssembly().Location);
+                    if (dllDir != null)
+                    {
+                        cacheDir = System.IO.Path.Combine(dllDir, "audio_cache");
+                        System.IO.Directory.CreateDirectory(cacheDir);
+                    }
+                }
+                catch (Exception) { cacheDir = null; }
+            }
             var cache = new VoiceCache(cacheDir, Settings.EdgeVoice,
                 Settings.SpeechRatePercent, "bm_george", Settings.RadioFx,
                 Settings.VoiceEngine);
-            _sink = new AudioSink(cache, _speech);
+            _sink = new AudioSink(cache, _speech, Settings.Volume);
             _voice = new VoiceWorker(_chief.Bus, _sink);
             _voice.Enabled = Settings.VoiceEnabled;
             _voice.Start();
