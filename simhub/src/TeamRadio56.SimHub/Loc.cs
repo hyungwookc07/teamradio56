@@ -119,6 +119,8 @@ namespace TeamRadio56.SimHub
             { "engine_stopped", "엔진 중지됨 · " },
             { "engine_builtin", "내장(C#) 엔진 동작 중 — 판단/콜·음성·한국어 이식 완료 "
                                 + "(LLM 멘트만 python 모드)" },
+            { "cache_status", "오디오 캐시(무전 효과본) {0}개 — {1}" },
+            { "cache_missing", "오디오 캐시 없음 — 콜이 edge 합성/Windows TTS로만 나옵니다" },
             { "no_recent", "최근 무전 없음" },
             { "recent_title", "최근 무전" },
         };
@@ -222,7 +224,9 @@ namespace TeamRadio56.SimHub
             { "engine_stopped", "Engine stopped · " },
             { "engine_builtin", "Built-in C# engine running — calls, voice and Korean ported "
                                 + "(only LLM lines need python mode)" },
-            { "no_recent", "No recent radio" },
+                        { "cache_status", "audio cache (radio-fx) {0} files — {1}" },
+            { "cache_missing", "no audio cache — calls fall back to edge synthesis / Windows TTS" },
+{ "no_recent", "No recent radio" },
             { "recent_title", "Recent radio" },
         };
     }

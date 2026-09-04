@@ -39,7 +39,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.13.0-ko";
+        public const string Version = "0.13.1-cachefix";
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
@@ -148,6 +148,10 @@ namespace TeamRadio56.SimHub
 
         /// <summary>설정 화면에 보여줄 한 줄 상태.</summary>
         public string StatusText { get; private set; }
+
+        /// <summary>builtin 오디오 캐시 진단 — 설정 화면 엔진 섹션에 표시.</summary>
+        public string BuiltinCacheDir { get; private set; }
+        public int BuiltinCacheCount { get; private set; }
 
         // -- IWPFSettingsV2 --------------------------------------------------
 
@@ -315,6 +319,8 @@ namespace TeamRadio56.SimHub
                 }
                 catch (Exception) { }
             }
+            BuiltinCacheDir = cacheDir;
+            BuiltinCacheCount = cacheFiles;
             FileLog.Info("내장(C#) 엔진 모드 — 분석기 9종 활성, 멘트 언어 {0}. "
                 + "오디오 캐시: {1}",
                 TeamRadio56.Core.Logic.Messages.Lang,
@@ -427,6 +433,35 @@ namespace TeamRadio56.SimHub
             // 이 줄이 로그에 없으면 버튼/UI 문제, 있는데 "발화 완료"가
             // 없으면 TTS 문제 — 무음 진단의 분기점
             FileLog.Info("[테스트 발화] 버튼 눌림");
+            AudioSink sink = _sink;
+            if (!UsingPythonEngine && sink != null)
+            {
+                // builtin: 실제 발화 경로(캐시 → edge 합성 → Windows TTS)로
+                // 검증되게, 캐시에 반드시 있는 멘트 풀 문구를 쓴다
+                string text = "Radio check. Team radio online.";
+                try
+                {
+                    string[] lines = new TeamRadio56.Core.Logic.PhrasePool()
+                        .Lines("pit_call", "casual");
+                    if (lines.Length > 0)
+                        text = lines[0];
+                }
+                catch (Exception) { }
+                string chosen = text;
+                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try
+                    {
+                        sink.Speak(chosen, "casual", false);
+                        FileLog.Info("[테스트 발화] 완료: " + chosen);
+                    }
+                    catch (Exception ex)
+                    {
+                        FileLog.Error("[테스트 발화] 실패", ex);
+                    }
+                });
+                return;
+            }
             Say("Radio check. Team radio online.");
         }
 

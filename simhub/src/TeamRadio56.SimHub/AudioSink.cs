@@ -67,12 +67,34 @@ namespace TeamRadio56.SimHub
                     candidates.Add(Path.Combine(scriptDir, "audio_cache"));
             }
             catch (Exception) { }
+            // 오디오가 실제로 들어 있는 폴더 우선 — edge 합성용으로 자동 생성된
+            // 빈 audio_cache가 진짜 배포 캐시를 가리면 안 된다
+            string firstExisting = null;
             foreach (string dir in candidates)
             {
-                if (Directory.Exists(dir))
+                if (!Directory.Exists(dir))
+                    continue;
+                if (HasAudio(dir))
                     return dir;
+                if (firstExisting == null)
+                    firstExisting = dir;
             }
-            return null;
+            return firstExisting;
+        }
+
+        private static bool HasAudio(string dir)
+        {
+            try
+            {
+                foreach (string f in Directory.EnumerateFiles(dir))
+                {
+                    if (f.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)
+                        || f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch (Exception) { }
+            return false;
         }
 
         /// <summary>추가 인자에서 첫 경로(보통 main.py)의 폴더를 뽑는다.</summary>

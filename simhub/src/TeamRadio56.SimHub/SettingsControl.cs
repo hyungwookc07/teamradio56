@@ -473,7 +473,13 @@ namespace TeamRadio56.SimHub
                 }
                 else
                 {
-                    SetText(_engineState, L("engine_builtin"), Dim);
+                    // 캐시 상태를 함께 — "코코로가 안 나온다" 진단의 첫 확인 지점
+                    string cache = _plugin.BuiltinCacheDir == null
+                        ? L("cache_missing")
+                        : string.Format(L("cache_status"),
+                            _plugin.BuiltinCacheCount, _plugin.BuiltinCacheDir);
+                    SetText(_engineState, L("engine_builtin") + "\n" + cache,
+                        _plugin.BuiltinCacheCount > 0 ? Dim : Off);
                 }
 
                 string[] calls = _plugin.RecentCalls();
