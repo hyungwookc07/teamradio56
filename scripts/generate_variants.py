@@ -181,7 +181,7 @@ POOL_SPECS: dict[str, dict] = {
     },
 }
 
-SYSTEM = """당신은 한국어 심레이싱 크루치프의 무전 대사 작가다.
+SYSTEM = """당신은 한국어 심레이싱 레이스 엔지니어의 무전 대사 작가다.
 규칙:
 - 짧은 구어체 반말. 무전 특유의 간결한 호흡. 한 멘트 3~15단어.
 - 서로 표현이 충분히 달라야 한다 (어순, 어휘, 뉘앙스 다양화).
@@ -198,7 +198,7 @@ def generate_pool(client, model: str, pool: str, tone: str, spec: dict,
         f"상황: {spec['situation']}\n"
         f"톤: {tone} — {tone_note}\n"
         f"허용 슬롯: {slots}\n"
-        f"이 상황의 크루치프 무전 멘트 변형을 {count}개 생성해라."
+        f"이 상황의 레이스 엔지니어 무전 멘트 변형을 {count}개 생성해라."
     )
     response = client.messages.create(
         model=model,

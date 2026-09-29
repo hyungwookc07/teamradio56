@@ -300,7 +300,7 @@ def build_situation(state, event: Event) -> str:
         EventType.TYRE_WARNING: "타이어 경고({kind}). 연료/잔여 레이스와 엮어 드라이버가 뭘 해야 할지 말해라.",
         EventType.RIVAL_PIT: "클래스 {rel} P{their_class_place} {driver}가 방금 피트에 들어갔다. 언더컷/오버컷 관점에서 우리 대응을 판단해라.",
         EventType.RIVAL_PACE: "라이벌 페이스 인텔: {mode} 상황, 랩당 {diff}초 차이, 약 {laps}랩. 추격/방어 지시를 짧게.",
-    }.get(event.type, "지금 상황에 대해 크루치프로서 한마디 해라.")
+    }.get(event.type, "지금 상황에 대해 레이스 엔지니어로서 한마디 해라.")
     try:
         lines.append(topic.format(**event.data))
     except (KeyError, IndexError):

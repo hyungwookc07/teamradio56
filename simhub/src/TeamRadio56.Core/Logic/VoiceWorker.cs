@@ -91,7 +91,7 @@ namespace TeamRadio56.Core.Logic
             string text = rendered.Key;
             if (string.IsNullOrEmpty(text))
                 return;
-            FileLog.Info("[크루치프] " + text);
+            FileLog.Info("[무전] " + text);
             lock (_recentGate)
             {
                 _recent.Enqueue(DateTime.Now.ToString("HH:mm:ss") + "  " + text);

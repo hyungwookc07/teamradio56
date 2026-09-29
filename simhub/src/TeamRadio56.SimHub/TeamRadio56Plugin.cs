@@ -34,7 +34,7 @@ namespace TeamRadio56.SimHub
     /// 현재 단계: 설정 UI + 텔레메트리 읽기까지. 분석기/멘트 풀/무전 효과는
     /// 다음 단계에서 Core에 이식한다.
     /// </summary>
-    [PluginDescription("LMU AI 크루치프 — 상황을 판단해 영어 팀라디오로 불러준다")]
+    [PluginDescription("LMU 레이스 엔지니어 음성 무전 — 상황을 판단해 팀라디오로 불러준다")]
     [PluginAuthor("teamradio56")]
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2

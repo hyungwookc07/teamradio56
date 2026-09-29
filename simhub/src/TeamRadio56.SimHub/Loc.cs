@@ -21,7 +21,7 @@ namespace TeamRadio56.SimHub
 
         private static readonly Dictionary<string, string> Ko = new Dictionary<string, string>
         {
-            { "subtitle", "LMU AI 크루치프 — 상황을 판단해 팀라디오로 불러줍니다. 버전 " },
+            { "subtitle", "LMU 레이스 엔지니어 무전 — 상황을 판단해 팀라디오로 불러줍니다. 버전 " },
             { "sec_status", "상태" },
             { "sec_engine", "엔진" },
             { "sec_voice", "음성" },
@@ -61,7 +61,7 @@ namespace TeamRadio56.SimHub
             // 콤보 선택지 표시명 — 저장값은 그대로, 화면에만 설명을 붙인다
             { "choice_python", "python — 전체 기능 (LLM 멘트 포함)" },
             { "choice_builtin", "builtin — 간편 (설치 없음, 캐시 음성)" },
-            { "choice_kokoro", "kokoro — 동봉 크루치프 음성 (권장)" },
+            { "choice_kokoro", "kokoro — 동봉 엔지니어 음성 (권장)" },
             { "choice_edge", "edge — 온라인 TTS (아래 보이스 선택)" },
             { "choice_quiet", "quiet — 조용히 (중요한 콜만)" },
             { "choice_normal", "normal — 보통" },
@@ -127,7 +127,7 @@ namespace TeamRadio56.SimHub
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>
         {
-            { "subtitle", "LMU AI crew chief — reads the race and calls it on team radio. Version " },
+            { "subtitle", "LMU race-engineer radio — reads the race and calls it on team radio. Version " },
             { "sec_status", "Status" },
             { "sec_engine", "Engine" },
             { "sec_voice", "Voice" },
@@ -166,7 +166,7 @@ namespace TeamRadio56.SimHub
             { "hint_voice", "auto-corrected if it doesn't match the radio language" },
             { "choice_python", "python — full features (incl. LLM radio)" },
             { "choice_builtin", "builtin — simple (no install, cached voice)" },
-            { "choice_kokoro", "kokoro — bundled crew chief voice (recommended)" },
+            { "choice_kokoro", "kokoro — bundled engineer voice (recommended)" },
             { "choice_edge", "edge — online TTS (pick a voice below)" },
             { "choice_quiet", "quiet — essentials only" },
             { "choice_normal", "normal" },

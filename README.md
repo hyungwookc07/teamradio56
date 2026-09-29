@@ -1,39 +1,41 @@
 # teamradio56 🏁🎙️
 
-**AI crew chief for Le Mans Ultimate.** Reads telemetry in real time, **makes
-judgment calls**, and speaks them to you as natural voice team radio (English
-or Korean). Runs either as a standalone Windows app or as a SimHub plugin.
+**Voice race-engineer radio for Le Mans Ultimate.** Reads telemetry in real
+time, judges what matters, and calls it to you as team radio — in English or
+Korean. Runs as a SimHub plugin (recommended) or a standalone Windows app.
 (The name comes from Le Mans' iconic Garage 56.)
 
 한국어 문서: [README.ko.md](README.ko.md)
 
-What makes it different from existing Crew Chief-style apps: instead of
-mechanical, repetitive callouts it aims for **LLM-based, context-aware
-judgment calls** — a race engineer who thinks, not a spotter/calculator.
+The goal is a race engineer that speaks only when it matters and says what
+it means — not a stream of raw numbers.
 
-> "Fuel's good for ten laps but the tyres hit the cliff around eight.
-> Let's solve both on lap nine."
+> "Car behind closing four tenths a lap. Gap 2.4 seconds. Just no mistakes."
 
 ## Features
 
-- **One-way voice output only** — no STT/conversation (designed so it can be
-  added later)
-- **Two ways to run** — standalone Python app (console + `config.yaml`), or
-  the [SimHub plugin](simhub/README.md) with a full settings UI (Korean/English)
-  and a native C# engine
-- **Two-tier line generation**
-  - Urgent calls (traffic / fuel / box / damage / penalties): pre-generated
-    phrase pools + audio cache → zero latency
-  - Non-urgent lines (lap analysis / strategy / narrative): generated live via
-    the Anthropic API (claude-haiku), 3–5 s latency tolerated
+- **Judgment calls, not readouts** — traffic and side-by-side spotting,
+  race control (FCY, pit open, restarts, yellows, blue flags), automatic
+  damage checks, fuel and tyre warnings, rival pit/pace intel, gap trends,
+  session briefings. All rule-based and deterministic
 - **Silence discipline** — if there's nothing worth saying, it says nothing.
-  No per-lap chatter; per-type cooldowns
-- **Radio effect** — bandpass + saturation + squelch over the TTS output for
-  that team-radio texture (softens the synthetic tone; disable with
-  `tts.radio_fx`)
-- **Multiclass aware** — approach warnings for faster classes (Hypercar etc.)
-- **Protects game performance** — 5 Hz polling, heavy work (LLM/TTS) on
-  separate threads, no GPU-based local TTS
+  No per-lap chatter; per-type cooldowns and a chattiness preset
+- **Natural voice with zero latency** — urgent calls come from pre-generated
+  phrase pools with a bundled, pre-rendered voice (Kokoro), so nothing is
+  synthesised mid-corner. Anything not in the cache falls back to online
+  TTS (edge) and is cached for next time
+- **Radio effect** — bandpass, saturation, band-limited noise and squelch
+  for a real team-radio texture
+- **English or Korean** radio, and a bilingual settings UI
+- **Multiclass aware** — faster-class approach warnings, in-class positions
+- **Protects game performance** — 5 Hz polling, audio on its own thread, no
+  GPU-based TTS
+- **One-way voice output** — no speech recognition or conversation
+
+LLM-generated lines (free-form strategy/briefing commentary via the
+Anthropic API) exist as an **experimental, opt-in** feature of the Python
+engine and need your own API key. They are hidden in the SimHub UI until the
+feature is finished; everything above works without them.
 
 ## Quick start
 
@@ -83,10 +85,12 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   the game, replay mode
 - [x] v0.2 — lap-complete analysis (fuel/pace) + event queue + template TTS
 - [x] v0.3 — traffic analyzer + pre-generated phrase pools + audio cache
-- [x] v0.4 — live LLM lines (Anthropic API, persona/narrative)
+- [x] v0.4 — live LLM lines (Anthropic API, persona/narrative) — experimental
 - [x] v0.5 — tyre analyzer, race JSON save, PyInstaller packaging
 
 ### Naturalness (v0.6)
+
+(LLM items here are experimental and opt-in.)
 
 - [x] Per-car traffic state machine — speaks only on state transitions, and
   chains lines about the same car into a narrative ("closing" → "alongside" →
@@ -136,7 +140,7 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   analyzers, session briefing, phrase pools, cached audio (Kokoro), runtime
   edge synthesis fallback, Korean radio. Verified against the Python engine
   by a replay regression (identical accepted events, en/ko, down to the
-  sentence text). Only the LLM lines still require Python mode.
+  sentence text). Only the experimental LLM lines still require Python mode.
 
 Items not in shared memory (virtual energy, weather forecast, pit strategy)
 will be supplemented from LMU's built-in REST API (the localhost server the
@@ -172,3 +176,7 @@ Future ideas: two-way radio via STT, multi-stint fuel-plan optimisation.
 
 - Shared-memory plugin/layout: The Iron Wolf
 - Python struct mapping reference: [pyRfactor2SharedMemory](https://github.com/TonyWhitley/pyRfactor2SharedMemory)
+
+## License
+
+[MIT](LICENSE)

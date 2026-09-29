@@ -457,9 +457,9 @@ class VoiceWorker(threading.Thread):
         text, source = self.voice_gen.text_for(ev)
         if not text:
             return
-        log.info("🎙️ [크루치프] %s", text)
+        log.info("🎙️ [무전] %s", text)
         self.recent.append(f"{time.strftime('%H:%M:%S')}  {text}")
-        self.state.add_narrative(f"(랩{len(self.state.laps)}) 크루치프: {text}")
+        self.state.add_narrative(f"(랩{len(self.state.laps)}) 엔지니어: {text}")
         self.speech_log.write(ev, text, source, lap=len(self.state.laps))
         self._maybe_bridge(ev)
         if not self.enabled:

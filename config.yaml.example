@@ -1,4 +1,4 @@
-# teamradio56 (LMU AI 크루치프) 설정 예시.
+# teamradio56 (LMU 레이스 엔지니어 무전) 설정 예시.
 # 이 파일을 config.yaml로 복사한 뒤 수정하세요. 생략한 항목은 기본값이 적용됩니다.
 
 app:
@@ -15,7 +15,7 @@ voice:
   volume: 0.9
   language: en             # en(기본) | ko(레거시 멘트 풀)
   driver_name: 드라이버       # 멘트에서 부르는 호칭
-  # 크루치프 페르소나 (LLM 시스템 프롬프트에 들어감)
+  # 엔지니어 페르소나 (LLM 시스템 프롬프트에 들어감)
   persona: >
     You are an endurance-racing crew chief with 20 years of experience.
     Calm, concise, trusts the driver. States judgment, not raw numbers.

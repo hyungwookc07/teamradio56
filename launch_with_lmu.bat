@@ -9,9 +9,9 @@ rem
 rem     "D:\teamradio56\launch_with_lmu.bat" %command%
 rem
 rem 동작:
-rem   1. 크루치프를 최소화 창으로 백그라운드 실행
+rem   1. teamradio56을 최소화 창으로 백그라운드 실행
 rem   2. 게임 실행 (Steam이 %command%로 전달)
-rem   3. 게임 종료 후 20초 대기 (디브리핑/저장 마무리) 뒤 크루치프 종료
+rem   3. 게임 종료 후 20초 대기 (디브리핑/저장 마무리) 뒤 teamradio56 종료
 rem ============================================================
 chcp 65001 >nul
 cd /d "%~dp0"
