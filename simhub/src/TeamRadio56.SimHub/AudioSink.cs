@@ -13,15 +13,24 @@ namespace TeamRadio56.SimHub
     ///   3) 오프라인/실패 → Windows TTS(SpeechOutput)
     /// 파이썬 엔진의 ChainEngine[캐시 → edge] + SAPI 폴백과 같은 구조.
     /// 런타임 합성분에는 아직 무전 효과가 안 입혀진다 (캐시 항목만).
+    ///
+    /// 겹침 방지 규칙: 이 프로세스의 모든 발화는 PlaybackGate 하나를 지나고,
+    /// 세 출력 경로 모두 "소리가 끝날 때까지" 돌아오지 않는다. 그래서 엔진
+    /// 전환 중의 이전/새 싱크, [테스트 발화]까지 한 줄로 선다.
     /// </summary>
     public sealed class AudioSink : IVoiceSink, IDisposable
     {
+        // 인스턴스가 아니라 프로세스 단위 — 재시작으로 싱크가 바뀌어도 공유
+        private static readonly object PlaybackGate = new object();
+
         private readonly VoiceCache _cache;
         private readonly SpeechOutput _fallback;
         private readonly Mp3Player _mp3 = new Mp3Player();
         private readonly double _volume;
         private int _synthFailLogged;
         private DateTime _synthBlockedUntil = DateTime.MinValue;
+        private volatile bool _stopped;
+        private System.Media.SoundPlayer _currentWav;
 
         public AudioSink(VoiceCache cache, SpeechOutput fallback, double volume = 0.9)
         {
@@ -124,6 +133,23 @@ namespace TeamRadio56.SimHub
 
         public void Speak(string text, string tone, bool urgent)
         {
+            if (_stopped || string.IsNullOrEmpty(text))
+                return;
+            string path = ResolveOrSynthesize(text, tone);
+            lock (PlaybackGate)
+            {
+                if (_stopped)
+                    return;   // 엔진 전환 중 — 이전 싱크는 더 말하지 않는다
+                if (path != null && PlayFile(path))
+                    return;
+                if (_fallback != null)
+                    _fallback.SayAndWait(text);   // 동기 — 다음 콜과 겹치지 않게
+            }
+        }
+
+        /// <summary>캐시 → (미스면) edge 합성. 둘 다 없으면 null.</summary>
+        private string ResolveOrSynthesize(string text, string tone)
+        {
             string path = _cache != null ? _cache.Resolve(text, tone) : null;
 
             if (path == null && _cache != null && DateTime.UtcNow >= _synthBlockedUntil)
@@ -154,35 +180,60 @@ namespace TeamRadio56.SimHub
                     }
                 }
             }
+            return path;
+        }
 
-            if (path != null && path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+        /// <summary>wav/mp3를 끝까지 재생. 실패하면 false (호출부가 TTS 폴백).</summary>
+        private bool PlayFile(string path)
+        {
+            if (path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
                     using (var player = new System.Media.SoundPlayer(path))
                     {
+                        _currentWav = player;
                         player.PlaySync();   // 전용 스레드라 블로킹해도 된다
                     }
-                    return;
+                    return true;
                 }
                 catch (Exception ex)
                 {
                     FileLog.Error("캐시 오디오 재생 실패 — TTS 폴백: " + path, ex);
+                    return false;
+                }
+                finally
+                {
+                    _currentWav = null;
                 }
             }
-            else if (path != null)
-            {
-                if (_mp3.PlaySync(path, _volume))
-                    return;
-                FileLog.Error("mp3 재생 실패 — TTS 폴백: " + path, null);
-            }
+            if (_mp3.PlaySync(path, _volume))
+                return true;
+            FileLog.Error("mp3 재생 실패 — TTS 폴백: " + path, null);
+            return false;
+        }
 
-            if (_fallback != null)
-                _fallback.Say(text);
+        /// <summary>
+        /// 엔진 전환/종료 — 더 이상 말하지 않고, 재생 중인 wav/mp3는 즉시
+        /// 끊는다. (진행 중인 Windows TTS 문장은 끝까지 간다 — 게이트가
+        /// 다음 발화를 그 뒤로 세운다.)
+        /// </summary>
+        public void Stop()
+        {
+            _stopped = true;
+            try
+            {
+                System.Media.SoundPlayer wav = _currentWav;
+                if (wav != null)
+                    wav.Stop();
+            }
+            catch (Exception) { }
+            _mp3.StopCurrent();
         }
 
         public void Dispose()
         {
+            Stop();
             _mp3.Dispose();
         }
     }

@@ -25,6 +25,9 @@ namespace TeamRadio56.Core.Engine
         private readonly object _gate = new object();
         private Process _process;
         private StreamWriter _log;
+        // SimHub 수명 동안 하나 — 핸들이 닫히면(SimHub 종료/크래시) 커널이
+        // 엔진 트리를 통째로 죽인다. 생성 실패 시 null (Kill 폴백).
+        private ProcessJob _job;
 
         public bool IsRunning
         {
@@ -96,13 +99,16 @@ namespace TeamRadio56.Core.Engine
                     return false;
                 }
 
-                KillOrphans(exe);
+                KillOrphans(exe, statusPath);
 
                 var args = new StringBuilder();
                 if (!string.IsNullOrEmpty(extraArgs))
                     args.Append(extraArgs).Append(' ');
                 args.Append("--settings \"").Append(settingsPath).Append("\" ");
-                args.Append("--status-file \"").Append(statusPath).Append("\"");
+                args.Append("--status-file \"").Append(statusPath).Append("\" ");
+                // 엔진이 SimHub의 종료를 스스로 감지하게 — 작업 개체가 실패해도
+                // 고아로 남지 않는 2차 안전망
+                args.Append("--parent-pid ").Append(CurrentPid());
 
                 var info = new ProcessStartInfo
                 {
@@ -127,9 +133,15 @@ namespace TeamRadio56.Core.Engine
                         FileLog.Info("엔진 프로세스 종료됨");
 
                     _process.Start();
+                    if (_job == null)
+                        _job = ProcessJob.TryCreate();
+                    bool inJob = _job != null && _job.Assign(_process);
                     _process.BeginOutputReadLine();
                     _process.BeginErrorReadLine();
                     FileLog.Info("엔진 시작: {0} {1}", exe, args);
+                    if (!inJob)
+                        FileLog.Warn("엔진을 작업 개체에 묶지 못함 — SimHub 비정상 종료 시 "
+                                     + "엔진의 --parent-pid 감시에 의존");
                     return true;
                 }
                 catch (Exception ex)
@@ -155,9 +167,11 @@ namespace TeamRadio56.Core.Engine
                 {
                     if (!_process.HasExited)
                     {
-                        // 엔진은 종료 시 디브리핑/레이스 저장을 한다 — 잠깐 기다렸다 강제 종료
                         FileLog.Info("엔진 종료 요청");
-                        _process.Kill();
+                        // 트리 전체 종료 — 래퍼(.bat/pipenv/onefile) 뒤의 실제
+                        // 엔진까지. 작업 개체가 없으면 직계만 Kill (폴백)
+                        if (_job == null || !_job.TerminateAll())
+                            _process.Kill();
                         _process.WaitForExit(StopWaitMs);
                     }
                 }
@@ -176,30 +190,25 @@ namespace TeamRadio56.Core.Engine
 
         /// <summary>
         /// 이전 실행이 비정상 종료돼 남은 엔진 프로세스를 정리한다.
-        /// 남아 있으면 같은 콜이 두 번 들린다.
+        /// 남아 있으면 같은 콜이 두 번(서로 다른 목소리로) 들린다.
+        ///
+        /// 소스 실행은 실행 파일이 범용 python.exe라 이름으로 찾으면 PC의 모든
+        /// 파이썬을 죽이게 된다 — 대신 명령줄에 이 플러그인의 상태 파일 경로가
+        /// 들어 있는 프로세스만 고른다 (플러그인이 띄운 엔진만 그 인자를 받는다).
+        /// 묶인 실행 파일(teamradio56.exe)은 기존처럼 이름으로도 정리한다.
         /// </summary>
-        private void KillOrphans(string exe)
+        public void KillOrphans(string exe, string statusPath)
         {
-            string name;
+            int killed = KillByCommandLine(statusPath);
+
+            string name = null;
             try
             {
-                name = Path.GetFileNameWithoutExtension(exe);
+                name = string.IsNullOrEmpty(exe) ? null : Path.GetFileNameWithoutExtension(exe);
             }
-            catch (Exception)
-            {
+            catch (Exception) { }
+            if (string.IsNullOrEmpty(name) || IsInterpreter(name))
                 return;
-            }
-            if (string.IsNullOrEmpty(name))
-                return;
-
-            // 실행 파일이 범용 인터프리터면 정리하지 않는다 — 이름만으로
-            // 찾으면 이 PC의 모든 파이썬 프로세스를 죽이게 된다.
-            if (name.Equals("python", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("pythonw", StringComparison.OrdinalIgnoreCase)
-                || name.Equals("py", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
 
             try
             {
@@ -208,9 +217,12 @@ namespace TeamRadio56.Core.Engine
                 {
                     try
                     {
+                        if (_process != null && p.Id == _process.Id)
+                            continue;
                         FileLog.Warn("이전 엔진 프로세스 정리 (PID " + p.Id + ")");
                         p.Kill();
                         p.WaitForExit(2000);
+                        killed++;
                     }
                     catch (Exception)
                     {
@@ -225,6 +237,92 @@ namespace TeamRadio56.Core.Engine
             catch (Exception ex)
             {
                 FileLog.Error("고아 프로세스 정리 실패", ex);
+            }
+            if (killed > 0)
+                FileLog.Warn("고아 엔진 " + killed + "개 정리됨 (두 목소리 겹침 원인)");
+        }
+
+        private static bool IsInterpreter(string name)
+        {
+            return name.Equals("python", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("pythonw", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("py", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 명령줄에 "--status-file" 과 이 플러그인의 상태 파일 경로가 모두 든
+        /// 프로세스를 종료 (WMI). 현재 추적 중인 자식은 건너뛴다.
+        /// </summary>
+        private int KillByCommandLine(string statusPath)
+        {
+            if (string.IsNullOrEmpty(statusPath))
+                return 0;
+#if NETFRAMEWORK
+            int killed = 0;
+            int self = CurrentPid();
+            int tracked = -1;
+            try
+            {
+                if (_process != null && !_process.HasExited)
+                    tracked = _process.Id;
+            }
+            catch (Exception) { }
+            try
+            {
+                using (var searcher = new System.Management.ManagementObjectSearcher(
+                    "SELECT ProcessId, CommandLine FROM Win32_Process "
+                    + "WHERE CommandLine LIKE '%--status-file%'"))
+                using (System.Management.ManagementObjectCollection results = searcher.Get())
+                {
+                    foreach (System.Management.ManagementBaseObject mo in results)
+                    {
+                        try
+                        {
+                            string cmd = mo["CommandLine"] as string;
+                            int pid = Convert.ToInt32(mo["ProcessId"]);
+                            if (cmd == null || pid == self || pid == tracked)
+                                continue;
+                            if (cmd.IndexOf(statusPath, StringComparison.OrdinalIgnoreCase) < 0)
+                                continue;
+                            using (Process p = Process.GetProcessById(pid))
+                            {
+                                FileLog.Warn("고아 엔진 정리 (PID " + pid + "): " + cmd);
+                                p.Kill();
+                                p.WaitForExit(2000);
+                                killed++;
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            // 이미 종료/접근 불가 — 무시
+                        }
+                        finally
+                        {
+                            mo.Dispose();
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLog.Error("고아 엔진 검색 실패 (WMI)", ex);
+            }
+            return killed;
+#else
+            return 0;
+#endif
+        }
+
+        private static int CurrentPid()
+        {
+            try
+            {
+                using (Process me = Process.GetCurrentProcess())
+                    return me.Id;
+            }
+            catch (Exception)
+            {
+                return 0;
             }
         }
 
@@ -282,6 +380,10 @@ namespace TeamRadio56.Core.Engine
         public void Dispose()
         {
             Stop();
+            ProcessJob job = _job;
+            _job = null;
+            if (job != null)
+                job.Dispose();
         }
     }
 }

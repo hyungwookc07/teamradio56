@@ -19,24 +19,70 @@ namespace TeamRadio56.SimHub
     /// </summary>
     public sealed class SpeechOutput : IDisposable
     {
-        private readonly Queue<string> _queue = new Queue<string>();
+        private sealed class Item
+        {
+            public string Text;
+            public ManualResetEventSlim Done;   // SayAndWait 대기자 (없으면 null)
+        }
+
+        private readonly Queue<Item> _queue = new Queue<Item>();
         private readonly object _gate = new object();
         private Thread _thread;
         private bool _stop;
 
+        /// <summary>
+        /// 비동기 발화 — 큐에 넣고 즉시 돌아온다. 다른 재생과 겹칠 수 있으므로
+        /// builtin 무전 경로에서는 쓰지 말 것 (SayAndWait 사용).
+        /// </summary>
         public void Say(string text)
         {
+            Enqueue(text, null);
+        }
+
+        /// <summary>
+        /// 동기 발화 — 다 말할 때까지(또는 timeoutMs) 기다린다. builtin
+        /// AudioSink의 폴백용: 비동기면 다음 콜(코코로 wav)이 이 목소리 위에
+        /// 겹쳐 재생된다.
+        /// </summary>
+        public bool SayAndWait(string text, int timeoutMs = 20000)
+        {
             if (string.IsNullOrEmpty(text))
+                return true;
+            using (var done = new ManualResetEventSlim(false))
+            {
+                Enqueue(text, done);
+                return done.Wait(timeoutMs);
+            }
+        }
+
+        private void Enqueue(string text, ManualResetEventSlim done)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                if (done != null)
+                    done.Set();
                 return;
+            }
             lock (_gate)
             {
                 EnsureThread();
-                // 무전은 최신이 우선 — 밀린 발화는 버린다
-                _queue.Clear();
-                _queue.Enqueue(text);
+                // 무전은 최신이 우선 — 밀린 발화는 버린다 (대기자는 풀어 준다)
+                while (_queue.Count > 0)
+                    Release(_queue.Dequeue());
+                _queue.Enqueue(new Item { Text = text, Done = done });
                 Monitor.Pulse(_gate);
             }
             FileLog.Info("발화 요청: " + text);
+        }
+
+        private static void Release(Item item)
+        {
+            try
+            {
+                if (item != null && item.Done != null)
+                    item.Done.Set();
+            }
+            catch (ObjectDisposedException) { }
         }
 
         private void EnsureThread()
@@ -62,15 +108,16 @@ namespace TeamRadio56.SimHub
             {
                 while (true)
                 {
-                    string text;
+                    Item item;
                     lock (_gate)
                     {
                         while (_queue.Count == 0 && !_stop)
                             Monitor.Wait(_gate);
                         if (_stop)
                             return;
-                        text = _queue.Dequeue();
+                        item = _queue.Dequeue();
                     }
+                    string text = item.Text;
 
                     try
                     {
@@ -96,6 +143,10 @@ namespace TeamRadio56.SimHub
                         synth = null;
                         try { System.Media.SystemSounds.Beep.Play(); } catch (Exception) { }
                     }
+                    finally
+                    {
+                        Release(item);
+                    }
                 }
             }
             catch (Exception ex)
@@ -105,6 +156,11 @@ namespace TeamRadio56.SimHub
             finally
             {
                 try { if (synth != null) synth.Dispose(); } catch (Exception) { }
+                lock (_gate)
+                {
+                    while (_queue.Count > 0)
+                        Release(_queue.Dequeue());
+                }
             }
         }
 

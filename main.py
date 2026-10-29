@@ -20,6 +20,7 @@ import os
 import sys
 import time
 
+import procguard
 from config import load_config, Config
 from messages import msg, set_language
 from telemetry import (
@@ -391,6 +392,10 @@ class CrewChiefApp:
             p.get("speed_kmh", 0.0),
         )
 
+    def stop(self) -> None:
+        """다른 스레드에서 정상 종료 요청 — 메인 루프가 다음 틱에 빠져나간다."""
+        self._running = False
+
     def shutdown(self) -> None:
         self._running = False
         # 디브리핑은 워커 정지 전에 (LLM 1회, 텍스트는 파일로도 저장)
@@ -428,6 +433,8 @@ def main() -> int:
                         help="SimHub 플러그인 설정 파일 (엔진 모드에서 UI 값 수신)")
     parser.add_argument("--status-file", metavar="PATH",
                         help="엔진 상태를 이 파일에 기록 (플러그인 UI가 표시)")
+    parser.add_argument("--parent-pid", type=int, default=0,
+                        help="이 PID(SimHub)가 끝나면 엔진도 종료 (고아 엔진 방지)")
     args = parser.parse_args()
 
     # SimHub 엔진 모드에선 작업 디렉토리가 python.exe 위치(venv Scripts)로
@@ -462,6 +469,14 @@ def main() -> int:
     if args.settings:
         log.info("SimHub 엔진 모드 — 설정 파일: %s", args.settings)
 
+    # 독립 실행(launch_with_lmu.bat 등)인데 SimHub 플러그인이 이미 떠 있으면
+    # 물러난다 — 둘 다 돌면 모든 콜이 서로 다른 목소리로 겹쳐 나온다
+    standalone = not args.settings and not args.replay
+    if standalone and procguard.plugin_active():
+        log.warning("SimHub teamradio56 플러그인이 실행 중 — 독립 실행 엔진은 "
+                    "시작하지 않습니다 (플러그인이 무전을 담당)")
+        return 0
+
     if args.record:
         os.makedirs(os.path.dirname(args.record) or ".", exist_ok=True)
 
@@ -473,6 +488,10 @@ def main() -> int:
 
     app = CrewChiefApp(cfg, source, recorder,
                        status_path=getattr(args, "status_file", None))
+    if args.parent_pid:
+        procguard.watch_parent(args.parent_pid, app.stop)
+    if standalone:
+        procguard.watch_plugin(app.stop)
     app.run()
     return 0
 

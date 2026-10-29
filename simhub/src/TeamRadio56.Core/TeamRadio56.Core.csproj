@@ -15,4 +15,9 @@
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
 
+  <!-- 고아 엔진 정리(EngineHost.KillOrphans)가 WMI로 명령줄을 본다 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <Reference Include="System.Management" />
+  </ItemGroup>
+
 </Project>

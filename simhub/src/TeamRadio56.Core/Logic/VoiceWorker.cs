@@ -103,12 +103,16 @@ namespace TeamRadio56.Core.Logic
             _sink.Speak(text, ev.Tone ?? "casual", ev.Priority == Priority.Critical);
         }
 
+        /// <summary>
+        /// 워커를 멈춘다. 재생 중인 문장이 끝날 때까지 기다려야 새 엔진의 첫
+        /// 콜과 겹치지 않는다 — 싱크를 먼저 Stop()하면 wav/mp3는 즉시 끊긴다.
+        /// </summary>
         public void Dispose()
         {
             _stop = true;
             Thread t = _thread;
-            if (t != null && t.IsAlive)
-                t.Join(2000);
+            if (t != null && t.IsAlive && !t.Join(10000))
+                FileLog.Warn("보이스 워커가 10초 안에 멈추지 않음");
         }
     }
 }

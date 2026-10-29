@@ -39,7 +39,17 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.13.1-cachefix";
+        public const string Version = "0.14.0-onevoice";
+
+        /// <summary>
+        /// 플러그인이 로드돼 있는 동안 쥐는 이름 있는 뮤텍스. 독립 실행 파이썬
+        /// 엔진(launch_with_lmu.bat 등)이 이걸 보고 물러난다 — procguard.py의
+        /// PLUGIN_MUTEX와 반드시 같은 이름.
+        /// </summary>
+        public const string PluginMutexName = "Local\\teamradio56-plugin";
+
+        private System.Threading.Mutex _pluginMutex;
+        private bool _ending;
 
         private const double PollHz = 5.0;
         private const int RecentCallsKept = 5;
@@ -124,6 +134,8 @@ namespace TeamRadio56.SimHub
             // 설정 화면이 백그라운드 스레드에서 부른다 — 겹쳐 부르면 순서대로
             lock (_restartGate)
             {
+                if (_ending)
+                    return;              // SimHub 종료 중 — 새 엔진을 띄우지 않는다
                 SaveSettings();
                 _engine.Stop();          // 파이썬 엔진이 돌고 있으면 종료
                 ShutdownBuiltin();       // 내장 엔진이 돌고 있으면 정리
@@ -132,18 +144,29 @@ namespace TeamRadio56.SimHub
                     StartEngine();
                 else
                     InitBuiltin();
+                // 모드 전환을 "새 연결"로 오인하지 않게
+                _wasConnected = _reader.Connected;
             }
         }
 
+        /// <summary>
+        /// 내장 엔진 정리 — 순서가 중요하다: 새 이벤트 차단 → 재생 중인 소리
+        /// 끊기 → 워커가 실제로 멈출 때까지 대기 → 싱크 해제. 순서가 어긋나면
+        /// 이전 엔진의 마지막 문장이 새 엔진의 브리핑과 겹친다.
+        /// </summary>
         private void ShutdownBuiltin()
         {
-            if (_voice != null)
-            {
-                _voice.Dispose();
-                _voice = null;
-            }
-            _sink = null;
+            VoiceWorker voice = _voice;
+            AudioSink sink = _sink;
             _chief = null;
+            _voice = null;
+            _sink = null;
+            if (sink != null)
+                sink.Stop();
+            if (voice != null)
+                voice.Dispose();
+            if (sink != null)
+                sink.Dispose();
         }
 
         /// <summary>설정 화면에 보여줄 한 줄 상태.</summary>
@@ -171,6 +194,16 @@ namespace TeamRadio56.SimHub
             FileLog.Banner(Version);
             Settings = SettingsStore.Load();
             _activeMode = Settings.EngineMode;
+
+            // 독립 실행 엔진이 이 플러그인을 감지하고 물러나게 한다
+            try
+            {
+                _pluginMutex = new System.Threading.Mutex(false, PluginMutexName);
+            }
+            catch (Exception ex)
+            {
+                FileLog.Error("플러그인 뮤텍스 생성 실패 (독립 엔진 감지 불가)", ex);
+            }
 
             string layoutError = Rf2SharedMemoryReader.VerifyLayout();
             _layoutOk = layoutError == null;
@@ -244,6 +277,10 @@ namespace TeamRadio56.SimHub
         /// <summary>내장(C#) 엔진 초기화 — 분석기 9종 + 보이스 워커.</summary>
         private void InitBuiltin()
         {
+            // 이전 세션(SimHub 크래시 등)이 남긴 파이썬 엔진이 있으면 함께
+            // 말하게 된다 — 이 플러그인이 띄운 엔진만 골라 정리
+            _engine.KillOrphans(null, EngineStatus.DefaultPath());
+
             // 멘트 언어 — 분석기/멘트 풀 생성 전에 정해야 한다
             TeamRadio56.Core.Logic.Messages.SetLanguage(Settings.VoiceLanguage);
 
@@ -334,13 +371,23 @@ namespace TeamRadio56.SimHub
         public void End(PluginManager pluginManager)
         {
             FileLog.Info("종료 — 정리 중");
-            SaveSettings();
-            _engine.Stop();
-            if (_voice != null)
-                _voice.Dispose();
+            // 백그라운드 모드 전환과 겹치면 End 뒤에 엔진이 새로 떠 고아가 된다
+            lock (_restartGate)
+            {
+                _ending = true;
+                SaveSettings();
+                _engine.Dispose();       // 엔진 트리 종료 + 작업 개체 해제
+                ShutdownBuiltin();
+            }
             if (_speech != null)
                 _speech.Dispose();
             _reader.Dispose();
+            try
+            {
+                if (_pluginMutex != null)
+                    _pluginMutex.Dispose();
+            }
+            catch (Exception) { }
         }
 
         // -- 오버레이 프로퍼티 --------------------------------------------------
@@ -529,6 +576,7 @@ namespace TeamRadio56.SimHub
                 // 오버레이 프로퍼티는 엔진 모드에서도 공유 메모리에서 직접
                 // (스포터 표시는 1초 주기 상태 파일로는 늦다)
                 UpdateOverlay(_reader.Poll());
+                _wasConnected = _reader.Connected;
                 return;
             }
 
@@ -541,8 +589,8 @@ namespace TeamRadio56.SimHub
                 FileLog.Info(_reader.Connected
                     ? "LMU 공유 메모리 연결됨"
                     : "LMU 공유 메모리 끊김 (게임 종료/일시정지)");
-                if (_reader.Connected)
-                    Say("Radio check. Team radio online.");
+                // 연결 확인음은 브리핑이 대신한다 — 여기서 따로 말하면 워커
+                // 밖 재생이라 브리핑/스포터 콜과 겹쳤다
             }
 
             // RestartEngine(UI 스레드)이 도중에 갈아끼울 수 있어 로컬로 잡는다

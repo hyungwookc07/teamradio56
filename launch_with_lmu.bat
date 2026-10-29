@@ -12,11 +12,19 @@ rem 동작:
 rem   1. teamradio56을 최소화 창으로 백그라운드 실행
 rem   2. 게임 실행 (Steam이 %command%로 전달)
 rem   3. 게임 종료 후 20초 대기 (디브리핑/저장 마무리) 뒤 teamradio56 종료
+rem
+rem SimHub 플러그인을 쓰면 이 런처는 필요 없다 — Steam 시작 옵션에서
+rem 지우는 것을 권장. SimHub이 떠 있으면 엔진을 띄우지 않고(두 목소리
+rem 겹침 방지), 엔진도 플러그인을 감지하면 스스로 물러난다.
 rem ============================================================
 chcp 65001 >nul
 cd /d "%~dp0"
 
+tasklist /fi "imagename eq SimHubWPF.exe" 2>nul | find /i "SimHubWPF.exe" >nul
+if not errorlevel 1 goto game
 start "teamradio56" /min cmd /c "pipenv run python main.py"
+
+:game
 
 rem 게임 실행 (Steam이 전달한 원래 명령)
 %*
