@@ -372,13 +372,15 @@ namespace TeamRadio56.SimHub
             _voice.Start();
             ClaimVoice(true);
 
-            int cacheFiles = 0;
+            int cacheFiles = 0, segFiles = 0;
             if (cacheDir != null)
             {
                 try
                 {
                     cacheFiles = System.IO.Directory
                         .GetFiles(cacheDir, "*_rfx*.wav").Length;
+                    segFiles = System.IO.Directory
+                        .GetFiles(cacheDir, "*" + VoiceCache.SegSuffix).Length;
                 }
                 catch (Exception) { }
             }
@@ -388,7 +390,9 @@ namespace TeamRadio56.SimHub
                 + "오디오 캐시: {1}",
                 TeamRadio56.Core.Logic.Messages.Lang,
                 cacheDir == null ? "(없음 — Windows TTS 폴백)"
-                                 : cacheDir + " (무전 효과본 " + cacheFiles + "개)");
+                                 : cacheDir + " (무전 효과본 " + cacheFiles + "개, 문장 세그먼트 "
+                                   + segFiles + "개, 조립 자산 "
+                                   + (cache.SegmentAssetsPresent ? "있음" : "없음") + ")");
             if (ko)
                 FileLog.Info("한국어 멘트 — kokoro 캐시는 영어 전용이라 edge 합성 사용 ("
                              + edgeVoice + ")");

@@ -17,6 +17,7 @@ namespace TeamRadio56.Core.Logic
     ///   11labs : md5("11labs|{voice_id}|{tone}|{text}") .mp3
     /// 파일명은 md5 hex의 앞 20자만 쓴다 (hexdigest()[:20]).
     /// 무전 효과 적용본은 같은 이름 + "_rfx{VERSION}.wav" (VERSION=3).
+    /// 문장 세그먼트는 kokoro 키(문장 단위) + SegSuffix — RadioAssembler가 조립.
     /// </summary>
     public sealed class VoiceCache
     {
@@ -42,6 +43,7 @@ namespace TeamRadio56.Core.Logic
         private readonly string _kokoroVoice;
         private readonly bool _radioFx;
         private readonly bool _edgeOnly;
+        private volatile int _assetsState;   // 0 미확인, 1 있음, 2 없음
 
         public VoiceCache(string cacheDir, string edgeVoice, int edgeBaseRatePercent,
                           string kokoroVoice = "bm_george", bool radioFx = true,
@@ -62,27 +64,93 @@ namespace TeamRadio56.Core.Logic
             get { return !string.IsNullOrEmpty(_cacheDir) && Directory.Exists(_cacheDir); }
         }
 
+        public string CacheDir
+        {
+            get { return _cacheDir; }
+        }
+
         /// <summary>
-        /// 캐시된 오디오 파일 경로. 무전 효과본(wav)을 우선하고, 없으면 원본.
-        /// 아무것도 없으면 null (호출부는 TTS 폴백).
+        /// 캐시된 오디오 파일 경로 (통문장 → 캐시된 edge mp3 순). 무전 효과본(wav)을
+        /// 우선하고, 없으면 원본. 아무것도 없으면 null (호출부는 TTS 폴백).
+        /// 문장 세그먼트 조립은 여기 들어 있지 않다 — AudioSink가 두 단계 사이에 끼운다.
         /// </summary>
         public string Resolve(string text, string tone)
         {
+            return ResolveWhole(text, tone) ?? ResolveEdgeCached(text, tone);
+        }
+
+        /// <summary>kokoro 통문장 (_rfx3 우선, 원본). edge 전용이면 항상 null.</summary>
+        public string ResolveWhole(string text, string tone)
+        {
+            if (_edgeOnly || !Available || string.IsNullOrEmpty(text))
+                return null;
+            return ExistingVariant(KokoroBase(text, tone ?? "casual"));
+        }
+
+        /// <summary>
+        /// 이전 미스 때 저장된 edge mp3 (_rfx3 우선). 세그먼트 조립보다 뒤에 봐야
+        /// 한다 — 옛 edge 파일이 새로 배포된 세그먼트를 가리면 안 된다.
+        /// </summary>
+        public string ResolveEdgeCached(string text, string tone)
+        {
             if (!Available || string.IsNullOrEmpty(text))
                 return null;
-            foreach (string basePath in CandidateBases(text, tone ?? "casual"))
+            return ExistingVariant(EdgeBase(text, tone ?? "casual"));
+        }
+
+        /// <summary>
+        /// 문장 세그먼트 경로 — 모든 문장이 있을 때만 (부분 히트는 미스, 한 콜에
+        /// 목소리를 섞지 않는다). 미스면 처음 없는 문장을 firstMissing에.
+        /// edge 전용/무전 효과 꺼짐/조립 자산 없음이면 조용히 null (firstMissing도 null).
+        /// </summary>
+        public string[] ResolveSegments(string text, string tone, out string firstMissing)
+        {
+            firstMissing = null;
+            if (_edgeOnly || !_radioFx || !Available || string.IsNullOrEmpty(text)
+                || !SegmentAssetsPresent)
+                return null;
+            List<string> paths = RadioAssembler.SegmentPaths(
+                _cacheDir, _kokoroVoice, tone ?? "casual", text, out firstMissing);
+            return paths != null ? paths.ToArray() : null;
+        }
+
+        /// <summary>조립 자산 4종(_seg1_click/gap_casual/gap_urgent/tail)이 모두 있는지 — 처음 한 번만 확인.</summary>
+        public bool SegmentAssetsPresent
+        {
+            get
             {
-                if (_radioFx)
+                int state = _assetsState;
+                if (state == 0)
                 {
-                    string rfx = Path.ChangeExtension(basePath, null)
-                                 + "_rfx" + RadioFxVersion + ".wav";
-                    if (File.Exists(rfx))
-                        return rfx;
+                    bool all = Available;
+                    if (all)
+                    {
+                        foreach (string name in RadioAssembler.AssetNames)
+                        {
+                            if (!File.Exists(Path.Combine(_cacheDir, name)))
+                            {
+                                all = false;
+                                break;
+                            }
+                        }
+                    }
+                    state = all ? 1 : 2;
+                    _assetsState = state;
                 }
-                if (File.Exists(basePath))
-                    return basePath;
+                return state == 1;
             }
-            return null;
+        }
+
+        private string ExistingVariant(string basePath)
+        {
+            if (_radioFx)
+            {
+                string rfx = Path.ChangeExtension(basePath, null)
+                             + "_rfx" + RadioFxVersion + ".wav";
+                if (File.Exists(rfx))
+                    return rfx;
+            }
+            return File.Exists(basePath) ? basePath : null;
         }
 
         /// <summary>
@@ -126,14 +194,23 @@ namespace TeamRadio56.Core.Logic
         {
             // 배포 캐시(kokoro) 우선 — ChainEngine [kokoro, edge]와 같은 순서
             if (!_edgeOnly)
-                yield return CachePath("kokoro|" + _kokoroVoice + "|" + tone + "|" + text, "wav");
+                yield return KokoroBase(text, tone);
+            yield return EdgeBase(text, tone);
+        }
 
+        private string KokoroBase(string text, string tone)
+        {
+            return CachePath("kokoro|" + _kokoroVoice + "|" + tone + "|" + text, "wav");
+        }
+
+        private string EdgeBase(string text, string tone)
+        {
             KeyValuePair<int, string> delivery;
             if (!ToneDelivery.TryGetValue(tone, out delivery))
                 delivery = ToneDelivery["casual"];
             string rate = (_edgeBaseRate + delivery.Key)
                 .ToString("+0;-0", CultureInfo.InvariantCulture) + "%";
-            yield return CachePath(
+            return CachePath(
                 "edge|" + _edgeVoice + "|" + rate + "|" + delivery.Value + "|" + text,
                 "mp3");
         }

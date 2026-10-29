@@ -316,9 +316,11 @@ namespace TeamRadio56.Replay
             for (int i = 0; i < rows.Length; i++)
             {
                 string[] f = rows[i].Split('\t');
-                string cacheDir = Path.Combine(dir, f[0]);
-                List<string> paths = RadioAssembler.SegmentPaths(cacheDir, "bm_george", f[1], f[2]);
-                byte[] wav = paths != null ? RadioAssembler.Build(cacheDir, f[1], paths) : null;
+                // 런타임(AudioSink.TryAssemble)과 같은 경로 — 자산 확인 + 문장 조회 + 조립
+                var cache = new VoiceCache(Path.Combine(dir, f[0]), "en-GB-RyanNeural", 10);
+                string firstMissing;
+                string[] paths = cache.ResolveSegments(f[2], f[1], out firstMissing);
+                byte[] wav = paths != null ? RadioAssembler.Build(cache.CacheDir, f[1], paths) : null;
                 if (wav == null)
                     continue;
                 File.WriteAllBytes(Path.Combine(outDir, i + ".wav"), wav);

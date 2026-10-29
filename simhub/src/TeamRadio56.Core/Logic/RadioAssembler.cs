@@ -46,6 +46,16 @@ namespace TeamRadio56.Core.Logic
         public static List<string> SegmentPaths(string cacheDir, string voice,
                                                 string tone, string text)
         {
+            string firstMissing;
+            return SegmentPaths(cacheDir, voice, tone, text, out firstMissing);
+        }
+
+        /// <summary>같은 규칙 — 미스면 처음 없는 문장을 firstMissing으로 알려준다 (미스 로그용).</summary>
+        public static List<string> SegmentPaths(string cacheDir, string voice,
+                                                string tone, string text,
+                                                out string firstMissing)
+        {
+            firstMissing = null;
             if (string.IsNullOrEmpty(cacheDir) || text == null)
                 return null;
             List<string> sents = Messages.SplitSentences(text);
@@ -56,7 +66,10 @@ namespace TeamRadio56.Core.Logic
             {
                 string p = Path.Combine(cacheDir, VoiceCache.SegmentFileName(s, tone, voice));
                 if (!File.Exists(p))
+                {
+                    firstMissing = s;
                     return null;
+                }
                 paths.Add(p);
             }
             return paths;
