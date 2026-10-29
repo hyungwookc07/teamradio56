@@ -216,8 +216,8 @@ bash simhub/verify/replay-check.sh
 
 파이썬 하니스(tools/replay_calls.py)와 C# 러너(tests/TeamRadio56.Replay)에
 같은 녹화(data/replays/*.jsonl.gz)를 먹여 "버스가 수락한 이벤트"를
-순서·타이밍·데이터까지 비교하고, 사전 캐시 멘트 전체 집합(1057개)도
-diff한다. 분석기를 고치면 파이썬을 먼저 고치고 이 회귀로 C#을 맞춘다.
+순서·타이밍·데이터까지 비교하고, 사전 캐시 멘트 전체 집합(en 1223개)과
+문장 세그먼트 집합(1330개), 세그먼트 조립 출력 바이트도 diff한다. 분석기를 고치면 파이썬을 먼저 고치고 이 회귀로 C#을 맞춘다.
 
 **아직 파이썬 엔진에만 있는 것** (builtin에서는 침묵):
 
@@ -236,6 +236,28 @@ diff한다. 분석기를 고치면 파이썬을 먼저 고치고 이 회귀로 C
 
 파이썬 버전(저장소 루트)은 레퍼런스 겸 실차 튜닝용으로 유지한다 —
 버그는 파이썬에서 먼저 잡고 회귀로 C#을 따라오게 하는 게 빠르다.
+
+### 배포 오디오 캐시 (`audio_cache\`)
+
+영어 kokoro 팩은 두 층이다. 런타임 순서: 통문장 클립 → 문장 세그먼트 조립
+→ 이전에 저장된 edge mp3 → edge 실시간 합성 → Windows TTS.
+
+| 파일 패턴 | 내용 | 만드는 명령 |
+|---|---|---|
+| `*_rfx3.wav` | 통문장 (무전 효과 적용, 8kHz PCM16) — 멘트 풀 + 소수 조합 멘트 | `python tools\pregen_audio.py --engine kokoro` |
+| `*_seg1.wav` | 문장 세그먼트 (무전 효과 적용, 8kHz μ-law) — 숫자 슬롯 멘트용 | `python tools\pregen_audio.py --segments --tiers 1,2 --tracks voice_lines\track_names_en.txt` |
+| `_seg1_*.wav` | 조립 자산 4개 (클릭 / 간격 casual·urgent / 스켈치) | `--segments`가 마지막에 씀 |
+
+- 배포 zip에는 위 세 패턴만 넣는다. 효과 전 원본 `*.wav`(이름이 md5 20자로
+  끝나는 파일)는 재생성용이라 **배포하지 않는다**.
+- 세그먼트는 멘트의 문장이 **전부** 있을 때만 쓰인다 (한 멘트 안에서 목소리가
+  섞이지 않게). 빠진 문장은 SimHub 로그에 `코코로 문장 미스 [톤] 문장`으로
+  처음 20건만 남는다 — 그 문장을 사전 생성 도메인에 추가하면 된다.
+- 조립 자산이 없으면 세그먼트 조립은 통째로 꺼진다 (로그 `조립 자산 없음`).
+- 세그먼트 렌더 규약(속도/효과/간격)을 바꿔 다시 배포할 땐
+  `radio_assemble.SEG_VERSION`과 `VoiceCache.SegSuffix`를 함께 올린다.
+- 대량 생성 전에 `--ab "멘트" --tone casual --ab-out ab`로 통문장/조립본을
+  귀로 비교한다.
 
 ## 오버레이 (SimHub 프로퍼티)
 

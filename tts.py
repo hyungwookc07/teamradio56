@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import random
+import tempfile
 import threading
 import time
 from collections import deque
@@ -179,28 +180,43 @@ class KokoroEngine(TTSEngine):
         os.makedirs(cache_dir, exist_ok=True)
 
     def synth(self, text: str, tone: str = "casual") -> Optional[str]:
-        speed = self.TONE_SPEED.get(tone, 1.0)
         path = _cache_path(self.cache_dir,
                            f"kokoro|{self.voice}|{tone}|{text}", ext="wav")
         if os.path.exists(path):
             return path
-        engine = self._load()
-        if engine is None:
+        rendered = self.render(text, tone)
+        if rendered is None:
             return None
         try:
             import soundfile as sf
-            lang = "en-gb" if self.voice.startswith("b") else "en-us"
-            samples, sr = engine.create(text, voice=self.voice,
-                                        speed=speed, lang=lang)
+            samples, sr = rendered
             sf.write(path, samples, sr)
             return path
         except Exception as e:
-            log.warning("Kokoro 합성 실패: %s", e)
+            log.warning("Kokoro 저장 실패: %s", e)
             try:
                 if os.path.exists(path):
                     os.remove(path)
             except OSError:
                 pass
+            return None
+
+    def render(self, text: str, tone: str = "casual",
+               speed_mult: float = 1.0):
+        """합성만 (파일 I/O 없음) → (samples, sr). 모델이 없거나 실패하면 None.
+        캐시 키는 원문, 합성 입력만 speech_text로 정규화한다."""
+        engine = self._load()
+        if engine is None:
+            return None
+        try:
+            from messages import speech_text
+            lang = "en-gb" if self.voice.startswith("b") else "en-us"
+            speed = self.TONE_SPEED.get(tone, 1.0) * speed_mult
+            samples, sr = engine.create(speech_text(text), voice=self.voice,
+                                        speed=speed, lang=lang)
+            return samples, sr
+        except Exception as e:
+            log.warning("Kokoro 합성 실패: %s", e)
             return None
 
     def _load(self):
@@ -235,6 +251,113 @@ class KokoroEngine(TTSEngine):
         urllib.request.urlretrieve(url, tmp)
         os.replace(tmp, path)
         return path
+
+
+class KokoroPackEngine(TTSEngine):
+    """
+    배포 kokoro 팩 전용 (캐시만, 합성 없음): 통문장 _rfx 클립 → 문장 세그먼트
+    조립 → None 순서. C# AudioSink(ResolveWhole → TryAssemble)와 같은 순서·규칙.
+
+    조립 결과는 cache_dir/_assembled/에 파일로 남겨 재사용한다 (pygame은 파일
+    재생). 생성 시 최신 MAX_ASSEMBLED개만 남기고 정리.
+    """
+
+    MAX_ASSEMBLED = 200
+    MAX_MISS_LOG = 20
+
+    def __init__(self, cache_dir: str, voice: str = "bm_george"):
+        import radio_assemble
+        self.cache_dir = cache_dir
+        self.voice = voice
+        self._ra = radio_assemble
+        self._asm_dir = os.path.join(cache_dir, "_assembled")
+        self._tmp_dir = os.path.join(tempfile.gettempdir(), "teamradio56")
+        self._assets: Optional[bool] = None
+        self._missed: set = set()
+        self._prune()
+
+    def _prune(self) -> None:
+        try:
+            names = [os.path.join(self._asm_dir, n)
+                     for n in os.listdir(self._asm_dir)]
+        except OSError:
+            return
+        files = [p for p in names if os.path.isfile(p)]
+        if len(files) <= self.MAX_ASSEMBLED:
+            return
+        files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        for p in files[self.MAX_ASSEMBLED:]:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+    def _assets_present(self) -> bool:
+        if self._assets is None:
+            self._assets = all(
+                os.path.isfile(os.path.join(self.cache_dir, n))
+                for n in self._ra.ASSET_NAMES)
+        return self._assets
+
+    def synth(self, text: str, tone: str = "casual") -> Optional[str]:
+        import radiofx
+        raw = _cache_path(self.cache_dir,
+                          f"kokoro|{self.voice}|{tone}|{text}", ext="wav")
+        rfx = os.path.splitext(raw)[0] + f"_rfx{radiofx.VERSION}.wav"
+        if os.path.exists(rfx):
+            return rfx
+        if not self._assets_present():
+            return None
+        paths, missing = self._ra.segment_lookup(
+            self.cache_dir, self.voice, tone, text)
+        if paths is None:
+            self._log_miss(tone, missing)
+            return None
+        name = (os.path.splitext(os.path.basename(raw))[0]
+                + f"_asm{self._ra.SEG_VERSION}.wav")
+        sources = paths + [os.path.join(self.cache_dir, n)
+                           for n in self._ra.ASSET_NAMES]
+        for d in (self._asm_dir, self._tmp_dir):
+            dst = os.path.join(d, name)
+            if self._fresh(dst, sources):
+                return dst
+        data = self._ra.build(self.cache_dir, tone, paths)
+        if data is None:
+            self._log_miss(tone, None, text)
+            return None
+        for d in (self._asm_dir, self._tmp_dir):
+            dst = os.path.join(d, name)
+            try:
+                os.makedirs(d, exist_ok=True)
+                tmp = f"{dst}.{os.getpid()}.part"
+                with open(tmp, "wb") as f:
+                    f.write(data)
+                os.replace(tmp, dst)
+                return dst
+            except OSError:
+                continue
+        return None
+
+    @staticmethod
+    def _fresh(dst: str, sources: list) -> bool:
+        """조립본이 있고 원천(세그먼트·자산)보다 새것인지 — 팩을 갈아끼우면 다시 조립."""
+        try:
+            t = os.path.getmtime(dst)
+            return all(os.path.getmtime(p) <= t for p in sources)
+        except OSError:
+            return False
+
+    def _log_miss(self, tone: str, sentence: Optional[str],
+                  text: Optional[str] = None) -> None:
+        # 처음 20건만 — 어떤 문장을 팩에 더 넣어야 하는지 찾는 용도
+        key = (tone, sentence, text)
+        if key in self._missed or len(self._missed) >= self.MAX_MISS_LOG:
+            return
+        self._missed.add(key)
+        if sentence is not None:
+            log.info("코코로 문장 미스 [%s] %s", tone, sentence)
+        else:
+            log.info("코코로 세그먼트 조립 실패 [%s] %s", tone, text)
 
 
 class ChainEngine(TTSEngine):
@@ -296,15 +419,22 @@ def build_engine(cfg) -> TTSEngine:
         cfg.get("tts.edge_rate", "+10%"),
     )
     built: TTSEngine = edge
+    radio_fx = cfg.get("tts.radio_fx", True)
+    noise = cfg.get("tts.radio_noise", 0.004)
     if engine == "kokoro" and lang.startswith("ko"):
         # Kokoro는 영어 전용 — 한국어 멘트는 edge로만
         log.info("kokoro는 영어 전용 — 멘트 언어 ko라 edge로 폴백")
     elif engine == "kokoro":
         # 배포 기본 경로: [사전 생성 캐시(kokoro), edge 폴백]
-        built = ChainEngine([
-            KokoroEngine(cache_dir, cfg.get("tts.kokoro_voice", "bm_george")),
-            edge,
-        ])
+        voice = cfg.get("tts.kokoro_voice", "bm_george")
+        built = ChainEngine([KokoroEngine(cache_dir, voice), edge])
+        if radio_fx:
+            # 배포 팩(통문장 _rfx → 문장 조립)을 먼저 — 효과 적용본만 배포된
+            # 캐시에서도 kokoro가 나온다. 그다음 원본 kokoro/edge + 효과.
+            return ChainEngine([
+                KokoroPackEngine(cache_dir, voice),
+                RadioFXEngine(built, noise=noise),
+            ])
     elif engine == "elevenlabs":
         voice_id = cfg.get("tts.elevenlabs_voice_id", "")
         if voice_id:
@@ -316,6 +446,23 @@ def build_engine(cfg) -> TTSEngine:
             built = ChainEngine([eleven, edge])
         else:
             log.warning("elevenlabs voice_id 미설정 — edge로 폴백")
+    if radio_fx:
+        built = RadioFXEngine(built, noise=noise)
+    return built
+
+
+def build_pregen_engine(cfg) -> TTSEngine:
+    """
+    사전 생성용 엔진. kokoro(en)는 팩(_rfx/조립)이나 edge로 건너뛰지 않고
+    항상 kokoro로 렌더한다 — 배포 팩에 edge 음성이 섞이지 않게.
+    그 밖의 엔진/언어는 build_engine과 같다.
+    """
+    engine = cfg.get("tts.engine", "edge")
+    lang = str(cfg.get("voice.language", "en")).lower()
+    if engine != "kokoro" or lang.startswith("ko"):
+        return build_engine(cfg)
+    built: TTSEngine = KokoroEngine(cfg.get("tts.cache_dir", "audio_cache"),
+                                    cfg.get("tts.kokoro_voice", "bm_george"))
     if cfg.get("tts.radio_fx", True):
         built = RadioFXEngine(built, noise=cfg.get("tts.radio_noise", 0.004))
     return built

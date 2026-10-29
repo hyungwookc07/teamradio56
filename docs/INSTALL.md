@@ -140,6 +140,18 @@ pipenv run pyinstaller teamradio56.spec
   실행 위치 기준으로 생성됩니다.
 - 사전 생성 오디오 캐시(`python tools\pregen_audio.py`)를 미리 만들어
   `audio_cache\` 폴더째 함께 배포하면 첫 실행부터 긴급 콜이 지연 없이 나옵니다.
+- 영어 kokoro 팩(`tts.engine: kokoro`)은 제작자 PC(`pip install kokoro-onnx`)에서
+  두 번 돌려 만듭니다:
+
+  ```bat
+  python tools\pregen_audio.py --engine kokoro
+  python tools\pregen_audio.py --segments --tiers 1,2 --tracks voice_lines\track_names_en.txt
+  ```
+
+  배포할 파일은 `*_rfx3.wav`(통문장), `*_seg1.wav`(문장 세그먼트),
+  `_seg1_*.wav`(조립 자산 4개)입니다. 효과 전 원본 `*.wav`는 넣지 않습니다.
+  파이썬 엔진은 조립한 멘트를 `audio_cache\_assembled\`에 최근 200개까지
+  저장해 재사용합니다 (배포 대상 아님).
 
 ## 문제 해결
 
