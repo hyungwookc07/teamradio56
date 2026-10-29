@@ -618,11 +618,13 @@ namespace TeamRadio56.Core.Logic
                                    + wheels[2].BrakeTemp + wheels[3].BrakeTemp) / 4;
                 if (avgBrake >= _brakeWarn)
                 {
+                    // 10도 단위 반올림 — 파이썬 int(math.floor(x / 10.0 + 0.5)) * 10과 동일
+                    int t = (int)Math.Floor(avgBrake / 10.0 + 0.5) * 10;
                     var ev = new RadioEvent
                     {
                         Type = EventTypes.BrakeWarning,
                         Priority = Priority.Normal,
-                        Message = Messages.Get("brake_warn", "t", avgBrake),
+                        Message = Messages.Get("brake_warn", "t", t),
                         Ttl = 30.0,
                     };
                     ev.Data["avg_brake"] = (int)Math.Round(avgBrake, MidpointRounding.ToEven);

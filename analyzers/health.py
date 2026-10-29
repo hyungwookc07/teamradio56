@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
@@ -474,9 +475,11 @@ class HealthAnalyzer:
         if len(wheels) == 4:
             avg_brake = sum(w.get("brake_temp", 0.0) for w in wheels) / 4
             if avg_brake >= self.brake_warn:
+                # 10도 단위 반올림 — 명시적 floor(x+0.5)라 C#과 결과가 같다
+                t = int(math.floor(avg_brake / 10.0 + 0.5)) * 10
                 bus.push(Event(
                     type=EventType.BRAKE_WARNING, priority=Priority.NORMAL,
-                    message=msg("brake_warn", t=avg_brake),
+                    message=msg("brake_warn", t=t),
                     data={"avg_brake": round(avg_brake)}, ttl=30.0,
                 ))
 

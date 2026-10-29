@@ -563,6 +563,18 @@ namespace TeamRadio56.Core.Logic
             { "Hypercar", "LMP2", "GT3", "GTE", "faster car" };
         public const int SegMultiMaxCars = 3;
         public const int SegDentMaxZones = 3;
+        // 2단계 — 차량 상태/연료 세이브/세션 브리핑
+        public const int SegWingMmMin = 10, SegWingMmMax = 60;
+        public const int SegBrakeTMin = 700, SegBrakeTMax = 1200, SegBrakeTStep = 10;
+        public static readonly double[] SegRepair = Tenths(5, 50);
+        public static readonly double[] SegFuelTarget = Tenths(10, 120);
+        public static readonly double[] SegFuelSave = Tenths(1, 30);
+        public const int SegBriefMinutesMax = 1440;   // BriefLengthText가 126개 값으로 묶는다
+        public const int SegBriefLapsMax = 100;
+        public const int SegBriefCarsMin = 2, SegBriefCarsMax = 40;
+        public const int SegBriefPosMax = 40;
+        public const int SegBriefTempMax = 60;
+        public const int SegBriefFuelMax = 130;
 
         /// <summary>
         /// maxTier 이하 단계의 (톤, 문장). tracks는 2단계(세션 브리핑)용.
@@ -576,6 +588,17 @@ namespace TeamRadio56.Core.Logic
             if (maxTier >= 1)
             {
                 foreach (KeyValuePair<string, string> m in Tier1Messages())
+                {
+                    foreach (string s in Messages.SplitSentences(m.Value))
+                    {
+                        if (seen.Add(m.Key + "\t" + s))
+                            yield return new KeyValuePair<string, string>(m.Key, s);
+                    }
+                }
+            }
+            if (maxTier >= 2)
+            {
+                foreach (KeyValuePair<string, string> m in Tier2Messages(tracks))
                 {
                     foreach (string s in Messages.SplitSentences(m.Value))
                     {
@@ -695,6 +718,58 @@ namespace TeamRadio56.Core.Logic
                     }
                 }
             }
+        }
+
+        /// <summary>2단계 도메인의 전체 멘트 (분할 전).</summary>
+        private static IEnumerable<KeyValuePair<string, string>> Tier2Messages(
+            IEnumerable<string> tracks)
+        {
+            // 차량 상태 — HealthAnalyzer (윙/브레이크/수리 판단)
+            for (int mm = SegWingMmMin; mm <= SegWingMmMax; mm++)
+                yield return C(Messages.Get("wing_down", "mm", mm));
+            for (int t = SegBrakeTMin; t <= SegBrakeTMax; t += SegBrakeTStep)
+                yield return C(Messages.Get("brake_warn", "t", t));
+            foreach (double d in SegRepair)
+                yield return C(Messages.Get("repair_cost", "delta", d));
+            // 연료 세이브 — FuelAnalyzer SaveCoaching
+            foreach (double target in SegFuelTarget)
+            {
+                foreach (double d in SegFuelSave)
+                    yield return C(Messages.Get("fuel_save", "target", target, "delta", d));
+            }
+            // 세션 브리핑 — SessionBriefer.Compose (트랙 이름은 목록 파일)
+            var trackList = tracks != null ? new List<string>(tracks) : new List<string>();
+            foreach (string kindKey in new[] { "kind_race", "kind_warmup", "kind_quali",
+                                               "kind_practice" })
+            {
+                string kind = Messages.Get(kindKey);
+                yield return C(Messages.Get("brief_radio", "kind", kind));
+                foreach (string track in trackList)
+                    yield return C(Messages.Get("brief_track", "track", track, "kind", kind));
+            }
+            for (int m = 1; m <= SegBriefMinutesMax; m++)
+            {
+                string length = Messages.BriefLengthText(m);
+                yield return C(Messages.Get("brief_len_remaining", "length", length));
+                yield return C(Messages.Get("brief_len_long", "length", length));
+            }
+            for (int n = 1; n <= SegBriefLapsMax; n++)
+                yield return C(n == 1 ? Messages.Get("brief_lap") : Messages.Get("brief_laps", "n", n));
+            for (int n = SegBriefCarsMin; n <= SegBriefCarsMax; n++)
+            {
+                for (int cp = 1; cp <= SegBriefPosMax; cp++)
+                {
+                    yield return C(Messages.Get("brief_grid", "cp", cp, "n", n));
+                    yield return C(Messages.Get("brief_grid_mid", "cp", cp, "n", n));
+                }
+            }
+            for (int t = 1; t <= SegBriefTempMax; t++)
+                yield return C(Messages.Get("brief_temp", "t", t));
+            for (int f = 1; f <= SegBriefFuelMax; f++)
+                yield return C(Messages.Get("brief_fuel", "f", f));
+            foreach (string key in new[] { "brief_rain", "brief_formation", "brief_start_spotter",
+                                           "brief_carry_on", "brief_calm", "brief_out" })
+                yield return C(Messages.Get(key));
         }
 
         private static KeyValuePair<string, string> C(string text)

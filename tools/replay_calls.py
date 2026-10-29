@@ -40,6 +40,7 @@ from analyzers.pace import PaceAnalyzer          # noqa: E402
 from analyzers.tyres import TyreAnalyzer         # noqa: E402
 from analyzers.strategy import StrategyEngine    # noqa: E402
 from analyzers.reporter import StatusReporter    # noqa: E402
+from briefing import compose_session_briefing    # noqa: E402
 from config import load_config                   # noqa: E402
 from telemetry import Snapshot                   # noqa: E402
 
@@ -113,6 +114,8 @@ def main() -> int:
     bus.push = recording_push
 
     ticks = 0
+    briefed = False
+    spotter_sec = cfg.get("thresholds.start_spotter_sec", 45)
     with open_replay(args.replay) as f:
         for line in f:
             line = line.strip()
@@ -122,7 +125,16 @@ def main() -> int:
             if not snap.connected:
                 continue
             vclock.t = snap.t
-            # main.py on_snapshot 순서: 분석기 틱 → 상태 갱신(랩 완료 감지)
+            # main.py on_snapshot 순서: 세션 브리핑 → 분석기 틱 → 상태 갱신(랩 완료 감지)
+            if not briefed and snap.player_scoring() is not None:
+                briefed = True
+                text = compose_session_briefing(snap, state, spotter_sec)
+                if text is not None:
+                    bus.push(Event(
+                        type=EventType.SESSION_BRIEFING, priority=Priority.NORMAL,
+                        message=text, dedup_key="session_brief",
+                        ttl=60.0, tone="casual",
+                    ))
             traffic.on_tick(state, snap, bus)
             racecontrol.on_tick(state, snap, bus)
             rivals.on_tick(state, snap, bus)

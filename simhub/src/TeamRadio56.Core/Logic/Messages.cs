@@ -382,6 +382,29 @@ namespace TeamRadio56.Core.Logic
             return head + ". " + advice;
         }
 
+        /// <summary>
+        /// messages.py brief_length_text — 세션 길이 슬롯. 1시간 이상은 정수
+        /// 연산으로 반올림 (60~179분은 5분, 180분 이상은 30분 단위).
+        /// </summary>
+        public static string BriefLengthText(int minutes)
+        {
+            int m = minutes;
+            if (m >= 180)
+                m = (m + 15) / 30 * 30;
+            else if (m >= 60)
+                m = (m + 2) / 5 * 5;
+            if (m == 1)
+                return Get("brief_minute");
+            if (m >= 60 && m % 60 == 0)
+            {
+                int h = m / 60;
+                return Get(h > 1 ? "brief_hours_plural" : "brief_hours", "h", h);
+            }
+            if (m >= 180 && m % 60 == 30)
+                return Get("brief_hours_half", "h", m / 60);
+            return Get("brief_minutes", "m", m);
+        }
+
         // -- 문장 테이블 (messages.py _T 미러) --------------------------------
 
         private static readonly Dictionary<string, string> En =
@@ -460,12 +483,15 @@ namespace TeamRadio56.Core.Logic
             { "brief_radio", "Radio check. {kind} session." },
             { "brief_hours", "{h} hour" },
             { "brief_hours_plural", "{h} hours" },
+            { "brief_hours_half", "{h} and a half hours" },
+            { "brief_minute", "1 minute" },
             { "brief_minutes", "{m} minutes" },
             { "brief_len_remaining", "{length} remaining." },
             { "brief_len_long", "{length} long." },
+            { "brief_lap", "1 lap." },
             { "brief_laps", "{n} laps." },
-            { "brief_grid", "P{cp} of {n} in class on the grid." },
-            { "brief_grid_mid", "P{cp} of {n} in class." },
+            { "brief_grid", "{n} cars in class. We start P{cp}." },
+            { "brief_grid_mid", "{n} cars in class. We're P{cp}." },
             { "brief_rain", "It's raining, watch the grip." },
             { "brief_temp", "Track {t:.0f} degrees." },
             { "brief_fuel", "Fuel {f:.0f} litres." },
@@ -568,9 +594,12 @@ namespace TeamRadio56.Core.Logic
             { "brief_radio", "무전 체크. {kind} 세션이야." },
             { "brief_hours", "{h}시간" },
             { "brief_hours_plural", "{h}시간" },
+            { "brief_hours_half", "{h}시간 반" },
+            { "brief_minute", "1분" },
             { "brief_minutes", "{m}분" },
             { "brief_len_remaining", "남은 시간 {length}." },
             { "brief_len_long", "{length}짜리." },
+            { "brief_lap", "1랩짜리." },
             { "brief_laps", "{n}랩짜리." },
             { "brief_grid", "우리 클래스 {n}대 중 P{cp} 스타트." },
             { "brief_grid_mid", "우리 클래스 {n}대 중 P{cp}." },

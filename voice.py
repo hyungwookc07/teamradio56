@@ -26,7 +26,7 @@ from messages import (msg, class_display, gap_slot, side_slot,
                       fuel_slot, laps_text, seconds_text,
                       is_ko, set_language, and_list, join_problems,
                       multi_names, penalty_text, split_sentences,
-                      wheel_name, zone_display)
+                      wheel_name, zone_display, brief_length_text)
 
 log = logging.getLogger("voice")
 
@@ -622,6 +622,18 @@ SEG_TYRE_LAPS = range(0, 31)
 SEG_MULTI_CLASSES = ("Hypercar", "LMP2", "GT3", "GTE", "faster car")
 SEG_MULTI_MAX_CARS = 3
 SEG_DENT_MAX_ZONES = 3
+# 2단계 — 차량 상태/연료 세이브/세션 브리핑
+SEG_WING_MM = range(10, 61)
+SEG_BRAKE_T = range(700, 1201, 10)          # health: 10도 단위 반올림
+SEG_REPAIR = [i / 10 for i in range(5, 51)]
+SEG_FUEL_TARGET = [i / 10 for i in range(10, 121)]
+SEG_FUEL_SAVE = [i / 10 for i in range(1, 31)]
+SEG_BRIEF_MINUTES = range(1, 1441)          # brief_length_text가 126개 값으로 묶는다
+SEG_BRIEF_LAPS = range(1, 101)
+SEG_BRIEF_CARS = range(2, 41)
+SEG_BRIEF_POS = range(1, 41)
+SEG_BRIEF_TEMP = range(1, 61)
+SEG_BRIEF_FUEL = range(1, 131)
 
 
 def load_track_names(path: str) -> list[str]:
@@ -649,6 +661,9 @@ def iter_pregen_sentences(tiers=(1, 2), tracks=()):
 
     if 1 in tiers:
         for tone, text in _tier1_messages():
+            yield from emit(tone, text)
+    if 2 in tiers:
+        for tone, text in _tier2_messages(tracks):
             yield from emit(tone, text)
 
 
@@ -710,3 +725,41 @@ def _tier1_messages():
                 names = multi_names(list(zip(classes, counts)))
                 yield "urgent", msg("multi_behind", names=names) + "."
                 yield "urgent", msg("multi_closing", names=names) + "."
+
+
+def _tier2_messages(tracks=()):
+    """2단계 도메인의 전체 멘트 (분할 전)."""
+    # 차량 상태 — health (윙/브레이크/수리 판단)
+    for mm in SEG_WING_MM:
+        yield "casual", msg("wing_down", mm=mm)
+    for t in SEG_BRAKE_T:
+        yield "casual", msg("brake_warn", t=t)
+    for d in SEG_REPAIR:
+        yield "casual", msg("repair_cost", delta=d)
+    # 연료 세이브 — fuel._save_coaching
+    for target in SEG_FUEL_TARGET:
+        for d in SEG_FUEL_SAVE:
+            yield "casual", msg("fuel_save", target=target, delta=d)
+    # 세션 브리핑 — briefing.compose_session_briefing (트랙 이름은 목록 파일)
+    for kind_key in ("kind_race", "kind_warmup", "kind_quali", "kind_practice"):
+        kind = msg(kind_key)
+        yield "casual", msg("brief_radio", kind=kind)
+        for track in tracks:
+            yield "casual", msg("brief_track", track=track, kind=kind)
+    for m in SEG_BRIEF_MINUTES:
+        length = brief_length_text(m)
+        yield "casual", msg("brief_len_remaining", length=length)
+        yield "casual", msg("brief_len_long", length=length)
+    for n in SEG_BRIEF_LAPS:
+        yield "casual", msg("brief_lap") if n == 1 else msg("brief_laps", n=n)
+    for n in SEG_BRIEF_CARS:
+        for cp in SEG_BRIEF_POS:
+            yield "casual", msg("brief_grid", cp=cp, n=n)
+            yield "casual", msg("brief_grid_mid", cp=cp, n=n)
+    for t in SEG_BRIEF_TEMP:
+        yield "casual", msg("brief_temp", t=t)
+    for f in SEG_BRIEF_FUEL:
+        yield "casual", msg("brief_fuel", f=f)
+    for key in ("brief_rain", "brief_formation", "brief_start_spotter",
+                "brief_carry_on", "brief_calm", "brief_out"):
+        yield "casual", msg(key)

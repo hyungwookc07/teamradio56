@@ -122,6 +122,7 @@ namespace TeamRadio56.Replay
             var tyres = new TyreAnalyzer();
             var strategy = new StrategyEngine();
             var reporter = new StatusReporter();
+            var briefer = new SessionBriefer();   // StartSpotterSec 기본 45 = 파이썬 DEFAULTS
 
             var lines = new List<string>();
             var accepted = new List<RadioEvent>();
@@ -139,7 +140,8 @@ namespace TeamRadio56.Replay
                 if (!connected)
                     continue;
                 clock = snap.T;
-                // main.py on_snapshot 순서: 분석기 틱 → 상태 갱신(랩 완료 감지)
+                // main.py on_snapshot 순서: 세션 브리핑 → 분석기 틱 → 상태 갱신(랩 완료 감지)
+                briefer.MaybeBrief(state, snap, bus);
                 traffic.OnTick(state, snap, bus);
                 racecontrol.OnTick(state, snap, bus);
                 rivals.OnTick(state, snap, bus);
