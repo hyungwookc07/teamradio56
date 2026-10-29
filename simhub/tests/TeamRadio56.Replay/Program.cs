@@ -29,6 +29,7 @@ namespace TeamRadio56.Replay
             string checkCacheDir = null;
             bool gec = false;
             string synthText = null;
+            bool coverage = false;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
@@ -45,6 +46,8 @@ namespace TeamRadio56.Replay
                     checkCacheDir = args[++i];
                 else if (args[i] == "--gec")
                     gec = true;
+                else if (args[i] == "--coverage")
+                    coverage = true;
                 else if (args[i] == "--synth" && i + 1 < args.Length)
                     synthText = args[++i];
             }
@@ -93,7 +96,8 @@ namespace TeamRadio56.Replay
             var reporter = new StatusReporter();
 
             var lines = new List<string>();
-            bus.Accepted = ev => lines.Add(Format(clock, ev));
+            var accepted = new List<RadioEvent>();
+            bus.Accepted = ev => { lines.Add(Format(clock, ev)); accepted.Add(ev); };
 
             int ticks = 0;
             foreach ((Snapshot snap, bool connected) in ReplayLoader.Read(replayPath))
@@ -131,6 +135,9 @@ namespace TeamRadio56.Replay
                 ticks++;
             }
 
+            if (coverage)
+                return Coverage(accepted);
+
             TextWriter writer = outPath != null
                 ? new StreamWriter(outPath, false, new UTF8Encoding(false))
                 : Console.Out;
@@ -142,6 +149,38 @@ namespace TeamRadio56.Replay
                 Console.Error.WriteLine(
                     $"틱 {ticks}개 처리, 수락 이벤트 {lines.Count}개 → {outPath}");
             }
+            return 0;
+        }
+
+        /// <summary>
+        /// 리플레이에서 실제로 나갈 발화 문장을 렌더링해, 사전 생성(코코로)
+        /// 목록에 있는 비율을 잰다 — "코코로가 말하는 부분" 커버리지 진단.
+        /// </summary>
+        private static int Coverage(List<RadioEvent> accepted)
+        {
+            var pregen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, string> item
+                     in PregenTexts.Enumerate(new PhrasePool()))
+                pregen.Add(item.Key + "\t" + item.Value);
+            var renderer = new VoiceRenderer(new PhrasePool(new Random(7)));
+            int spoken = 0, hit = 0;
+            var byType = new SortedDictionary<string, int[]>(StringComparer.Ordinal);
+            foreach (RadioEvent ev in accepted)
+            {
+                string text = renderer.TextFor(ev).Key;
+                if (string.IsNullOrEmpty(text))
+                    continue;
+                spoken++;
+                bool ok = pregen.Contains((ev.Tone ?? "casual") + "\t" + text);
+                if (ok) hit++;
+                int[] c;
+                if (!byType.TryGetValue(ev.Type, out c)) { c = new int[2]; byType[ev.Type] = c; }
+                c[0]++; if (ok) c[1]++;
+                Console.WriteLine((ok ? "  KOKORO  " : "  miss    ") + ev.Type + " | " + text);
+            }
+            Console.WriteLine($"발화 {spoken}건 중 코코로 캐시 {hit}건 ({(spoken > 0 ? 100.0 * hit / spoken : 0):F0}%)");
+            foreach (var kv in byType)
+                Console.WriteLine($"  {kv.Key}: {kv.Value[1]}/{kv.Value[0]}");
             return 0;
         }
 
