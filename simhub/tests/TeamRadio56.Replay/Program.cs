@@ -35,6 +35,7 @@ namespace TeamRadio56.Replay
             int maxTier = 2;
             string tracksPath = null;
             string assembleDir = null;
+            double minPct = 0;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
@@ -65,6 +66,8 @@ namespace TeamRadio56.Replay
                     tracksPath = args[++i];
                 else if (args[i] == "--assemble-check" && i + 1 < args.Length)
                     assembleDir = args[++i];
+                else if (args[i] == "--min" && i + 1 < args.Length)
+                    minPct = double.Parse(args[++i], CultureInfo.InvariantCulture);
             }
             if (gec)
             {
@@ -86,14 +89,12 @@ namespace TeamRadio56.Replay
                 return DumpPregen(outPath);
             if (dumpCacheNames)
                 return DumpCacheNames(outPath);
+            List<string> tracks = tracksPath != null
+                ? PregenSentences.LoadTracks(tracksPath) : new List<string>();
             if (dumpSentences || dumpSegNames)
-            {
-                List<string> tracks = tracksPath != null
-                    ? PregenSentences.LoadTracks(tracksPath) : new List<string>();
                 return DumpSentences(outPath, maxTier, tracks, dumpSegNames);
-            }
             if (checkCacheDir != null)
-                return CheckCache(checkCacheDir);
+                return CheckCache(checkCacheDir, maxTier, tracks);
             if (assembleDir != null)
                 return AssembleCheck(assembleDir);
             if (replayPath == null)
@@ -102,7 +103,9 @@ namespace TeamRadio56.Replay
                     "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] [--lang en|ko]"
                     + " | --dump-pregen [--out f] | --dump-cache-names [--out f]"
                     + " | --dump-sentences|--dump-seg-names [--tier N] [--tracks f] [--out f]"
-                    + " | --check-cache <오디오캐시폴더> | --assemble-check <폴더>"
+                    + " | --replay <f> --coverage [--tier N] [--tracks f] [--min 퍼센트]"
+                    + " | --check-cache <오디오캐시폴더> [--tier N] [--tracks f]"
+                    + " | --assemble-check <폴더>"
                     + " | --gec | --synth <텍스트>");
                 return 2;
             }
@@ -167,7 +170,7 @@ namespace TeamRadio56.Replay
             }
 
             if (coverage)
-                return Coverage(accepted);
+                return Coverage(accepted, maxTier, tracks, minPct);
 
             TextWriter writer = outPath != null
                 ? new StreamWriter(outPath, false, new UTF8Encoding(false))
@@ -184,34 +187,89 @@ namespace TeamRadio56.Replay
         }
 
         /// <summary>
-        /// 리플레이에서 실제로 나갈 발화 문장을 렌더링해, 사전 생성(코코로)
-        /// 목록에 있는 비율을 잰다 — "코코로가 말하는 부분" 커버리지 진단.
+        /// 리플레이에서 실제로 나갈 발화 문장을 렌더링해 코코로로 나갈 수 있는
+        /// 비율을 잰다 — 통문장 클립(KOKORO), 문장이 전부 세그먼트 목록에 있음
+        /// (KOKORO-SEG), 아니면 miss(빠진 문장 출력). 세션 브리핑의 첫 문장
+        /// '{track}.'만 빠진 건 "트랙 이름 추가"로 따로 보고하고 점수에서 뺀다
+        /// (리플레이 트랙명은 목록에 없는 'Circuit de Test'). --min 미만이면 1.
         /// </summary>
-        private static int Coverage(List<RadioEvent> accepted)
+        private static int Coverage(List<RadioEvent> accepted, int maxTier,
+                                    List<string> tracks, double minPct)
         {
             var pregen = new HashSet<string>(StringComparer.Ordinal);
             foreach (KeyValuePair<string, string> item
                      in PregenTexts.Enumerate(new PhrasePool()))
                 pregen.Add(item.Key + "\t" + item.Value);
+            var sentences = new HashSet<string>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, string> item
+                     in PregenSentences.Enumerate(maxTier, tracks))
+                sentences.Add(item.Key + "\t" + item.Value);
+            // 트랙명이 없을 때의 브리핑 첫 문장 — 고정 문장이라 트랙 미스로 빼지 않는다
+            string radioFirst = Messages.SplitSentences(
+                Messages.Get("brief_radio", "kind", "x"))[0];
+
             var renderer = new VoiceRenderer(new PhrasePool(new Random(7)));
-            int spoken = 0, hit = 0;
+            int spoken = 0, whole = 0, seg = 0;
+            var trackMisses = new List<string>();
             var byType = new SortedDictionary<string, int[]>(StringComparer.Ordinal);
             foreach (RadioEvent ev in accepted)
             {
                 string text = renderer.TextFor(ev).Key;
                 if (string.IsNullOrEmpty(text))
                     continue;
+                string tone = ev.Tone ?? "casual";
+                string kind;
+                var missing = new List<string>();
+                if (pregen.Contains(tone + "\t" + text))
+                {
+                    kind = "KOKORO";
+                }
+                else
+                {
+                    List<string> sents = Messages.SplitSentences(text);
+                    string trackMiss = null;
+                    for (int i = 0; i < sents.Count; i++)
+                    {
+                        if (sentences.Contains(tone + "\t" + sents[i]))
+                            continue;
+                        if (i == 0 && ev.Type == EventTypes.SessionBriefing
+                            && sents[0] != radioFirst)
+                            trackMiss = sents[0];
+                        else
+                            missing.Add(sents[i]);
+                    }
+                    if (trackMiss != null && !trackMisses.Contains(trackMiss))
+                        trackMisses.Add(trackMiss);
+                    kind = missing.Count > 0 ? "miss"
+                        : trackMiss != null ? "TRACK" : "KOKORO-SEG";
+                }
+                Console.WriteLine("  " + kind.PadRight(11) + " " + ev.Type + " | " + text);
+                foreach (string m in missing)
+                    Console.WriteLine("      빠진 문장 [" + tone + "] " + m);
+                if (kind == "TRACK")
+                    continue;   // 트랙 이름만 빠짐 — 점수 제외
                 spoken++;
-                bool ok = pregen.Contains((ev.Tone ?? "casual") + "\t" + text);
-                if (ok) hit++;
+                bool ok = kind != "miss";
+                if (kind == "KOKORO") whole++;
+                else if (ok) seg++;
                 int[] c;
                 if (!byType.TryGetValue(ev.Type, out c)) { c = new int[2]; byType[ev.Type] = c; }
                 c[0]++; if (ok) c[1]++;
-                Console.WriteLine((ok ? "  KOKORO  " : "  miss    ") + ev.Type + " | " + text);
             }
-            Console.WriteLine($"발화 {spoken}건 중 코코로 캐시 {hit}건 ({(spoken > 0 ? 100.0 * hit / spoken : 0):F0}%)");
+            int hit = whole + seg;
+            double pct = spoken > 0 ? 100.0 * hit / spoken : 100.0;
+            Console.WriteLine($"발화 {spoken}건 중 코코로 {hit}건 ({pct:F0}%) — "
+                + $"통문장 {whole}, 문장 조립 {seg}, 미스 {spoken - hit}");
             foreach (var kv in byType)
                 Console.WriteLine($"  {kv.Key}: {kv.Value[1]}/{kv.Value[0]}");
+            foreach (string t in trackMisses)
+                Console.WriteLine("트랙 이름 추가 (점수 제외): " + t);
+            // 나눗셈 없이 비교 — 100% 기준이 부동소수 오차로 떨어지지 않게
+            if (hit * 100.0 < minPct * spoken)
+            {
+                Console.WriteLine($"❌ 커버리지 {pct:F1}% < 기준 {minPct}%");
+                return 1;
+            }
             return 0;
         }
 
@@ -331,10 +389,11 @@ namespace TeamRadio56.Replay
         }
 
         /// <summary>
-        /// 실제 오디오 캐시 폴더에 대해 사전 캐시 전 항목을 Resolve —
+        /// 실제 오디오 캐시 폴더에 대해 사전 캐시 전 항목을 Resolve하고, en이면
+        /// maxTier 이하 문장 세그먼트(_seg1.wav)와 조립 자산 4개도 요구한다 —
         /// builtin 모드가 배포 캐시를 몇 개나 찾는지 확인하는 진단 도구.
         /// </summary>
-        private static int CheckCache(string cacheDir)
+        private static int CheckCache(string cacheDir, int maxTier, List<string> tracks)
         {
             var cache = new VoiceCache(cacheDir, "en-GB-RyanNeural", 10);
             if (!cache.Available)
@@ -370,7 +429,52 @@ namespace TeamRadio56.Replay
                 foreach (string m in misses)
                     Console.WriteLine(m);
             }
-            return hit == total ? 0 : 1;
+            bool ok = hit == total;
+
+            // 문장 세그먼트 — ko는 열거가 비어 있어 자동으로 건너뜀
+            int segTotal = 0, segHit = 0;
+            var segMisses = new List<string>();
+            foreach (KeyValuePair<string, string> item
+                     in PregenSentences.Enumerate(maxTier, tracks))
+            {
+                segTotal++;
+                if (File.Exists(Path.Combine(cacheDir,
+                        VoiceCache.SegmentFileName(item.Value, item.Key))))
+                {
+                    segHit++;
+                }
+                else if (segMisses.Count < 5)
+                {
+                    segMisses.Add("  [" + item.Key + "] " + item.Value);
+                }
+            }
+            if (segTotal > 0)
+            {
+                Console.WriteLine($"문장 세그먼트 {segHit}/{segTotal} (단계 ≤{maxTier})");
+                if (segHit < segTotal)
+                {
+                    Console.WriteLine("세그먼트 미스 예시:");
+                    foreach (string m in segMisses)
+                        Console.WriteLine(m);
+                    ok = false;
+                }
+                var missingAssets = new List<string>();
+                foreach (string name in RadioAssembler.AssetNames)
+                {
+                    if (!File.Exists(Path.Combine(cacheDir, name)))
+                        missingAssets.Add(name);
+                }
+                if (missingAssets.Count > 0)
+                {
+                    Console.WriteLine("조립 자산 없음: " + string.Join(", ", missingAssets));
+                    ok = false;
+                }
+                else
+                {
+                    Console.WriteLine($"조립 자산 {RadioAssembler.AssetNames.Length}개 있음");
+                }
+            }
+            return ok ? 0 : 1;
         }
 
         private static string Format(double t, RadioEvent ev, string say)

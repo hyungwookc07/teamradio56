@@ -84,7 +84,7 @@ fi
 if [ -d audio_cache ] && ls audio_cache/*_rfx3.wav > /dev/null 2>&1; then
     echo
     echo "▶ 실캐시 Resolve 확인 (audio_cache/)"
-    if ! "$RUNNER" --check-cache audio_cache; then
+    if ! "$RUNNER" --check-cache audio_cache --tier 2 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"}; then
         fail=1
     fi
 fi
@@ -142,6 +142,24 @@ for replay in data/replays/*.jsonl.gz; do
             fail=1
         fi
     done
+
+    # 코코로 커버리지 (en) — 발화가 전부 통문장 클립이나 문장 세그먼트로 나가야 한다.
+    # 템플릿·톤이 사전 생성 도메인을 벗어나면 런타임에선 조용히 edge로 빠지므로 여기서 막는다.
+    echo
+    echo "▶ 코코로 커버리지: $name (en, 통문장 + 문장 세그먼트, 기준 100%)"
+    cov="$OUT/cov_$name.txt"
+    if "$RUNNER" --replay "$replay" --lang en --coverage --tier 2 \
+        ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --min 100 > "$cov"; then
+        echo "✅ $(grep '^발화 ' "$cov")"
+    else
+        echo "❌ 커버리지 미달 — 미스 멘트:"
+        grep -E '^  miss |빠진 문장' "$cov" | head -40 || true
+        grep -E '^발화 |^❌' "$cov" || true
+        fail=1
+    fi
+    if grep -q '^트랙 이름 추가' "$cov"; then
+        grep '^트랙 이름 추가' "$cov" | sed 's/^/⚠️  /'
+    fi
 done
 
 echo
