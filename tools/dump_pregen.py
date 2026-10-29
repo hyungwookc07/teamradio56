@@ -20,11 +20,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from messages import set_language                            # noqa: E402
+from radio_assemble import segment_file_name                  # noqa: E402
 from voice import (PhrasePool, iter_pregen_sentences,         # noqa: E402
                    iter_pregen_texts, lines_file, load_track_names)
-
-# C# VoiceCache.SegSuffix와 일치 — 세그먼트 렌더 규약이 바뀌면 함께 올린다
-SEG_SUFFIX = "_seg1.wav"
 
 
 def _cache_name_line(tone: str, text: str) -> str:
@@ -42,12 +40,8 @@ def _cache_name_line(tone: str, text: str) -> str:
 
 
 def _seg_name_line(tone: str, sentence: str) -> str:
-    """C# VoiceCache.SegmentFileName과 같은 규약 — kokoro 키 + 세그먼트 접미사."""
-    from tts import _cache_path
-
-    kokoro = os.path.basename(
-        _cache_path("", f"kokoro|bm_george|{tone}|{sentence}", ext="wav"))
-    return f"{tone}\t{kokoro[:-len('.wav')]}{SEG_SUFFIX}\t{sentence}"
+    """C# VoiceCache.SegmentFileName과 대조 — 런타임 조립이 찾는 그 이름."""
+    return f"{tone}\t{segment_file_name(sentence, tone)}\t{sentence}"
 
 
 def main() -> int:

@@ -24,7 +24,7 @@ namespace TeamRadio56.Core.Logic
 
         /// <summary>
         /// 문장 세그먼트 접미사 "_seg{버전}.wav" — 세그먼트 렌더 규약(속도/효과)이
-        /// 바뀌면 버전을 올린다. 파이썬 tools/dump_pregen.py SEG_SUFFIX와 일치.
+        /// 바뀌면 버전을 올린다. 파이썬 radio_assemble.py SEG_SUFFIX와 일치.
         /// </summary>
         public const string SegSuffix = "_seg1.wav";
 

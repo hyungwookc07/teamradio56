@@ -100,6 +100,35 @@ else
     echo "⏭  건너뜀 — numpy/soundfile 미설치"
 fi
 
+# 문장 세그먼트 조립 — 파이썬 radio_assemble과 C# RadioAssembler 출력 바이트 대조
+echo
+echo "▶ 세그먼트 조립 바이트 대조 (radio_assemble ↔ RadioAssembler)"
+mkdir -p "$OUT/asm"
+if python3 tools/assemble_check.py --dir "$OUT/asm" \
+    && "$RUNNER" --assemble-check "$OUT/asm"; then
+    asm_n=$(wc -l < "$OUT/asm/messages.tsv")
+    asm_bad=0
+    for ((i = 0; i < asm_n; i++)); do
+        py="$OUT/asm/py/$i.wav"
+        cs="$OUT/asm/cs/$i.wav"
+        if [ ! -e "$py" ] && [ ! -e "$cs" ]; then
+            continue                    # 양쪽 다 미스 — 통과
+        fi
+        if [ ! -e "$py" ] || [ ! -e "$cs" ] || ! cmp -s "$py" "$cs"; then
+            echo "❌ 조립 결과 다름 — #$i: $(sed -n "$((i + 1))p" "$OUT/asm/messages.tsv")"
+            asm_bad=1
+        fi
+    done
+    if [ "$asm_bad" -eq 0 ]; then
+        echo "✅ 일치 — $asm_n건 바이트 동일 (미스 포함)"
+    else
+        fail=1
+    fi
+else
+    echo "❌ 조립 대조 실행 실패"
+    fail=1
+fi
+
 for replay in data/replays/*.jsonl.gz; do
     name=$(basename "$replay" .jsonl.gz)
     for lang in en ko; do

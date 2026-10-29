@@ -34,6 +34,7 @@ namespace TeamRadio56.Replay
             bool dumpSegNames = false;
             int maxTier = 2;
             string tracksPath = null;
+            string assembleDir = null;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
@@ -62,6 +63,8 @@ namespace TeamRadio56.Replay
                     maxTier = int.Parse(args[++i], CultureInfo.InvariantCulture);
                 else if (args[i] == "--tracks" && i + 1 < args.Length)
                     tracksPath = args[++i];
+                else if (args[i] == "--assemble-check" && i + 1 < args.Length)
+                    assembleDir = args[++i];
             }
             if (gec)
             {
@@ -91,13 +94,16 @@ namespace TeamRadio56.Replay
             }
             if (checkCacheDir != null)
                 return CheckCache(checkCacheDir);
+            if (assembleDir != null)
+                return AssembleCheck(assembleDir);
             if (replayPath == null)
             {
                 Console.Error.WriteLine(
                     "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] [--lang en|ko]"
                     + " | --dump-pregen [--out f] | --dump-cache-names [--out f]"
                     + " | --dump-sentences|--dump-seg-names [--tier N] [--tracks f] [--out f]"
-                    + " | --check-cache <오디오캐시폴더> | --gec | --synth <텍스트>");
+                    + " | --check-cache <오디오캐시폴더> | --assemble-check <폴더>"
+                    + " | --gec | --synth <텍스트>");
                 return 2;
             }
 
@@ -293,6 +299,32 @@ namespace TeamRadio56.Replay
                 writer.Dispose();
                 Console.Error.WriteLine($"사전 생성 문장 {set.Count}개 → {outPath}");
             }
+            return 0;
+        }
+
+        /// <summary>
+        /// 세그먼트 조립 바이트 대조 — tools/assemble_check.py가 만든 합성 팩과
+        /// messages.tsv("하위폴더\t톤\t멘트")를 읽어 줄 i마다 dir/cs/{i}.wav를 쓴다
+        /// (미스면 쓰지 않음). replay-check.sh가 dir/py/{i}.wav와 cmp한다.
+        /// </summary>
+        private static int AssembleCheck(string dir)
+        {
+            string outDir = Path.Combine(dir, "cs");
+            Directory.CreateDirectory(outDir);
+            string[] rows = File.ReadAllLines(Path.Combine(dir, "messages.tsv"), Encoding.UTF8);
+            int hits = 0;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                string[] f = rows[i].Split('\t');
+                string cacheDir = Path.Combine(dir, f[0]);
+                List<string> paths = RadioAssembler.SegmentPaths(cacheDir, "bm_george", f[1], f[2]);
+                byte[] wav = paths != null ? RadioAssembler.Build(cacheDir, f[1], paths) : null;
+                if (wav == null)
+                    continue;
+                File.WriteAllBytes(Path.Combine(outDir, i + ".wav"), wav);
+                hits++;
+            }
+            Console.Error.WriteLine($"C# 조립 {hits}/{rows.Length}건 → {outDir}");
             return 0;
         }
 
