@@ -59,6 +59,20 @@ namespace TeamRadio56.SimHub
                 // 게이트가 풀린 뒤 다른 재생과 겹쳐 뒤늦게 말한다
                 lock (_gate)
                 {
+                    if (item != null && !_queue.Contains(item))
+                    {
+                        // 이미 말하는 중 — 동기 Speak는 중간에 끊을 수 없으니
+                        // 끝날 때까지 기다려야 다음 발화가 그 위에 겹치지 않는다
+                        Monitor.Exit(_gate);
+                        try
+                        {
+                            return done.Wait(60000);
+                        }
+                        finally
+                        {
+                            Monitor.Enter(_gate);
+                        }
+                    }
                     if (item != null && _queue.Contains(item))
                     {
                         var keep = new Queue<Item>();

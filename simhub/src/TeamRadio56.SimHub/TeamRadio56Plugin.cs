@@ -39,7 +39,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.14.0-onevoice";
+        public const string Version = "0.15.0-kokoro";
 
         /// <summary>
         /// 플러그인이 무전 엔진(builtin 또는 자식 파이썬)을 실제로 돌리는 동안만

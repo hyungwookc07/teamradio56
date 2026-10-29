@@ -50,6 +50,8 @@ namespace TeamRadio56.Replay
                     dumpCacheNames = true;
                 else if (args[i] == "--check-cache" && i + 1 < args.Length)
                     checkCacheDir = args[++i];
+                else if (args[i] == "--fixed-check" && i + 1 < args.Length)
+                    return FixedCheck(args[++i], outPath ?? FindOut(args));
                 else if (args[i] == "--gec")
                     gec = true;
                 else if (args[i] == "--coverage")
@@ -477,6 +479,38 @@ namespace TeamRadio56.Replay
                 }
             }
             return ok ? 0 : 1;
+        }
+
+        private static string FindOut(string[] args)
+        {
+            for (int j = 0; j + 1 < args.Length; j++)
+                if (args[j] == "--out")
+                    return args[j + 1];
+            return null;
+        }
+
+        /// <summary>
+        /// tools/fixed_check.py가 쓴 "자릿수\t값" 줄을 Messages.PyFixed로
+        /// 표기 — 파이썬 f"{v:.Nf}" 기대 출력과 diff한다.
+        /// </summary>
+        private static int FixedCheck(string inPath, string outPath)
+        {
+            TextWriter writer = outPath != null
+                ? new StreamWriter(outPath, false, new UTF8Encoding(false))
+                : Console.Out;
+            foreach (string line in File.ReadAllLines(inPath))
+            {
+                int tab = line.IndexOf('\t');
+                if (tab < 0)
+                    continue;
+                int digits = int.Parse(line.Substring(0, tab), CultureInfo.InvariantCulture);
+                double v = double.Parse(line.Substring(tab + 1), NumberStyles.Float,
+                                        CultureInfo.InvariantCulture);
+                writer.WriteLine(Messages.PyFixed(v, digits));
+            }
+            if (outPath != null)
+                writer.Dispose();
+            return 0;
         }
 
         private static string Format(double t, RadioEvent ev, string say)

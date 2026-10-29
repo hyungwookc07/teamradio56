@@ -108,11 +108,9 @@ namespace TeamRadio56.Core.Logic
             if (value == null)
                 return "";
             if (spec == ".0f")
-                return Convert.ToDouble(value, CultureInfo.InvariantCulture)
-                    .ToString("F0", CultureInfo.InvariantCulture);
+                return PyFixed(Convert.ToDouble(value, CultureInfo.InvariantCulture), 0);
             if (spec == ".1f")
-                return Convert.ToDouble(value, CultureInfo.InvariantCulture)
-                    .ToString("F1", CultureInfo.InvariantCulture);
+                return PyFixed(Convert.ToDouble(value, CultureInfo.InvariantCulture), 1);
             if (value is double || value is float)
             {
                 // 파이썬 str(float) 유사 — 정수값이면 "2.0"
@@ -124,6 +122,56 @@ namespace TeamRadio56.Core.Logic
             if (value is IFormattable f)
                 return f.ToString(null, CultureInfo.InvariantCulture);
             return value.ToString();
+        }
+
+        /// <summary>
+        /// 파이썬 f"{v:.Nf}"와 바이트 단위로 같은 고정소수점 표기.
+        ///
+        /// double의 정확한 이진값을 기준으로 반올림하고, 정확히 한가운데면
+        /// 짝수 쪽으로 간다(파이썬 규칙). .NET의 ToString("F1")은 런타임마다
+        /// 다르게 반올림한다 — 특히 SimHub의 .NET Framework 4.8은 15자리로
+        /// 먼저 자른 뒤 반올림해서 0.15를 "0.2"로 쓰지만 파이썬은 "0.1"이다
+        /// (0.15의 실제 이진값은 0.1499…). 그러면 사전 생성된 문장과 다른
+        /// 숫자를 말하게 되므로, 런타임 표기에 기대지 않고 직접 계산한다.
+        /// </summary>
+        public static string PyFixed(double v, int digits)
+        {
+            if (double.IsNaN(v))
+                return "nan";
+            if (double.IsInfinity(v))
+                return v > 0 ? "inf" : "-inf";
+            long bits = BitConverter.DoubleToInt64Bits(v);
+            bool negative = bits < 0;
+            int exp = (int)((bits >> 52) & 0x7FF);
+            long frac = bits & 0xFFFFFFFFFFFFFL;
+            if (exp == 0)
+                exp = 1;                 // 비정규화 수
+            else
+                frac |= 1L << 52;
+            exp -= 1075;                 // |v| = frac × 2^exp (정확히)
+
+            System.Numerics.BigInteger num = frac;
+            System.Numerics.BigInteger den = System.Numerics.BigInteger.One;
+            if (exp >= 0)
+                num <<= exp;
+            else
+                den <<= -exp;
+            num *= System.Numerics.BigInteger.Pow(10, digits);
+            System.Numerics.BigInteger rem;
+            System.Numerics.BigInteger q = System.Numerics.BigInteger.DivRem(num, den, out rem);
+            int cmp = (rem * 2).CompareTo(den);
+            if (cmp > 0 || (cmp == 0 && !q.IsEven))
+                q += 1;
+
+            string text = q.ToString(CultureInfo.InvariantCulture);
+            if (digits > 0)
+            {
+                text = text.PadLeft(digits + 1, '0');
+                text = text.Substring(0, text.Length - digits) + "."
+                       + text.Substring(text.Length - digits);
+            }
+            // 파이썬은 음수가 0으로 반올림돼도 부호를 남긴다 ("-0.0")
+            return negative ? "-" + text : text;
         }
 
         // -- 슬롯/이름 헬퍼 (messages.py 미러) --------------------------------
@@ -271,9 +319,7 @@ namespace TeamRadio56.Core.Logic
         /// <summary>messages.py seconds_text — "2.4 seconds"/"1 second"/"2.4초".</summary>
         public static string SecondsText(double sec)
         {
-            string v = sec < 10
-                ? sec.ToString("F1", CultureInfo.InvariantCulture)
-                : sec.ToString("F0", CultureInfo.InvariantCulture);
+            string v = sec < 10 ? PyFixed(sec, 1) : PyFixed(sec, 0);
             if (v.EndsWith(".0"))
                 v = v.Substring(0, v.Length - 2);
             if (IsKo)
@@ -286,7 +332,7 @@ namespace TeamRadio56.Core.Logic
         {
             double m = Math.Floor(sec / 60.0);
             double s = sec - m * 60.0;
-            string sTxt = s.ToString("F1", CultureInfo.InvariantCulture);
+            string sTxt = PyFixed(s, 1);
             if (IsKo)
             {
                 return m >= 1

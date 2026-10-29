@@ -18,6 +18,8 @@
   <!-- 고아 엔진 정리(EngineHost.KillOrphans)가 WMI로 명령줄을 본다 -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <Reference Include="System.Management" />
+    <!-- Messages.PyFixed: 파이썬과 같은 반올림을 위한 정확한 정수 연산 -->
+    <Reference Include="System.Numerics" />
   </ItemGroup>
 
 </Project>

@@ -248,12 +248,12 @@ namespace TeamRadio56.Core.Logic
 
         private static string F1(double v)
         {
-            return v.ToString("F1", CultureInfo.InvariantCulture);
+            return Messages.PyFixed(v, 1);
         }
 
         private static string F0(double v)
         {
-            return v.ToString("F0", CultureInfo.InvariantCulture);
+            return Messages.PyFixed(v, 0);
         }
 
         /// <summary>Messages.SecondsText 위임 (기존 호출부 호환).</summary>

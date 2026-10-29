@@ -89,6 +89,20 @@ if [ -d audio_cache ] && ls audio_cache/*_rfx3.wav > /dev/null 2>&1; then
     fi
 fi
 
+# 숫자 표기 — C#이 파이썬과 같은 숫자를 말해야 사전 생성 문장과 맞는다
+echo
+echo "▶ 고정소수점 표기 대조 (Messages.PyFixed ↔ 파이썬 f-string)"
+python3 tools/fixed_check.py --in "$OUT/fixed_in.tsv" --expect "$OUT/fixed_py.txt"
+"$RUNNER" --fixed-check "$OUT/fixed_in.tsv" --out "$OUT/fixed_cs.txt"
+if diff -q "$OUT/fixed_py.txt" "$OUT/fixed_cs.txt" > /dev/null; then
+    echo "✅ 일치 — $(wc -l < "$OUT/fixed_py.txt")개 표기 동일 (반올림 경계 포함)"
+else
+    echo "❌ 숫자 표기 불일치:"
+    paste "$OUT/fixed_in.tsv" "$OUT/fixed_py.txt" "$OUT/fixed_cs.txt" \
+        | awk -F'\t' '$3 != $4' | head -10
+    fail=1
+fi
+
 # 무전 효과 출력 고정 — 배포 캐시(_rfx3)를 만드는 체인의 리팩터 가드
 echo
 echo "▶ 무전 효과(radiofx) 출력 md5 대조"
