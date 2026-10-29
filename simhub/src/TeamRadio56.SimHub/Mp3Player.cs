@@ -67,6 +67,7 @@ namespace TeamRadio56.SimHub
                 try
                 {
                     StopCurrentOnDispatcher();
+                    _stopRequested = false;
                     var player = new MediaPlayer();
                     _current = player;
                     _currentDone = done;
@@ -100,12 +101,17 @@ namespace TeamRadio56.SimHub
 
             try
             {
-                if (!opened.Wait(openTimeoutMs) && !done.IsSet)
+                // 열림 또는 실패/종료 중 먼저 오는 쪽 — MediaFailed면 즉시 폴백
+                int which = WaitHandle.WaitAny(
+                    new[] { opened.WaitHandle, done.WaitHandle }, openTimeoutMs);
+                if (which == WaitHandle.WaitTimeout)
                 {
                     FileLog.Warn("mp3가 열리지 않음 — 중단: " + path);
                     StopCurrent();
                     return false;
                 }
+                if (which == 1)
+                    return ok || _stopRequested;
                 int playMs = durationMs > 0 ? (int)durationMs + 3000 : 30000;
                 if (!done.Wait(playMs))
                 {
@@ -113,7 +119,7 @@ namespace TeamRadio56.SimHub
                     StopCurrent();
                     return true;   // 이미 들렸다 — 같은 문장을 TTS로 다시 읽지 않는다
                 }
-                return ok;
+                return ok || _stopRequested;
             }
             finally
             {
@@ -121,9 +127,14 @@ namespace TeamRadio56.SimHub
             }
         }
 
+        // StopCurrent로 끊은 재생은 '실패'가 아니다 — 호출부가 같은 문장을
+        // TTS로 다시 읽어 버리지 않게 성공으로 돌려준다
+        private volatile bool _stopRequested;
+
         /// <summary>재생 중인 mp3를 즉시 멈춘다 (엔진 전환/종료 시).</summary>
         public void StopCurrent()
         {
+            _stopRequested = true;
             Dispatcher dispatcher = _dispatcher;
             if (dispatcher == null)
                 return;

@@ -39,6 +39,8 @@ namespace TeamRadio56.SimHub
             Enqueue(text, null);
         }
 
+        // 큐에 들어간 항목을 돌려준다 (빈 텍스트면 null)
+
         /// <summary>
         /// 동기 발화 — 다 말할 때까지(또는 timeoutMs) 기다린다. builtin
         /// AudioSink의 폴백용: 비동기면 다음 콜(코코로 wav)이 이 목소리 위에
@@ -50,29 +52,50 @@ namespace TeamRadio56.SimHub
                 return true;
             using (var done = new ManualResetEventSlim(false))
             {
-                Enqueue(text, done);
-                return done.Wait(timeoutMs);
+                Item item = Enqueue(text, done);
+                if (done.Wait(timeoutMs))
+                    return true;
+                // 시간 안에 시작도 못 했으면 큐에서 빼야 한다 — 남겨 두면
+                // 게이트가 풀린 뒤 다른 재생과 겹쳐 뒤늦게 말한다
+                lock (_gate)
+                {
+                    if (item != null && _queue.Contains(item))
+                    {
+                        var keep = new Queue<Item>();
+                        while (_queue.Count > 0)
+                        {
+                            Item it = _queue.Dequeue();
+                            if (!ReferenceEquals(it, item))
+                                keep.Enqueue(it);
+                        }
+                        while (keep.Count > 0)
+                            _queue.Enqueue(keep.Dequeue());
+                    }
+                }
+                return false;
             }
         }
 
-        private void Enqueue(string text, ManualResetEventSlim done)
+        private Item Enqueue(string text, ManualResetEventSlim done)
         {
             if (string.IsNullOrEmpty(text))
             {
                 if (done != null)
                     done.Set();
-                return;
+                return null;
             }
+            var item = new Item { Text = text, Done = done };
             lock (_gate)
             {
                 EnsureThread();
                 // 무전은 최신이 우선 — 밀린 발화는 버린다 (대기자는 풀어 준다)
                 while (_queue.Count > 0)
                     Release(_queue.Dequeue());
-                _queue.Enqueue(new Item { Text = text, Done = done });
+                _queue.Enqueue(item);
                 Monitor.Pulse(_gate);
             }
             FileLog.Info("발화 요청: " + text);
+            return item;
         }
 
         private static void Release(Item item)

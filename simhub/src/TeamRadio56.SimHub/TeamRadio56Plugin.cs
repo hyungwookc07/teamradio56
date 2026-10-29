@@ -42,9 +42,10 @@ namespace TeamRadio56.SimHub
         public const string Version = "0.14.0-onevoice";
 
         /// <summary>
-        /// 플러그인이 로드돼 있는 동안 쥐는 이름 있는 뮤텍스. 독립 실행 파이썬
-        /// 엔진(launch_with_lmu.bat 등)이 이걸 보고 물러난다 — procguard.py의
-        /// PLUGIN_MUTEX와 반드시 같은 이름.
+        /// 플러그인이 무전 엔진(builtin 또는 자식 파이썬)을 실제로 돌리는 동안만
+        /// 쥐는 이름 있는 뮤텍스. 독립 실행 파이썬 엔진(launch_with_lmu.bat 등)이
+        /// 이걸 보고 물러난다 — procguard.py의 PLUGIN_MUTEX와 반드시 같은 이름.
+        /// 엔진이 안 돌 때도 쥐면 독립 엔진까지 물러나 아무도 말하지 않는다.
         /// </summary>
         public const string PluginMutexName = "Local\\teamradio56-plugin";
 
@@ -112,15 +113,47 @@ namespace TeamRadio56.SimHub
         /// <summary>설정 화면의 [엔진 시작] — 설정을 먼저 저장해 엔진이 최신 값을 읽게 한다.</summary>
         public bool StartEngine()
         {
-            SaveSettings();
-            return _engine.Start(EngineExePath(),
-                                 Settings != null ? Settings.EngineArgs : null,
-                                 SettingsStore.Path, EngineStatus.DefaultPath());
+            lock (_restartGate)
+            {
+                if (_ending)
+                    return false;
+                SaveSettings();
+                bool ok = _engine.Start(EngineExePath(),
+                                        Settings != null ? Settings.EngineArgs : null,
+                                        SettingsStore.Path, EngineStatus.DefaultPath());
+                ClaimVoice(ok);
+                return ok;
+            }
         }
 
         public void StopEngine()
         {
-            _engine.Stop();
+            lock (_restartGate)
+            {
+                _engine.Stop();
+                ClaimVoice(false);
+            }
+        }
+
+        /// <summary>독립 실행 엔진이 물러나도록 '플러그인 무전 중' 뮤텍스를 쥐거나 놓는다.</summary>
+        private void ClaimVoice(bool active)
+        {
+            try
+            {
+                if (active && _pluginMutex == null)
+                {
+                    _pluginMutex = new System.Threading.Mutex(false, PluginMutexName);
+                }
+                else if (!active && _pluginMutex != null)
+                {
+                    _pluginMutex.Dispose();
+                    _pluginMutex = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                FileLog.Error("플러그인 무전 뮤텍스 처리 실패 (독립 엔진 감지 불가)", ex);
+            }
         }
 
         /// <summary>
@@ -139,6 +172,7 @@ namespace TeamRadio56.SimHub
                 SaveSettings();
                 _engine.Stop();          // 파이썬 엔진이 돌고 있으면 종료
                 ShutdownBuiltin();       // 내장 엔진이 돌고 있으면 정리
+                ClaimVoice(false);
                 _activeMode = Settings != null ? Settings.EngineMode : null;
                 if (UsingPythonEngine)
                     StartEngine();
@@ -195,15 +229,6 @@ namespace TeamRadio56.SimHub
             Settings = SettingsStore.Load();
             _activeMode = Settings.EngineMode;
 
-            // 독립 실행 엔진이 이 플러그인을 감지하고 물러나게 한다
-            try
-            {
-                _pluginMutex = new System.Threading.Mutex(false, PluginMutexName);
-            }
-            catch (Exception ex)
-            {
-                FileLog.Error("플러그인 뮤텍스 생성 실패 (독립 엔진 감지 불가)", ex);
-            }
 
             string layoutError = Rf2SharedMemoryReader.VerifyLayout();
             _layoutOk = layoutError == null;
@@ -345,6 +370,7 @@ namespace TeamRadio56.SimHub
             _voice = new VoiceWorker(_chief.Bus, _sink);
             _voice.Enabled = Settings.VoiceEnabled;
             _voice.Start();
+            ClaimVoice(true);
 
             int cacheFiles = 0;
             if (cacheDir != null)
@@ -378,16 +404,11 @@ namespace TeamRadio56.SimHub
                 SaveSettings();
                 _engine.Dispose();       // 엔진 트리 종료 + 작업 개체 해제
                 ShutdownBuiltin();
+                ClaimVoice(false);
             }
             if (_speech != null)
                 _speech.Dispose();
             _reader.Dispose();
-            try
-            {
-                if (_pluginMutex != null)
-                    _pluginMutex.Dispose();
-            }
-            catch (Exception) { }
         }
 
         // -- 오버레이 프로퍼티 --------------------------------------------------

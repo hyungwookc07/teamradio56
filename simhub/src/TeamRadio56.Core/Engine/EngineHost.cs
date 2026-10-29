@@ -28,6 +28,7 @@ namespace TeamRadio56.Core.Engine
         // SimHub 수명 동안 하나 — 핸들이 닫히면(SimHub 종료/크래시) 커널이
         // 엔진 트리를 통째로 죽인다. 생성 실패 시 null (Kill 폴백).
         private ProcessJob _job;
+        private bool _inJob;     // 현재 _process가 작업 개체에 들어갔는가
 
         public bool IsRunning
         {
@@ -81,6 +82,13 @@ namespace TeamRadio56.Core.Engine
         /// </summary>
         public bool Start(string exe, string extraArgs, string settingsPath, string statusPath)
         {
+            if (IsRunning)
+                return true;
+            // WMI 검색은 수 초 걸릴 수 있다 — _gate 밖에서 (IsRunning을 읽는
+            // UI/데이터 스레드를 막지 않게)
+            if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
+                KillOrphans(exe, statusPath);
+
             lock (_gate)
             {
                 if (IsRunning)
@@ -99,16 +107,11 @@ namespace TeamRadio56.Core.Engine
                     return false;
                 }
 
-                KillOrphans(exe, statusPath);
-
                 var args = new StringBuilder();
                 if (!string.IsNullOrEmpty(extraArgs))
                     args.Append(extraArgs).Append(' ');
                 args.Append("--settings \"").Append(settingsPath).Append("\" ");
-                args.Append("--status-file \"").Append(statusPath).Append("\" ");
-                // 엔진이 SimHub의 종료를 스스로 감지하게 — 작업 개체가 실패해도
-                // 고아로 남지 않는 2차 안전망
-                args.Append("--parent-pid ").Append(CurrentPid());
+                args.Append("--status-file \"").Append(statusPath).Append("\"");
 
                 var info = new ProcessStartInfo
                 {
@@ -122,6 +125,15 @@ namespace TeamRadio56.Core.Engine
                     StandardOutputEncoding = Encoding.UTF8,
                     StandardErrorEncoding = Encoding.UTF8,
                 };
+                // 엔진이 SimHub의 종료를 스스로 감지하게 — 작업 개체가 실패해도
+                // 고아로 남지 않는 2차 안전망. 인자가 아니라 환경변수인 이유:
+                // 이 인자를 모르는 구버전 엔진(번들 exe)이 argparse 오류로 죽는다
+                try
+                {
+                    info.EnvironmentVariables["TEAMRADIO56_PARENT_PID"] =
+                        CurrentPid().ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+                catch (Exception) { }
 
                 try
                 {
@@ -135,11 +147,11 @@ namespace TeamRadio56.Core.Engine
                     _process.Start();
                     if (_job == null)
                         _job = ProcessJob.TryCreate();
-                    bool inJob = _job != null && _job.Assign(_process);
+                    _inJob = _job != null && _job.Assign(_process);
                     _process.BeginOutputReadLine();
                     _process.BeginErrorReadLine();
                     FileLog.Info("엔진 시작: {0} {1}", exe, args);
-                    if (!inJob)
+                    if (!_inJob)
                         FileLog.Warn("엔진을 작업 개체에 묶지 못함 — SimHub 비정상 종료 시 "
                                      + "엔진의 --parent-pid 감시에 의존");
                     return true;
@@ -170,7 +182,9 @@ namespace TeamRadio56.Core.Engine
                         FileLog.Info("엔진 종료 요청");
                         // 트리 전체 종료 — 래퍼(.bat/pipenv/onefile) 뒤의 실제
                         // 엔진까지. 작업 개체가 없으면 직계만 Kill (폴백)
-                        if (_job == null || !_job.TerminateAll())
+                        // 작업에 못 들어간 프로세스는 TerminateJobObject가 (빈 작업에
+                        // 대해) 성공을 반환해도 살아 있다 — 반드시 직접 Kill
+                        if (!_inJob || _job == null || !_job.TerminateAll())
                             _process.Kill();
                         _process.WaitForExit(StopWaitMs);
                     }
@@ -183,6 +197,7 @@ namespace TeamRadio56.Core.Engine
                 {
                     try { _process.Dispose(); } catch (Exception) { }
                     _process = null;
+                    _inJob = false;
                     CloseEngineLog();
                 }
             }
@@ -269,9 +284,17 @@ namespace TeamRadio56.Core.Engine
             catch (Exception) { }
             try
             {
+                var options = new System.Management.EnumerationOptions
+                {
+                    Timeout = TimeSpan.FromSeconds(5),   // WMI가 느려도 무한 대기 금지
+                    ReturnImmediately = true,
+                };
                 using (var searcher = new System.Management.ManagementObjectSearcher(
-                    "SELECT ProcessId, CommandLine FROM Win32_Process "
-                    + "WHERE CommandLine LIKE '%--status-file%'"))
+                    new System.Management.ManagementScope(@"root\cimv2"),
+                    new System.Management.ObjectQuery(
+                        "SELECT ProcessId, CommandLine FROM Win32_Process "
+                        + "WHERE CommandLine LIKE '%--status-file%'"),
+                    options))
                 using (System.Management.ManagementObjectCollection results = searcher.Get())
                 {
                     foreach (System.Management.ManagementBaseObject mo in results)

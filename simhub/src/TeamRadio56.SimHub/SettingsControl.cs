@@ -239,10 +239,13 @@ namespace TeamRadio56.SimHub
             };
             if (python)
             {
-                buttons.Children.Add(MakeButton(L("btn_engine_start"), () => _plugin.StartEngine()));
-                buttons.Children.Add(MakeButton(L("btn_engine_stop"), () => _plugin.StopEngine()));
+                buttons.Children.Add(MakeButton(L("btn_engine_start"),
+                    () => InBackground(() => _plugin.StartEngine())));
+                buttons.Children.Add(MakeButton(L("btn_engine_stop"),
+                    () => InBackground(_plugin.StopEngine)));
             }
-            buttons.Children.Add(MakeButton(L("btn_engine_restart"), () => _plugin.RestartEngine()));
+            buttons.Children.Add(MakeButton(L("btn_engine_restart"),
+                () => InBackground(_plugin.RestartEngine)));
             if (python)
                 buttons.Children.Add(MakeButton(L("btn_engine_log"), () => OpenFile(_plugin.EngineLogPath)));
             box.Children.Add(buttons);
@@ -430,6 +433,30 @@ namespace TeamRadio56.SimHub
         }
 
         // -- 상태 갱신 -------------------------------------------------------
+
+        /// <summary>
+        /// 엔진 시작/중지/재시작은 프로세스 종료 대기·WMI 검색·보이스 워커
+        /// 정지(최대 10초)를 포함한다 — UI 스레드에서 돌리면 SimHub 화면이 언다.
+        /// </summary>
+        private void InBackground(Action work)
+        {
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    work();
+                }
+                catch (Exception ex)
+                {
+                    FileLog.Error("엔진 작업 실패", ex);
+                }
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(Refresh));
+                }
+                catch (Exception) { }
+            });
+        }
 
         /// <summary>
         /// 콤보 이벤트 처리 중에 Content를 갈아끼우면 열려 있던 드랍다운이

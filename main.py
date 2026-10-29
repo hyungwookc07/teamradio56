@@ -84,6 +84,7 @@ class CrewChiefApp:
         self._was_in_session = False
         self._briefed_session = False   # 세션 시작 브리핑을 이미 했는가
         self._running = True
+        self._silence = False           # 종료 처리 중 발화 중단 (양보/부모 종료)
 
         # 상태 + 분석기 + 이벤트 버스 + 보이스 워커
         self.state = SessionState()
@@ -392,19 +393,30 @@ class CrewChiefApp:
             p.get("speed_kmh", 0.0),
         )
 
-    def stop(self) -> None:
-        """다른 스레드에서 정상 종료 요청 — 메인 루프가 다음 틱에 빠져나간다."""
+    def stop(self, silence: bool = False) -> None:
+        """
+        다른 스레드에서 정상 종료 요청 — 메인 루프가 다음 틱에 빠져나간다.
+        silence=True(플러그인에 양보/부모 종료)면 종료 처리 동안에도 더
+        말하지 않는다 — 대기 중인 콜이 다른 엔진 목소리와 겹치지 않게.
+        """
+        if silence:
+            self._silence = True
         self._running = False
 
     def shutdown(self) -> None:
         self._running = False
+        worker_stopped = False
+        if self._silence:
+            self.worker.stop()
+            worker_stopped = True
         # 디브리핑은 워커 정지 전에 (LLM 1회, 텍스트는 파일로도 저장)
         try:
             self.debriefer.run(self.state, self.voice_gen.llm,
                                self.cfg.get("app.data_dir", "data"))
         except Exception:
             log.exception("디브리핑 생성 실패")
-        self.worker.stop()
+        if not worker_stopped:
+            self.worker.stop()
         self.rest.stop()
         self.status.close()
         if self.cfg.get("app.save_race_json", True):
@@ -488,10 +500,11 @@ def main() -> int:
 
     app = CrewChiefApp(cfg, source, recorder,
                        status_path=getattr(args, "status_file", None))
-    if args.parent_pid:
-        procguard.watch_parent(args.parent_pid, app.stop)
+    parent_pid = args.parent_pid or procguard.parent_pid_from_env()
+    if parent_pid:
+        procguard.watch_parent(parent_pid, lambda: app.stop(silence=True))
     if standalone:
-        procguard.watch_plugin(app.stop)
+        procguard.watch_plugin(lambda: app.stop(silence=True))
     app.run()
     return 0
 

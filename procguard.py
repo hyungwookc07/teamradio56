@@ -29,6 +29,17 @@ log = logging.getLogger("procguard")
 # C# TeamRadio56Plugin.PluginMutexName과 반드시 같아야 한다
 PLUGIN_MUTEX = "Local\\teamradio56-plugin"
 
+# 플러그인이 자식 엔진에 부모 PID를 넘기는 환경변수 — 명령줄 인자로 주면
+# 그 인자를 모르는 구버전 엔진(번들 exe)이 argparse 오류로 즉시 죽는다
+PARENT_PID_ENV = "TEAMRADIO56_PARENT_PID"
+
+
+def parent_pid_from_env() -> int:
+    try:
+        return int(os.environ.get(PARENT_PID_ENV, "0") or 0)
+    except ValueError:
+        return 0
+
 _SYNCHRONIZE = 0x00100000
 _INFINITE = 0xFFFFFFFF
 
@@ -53,16 +64,24 @@ def _kernel32():
         return None
 
 
+_ERROR_ACCESS_DENIED = 5
+
+
 def plugin_active() -> bool:
-    """SimHub 플러그인(teamradio56)이 로드돼 있는가 — 뮤텍스 존재 여부."""
+    """
+    SimHub 플러그인(teamradio56)이 지금 무전 엔진을 돌리고 있는가 — 뮤텍스
+    존재 여부. 플러그인은 엔진(builtin 또는 자식 파이썬)이 실제로 돌 때만
+    이 뮤텍스를 쥔다. 접근 거부(SimHub이 관리자 권한)도 '존재'로 본다.
+    """
     k32 = _kernel32()
     if k32 is None:
         return False
+    import ctypes
     handle = k32.OpenMutexW(_SYNCHRONIZE, False, PLUGIN_MUTEX)
     if handle:
         k32.CloseHandle(handle)
         return True
-    return False
+    return ctypes.get_last_error() == _ERROR_ACCESS_DENIED
 
 
 def watch_plugin(on_detect: Callable[[], None], interval: float = 3.0) -> None:

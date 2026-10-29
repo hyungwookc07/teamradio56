@@ -142,6 +142,9 @@ namespace TeamRadio56.SimHub
                     return;   // 엔진 전환 중 — 이전 싱크는 더 말하지 않는다
                 if (path != null && PlayFile(path))
                     return;
+                // Stop()으로 끊긴 재생을 TTS로 다시 읽지 않는다
+                if (_stopped)
+                    return;
                 if (_fallback != null)
                     _fallback.SayAndWait(text);   // 동기 — 다음 콜과 겹치지 않게
             }
@@ -193,6 +196,9 @@ namespace TeamRadio56.SimHub
                     using (var player = new System.Media.SoundPlayer(path))
                     {
                         _currentWav = player;
+                        // Stop()이 _currentWav를 보기 직전에 끼어든 경우
+                        if (_stopped)
+                            return true;
                         player.PlaySync();   // 전용 스레드라 블로킹해도 된다
                     }
                     return true;
