@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace TeamRadio56.Core.Logic
 {
@@ -301,6 +302,86 @@ namespace TeamRadio56.Core.Logic
             return sTxt;
         }
 
+        // -- 문장 조립 헬퍼 (messages.py 1:1 미러) ----------------------------
+
+        private static readonly Regex SentSplit = new Regex(@"(?<=[.!?]) +");
+
+        /// <summary>messages.py split_sentences — 소수점("7.8")은 갈라지지 않는다.</summary>
+        public static List<string> SplitSentences(string text)
+        {
+            var result = new List<string>();
+            foreach (string s in SentSplit.Split(text.Trim()))
+            {
+                if (s.Length > 0)
+                    result.Add(s);
+            }
+            return result;
+        }
+
+        /// <summary>messages.py and_list — en "a and b"/"a, b and c", ko 기존 "a/b".</summary>
+        public static string AndList(IList<string> items)
+        {
+            if (IsKo || items.Count < 2)
+                return string.Join("/", items);
+            var head = new List<string>(items);
+            head.RemoveAt(head.Count - 1);
+            return string.Join(", ", head) + " and " + items[items.Count - 1];
+        }
+
+        /// <summary>messages.py join_problems — en 문제당 한 문장(첫 글자 대문자), ko ", ".</summary>
+        public static string JoinProblems(IList<string> problems)
+        {
+            if (IsKo)
+                return string.Join(", ", problems);
+            var parts = new List<string>(problems.Count);
+            foreach (string p in problems)
+            {
+                parts.Add(p.Length > 0
+                    ? char.ToUpperInvariant(p[0]) + p.Substring(1) : p);
+            }
+            return string.Join(". ", parts);
+        }
+
+        /// <summary>messages.py multi_names — (표시 이름, 대수) 쌍, 순서는 호출자가 정한다.</summary>
+        public static string MultiNames(IList<KeyValuePair<string, int>> pairs)
+        {
+            var parts = new List<string>(pairs.Count);
+            foreach (KeyValuePair<string, int> pair in pairs)
+            {
+                string name = pair.Key;
+                int n = pair.Value;
+                if (n == 1)
+                    parts.Add(Get("multi_one", "name", name));
+                else if (n == 2)
+                    parts.Add(Get("multi_two", "name", name));
+                else
+                    parts.Add(Get("multi_n", "name", name, "n", n));
+            }
+            return string.Join(", ", parts);
+        }
+
+        /// <summary>messages.py penalty_text — kind/reason은 내부(영문) 값.</summary>
+        public static string PenaltyText(string kind, string reason)
+        {
+            string reasonD = !string.IsNullOrEmpty(reason)
+                ? PenaltyReasonDisplay(reason) : "";
+            string head = Get("penalty_head", "kind", PenaltyKindDisplay(kind))
+                + (!string.IsNullOrEmpty(reasonD) ? ", " + reasonD : "");
+            string advice;
+            switch (kind)
+            {
+                case "drive-through":
+                case "stop-and-go":
+                case "time penalty":
+                    advice = Get("penalty_advice_" + kind);
+                    break;
+                default:
+                    advice = Get("penalty_advice_default");
+                    break;
+            }
+            return head + ". " + advice;
+        }
+
         // -- 문장 테이블 (messages.py _T 미러) --------------------------------
 
         private static readonly Dictionary<string, string> En =
@@ -406,17 +487,19 @@ namespace TeamRadio56.Core.Logic
                              + "We catch him in {laps}." },
             { "rival_defend", "Car behind in class is {diff:.1f} a lap quicker. "
                               + "With us in {laps}. Be ready." },
-            { "tyre_hot", "{wheel} tyre running {delta:.0f} degrees hot. Ease that side." },
-            { "tyre_wear", "{wheel} tyre, about {laps} left. Factoring it in." },
+            { "tyre_hot", "{wheel} tyre running hot. Up {delta:.0f} degrees. Ease that side." },
+            { "tyre_wear", "{wheel} tyre going off. About {laps} left. Factoring it in." },
             { "pace_lost", "Lost {delta:.1f} on that lap. Checking why." },
             { "pace_quick", "{delta:.1f} quicker. Keep the rhythm." },
-            { "gap_behind_closing", "Car behind closing {rate:.1f} a lap. Gap {gap}. "
+            // 갭 문장은 "Gap behind/ahead {gap}." 한 문장을 여섯 변형이 공유한다 —
+            // 문장 단위 사전 생성(슬롯 하나당 한 문장)을 위해 쉼표로 잇지 말 것
+            { "gap_behind_closing", "Gap behind {gap}. Closing {rate:.1f} a lap. "
                                     + "Just no mistakes." },
-            { "gap_behind_opening", "Gap behind {gap} and opening. Good." },
-            { "gap_behind_holding", "Gap behind {gap}, holding. Rhythm's good." },
-            { "gap_ahead_closing", "Gap ahead {gap}, closing {rate:.1f} a lap. We can get him." },
-            { "gap_ahead_opening", "Gap ahead {gap} and opening. Don't overdo it." },
-            { "gap_ahead_holding", "Gap ahead {gap}, holding. Keep the rhythm." },
+            { "gap_behind_opening", "Gap behind {gap}. Opening up. Good." },
+            { "gap_behind_holding", "Gap behind {gap}. Holding steady. Rhythm's good." },
+            { "gap_ahead_closing", "Gap ahead {gap}. Closing {rate:.1f} a lap. We can get him." },
+            { "gap_ahead_opening", "Gap ahead {gap}. Opening up. Don't overdo it." },
+            { "gap_ahead_holding", "Gap ahead {gap}. Holding steady. Keep the rhythm." },
         };
 
         private static readonly Dictionary<string, string> Ko =

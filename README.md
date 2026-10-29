@@ -10,7 +10,7 @@ Korean. Runs as a SimHub plugin (recommended) or a standalone Windows app.
 The goal is a race engineer that speaks only when it matters and says what
 it means — not a stream of raw numbers.
 
-> "Car behind closing four tenths a lap. Gap 2.4 seconds. Just no mistakes."
+> "Gap behind 2.4 seconds. Closing four tenths a lap. Just no mistakes."
 
 ## Features
 

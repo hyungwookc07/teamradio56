@@ -21,7 +21,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
-from messages import msg, wheel_name
+from messages import and_list, join_problems, msg, wheel_name
 from state import SessionState
 from telemetry import Snapshot
 
@@ -235,9 +235,9 @@ class HealthAnalyzer:
         flats = [wheel_name(i) for i, w in enumerate(wheels[:4])
                  if w.get("flat") and not w.get("detached")]
         if detached:
-            problems.append(msg("item_wheel_damage", names="/".join(detached)))
+            problems.append(msg("item_wheel_damage", names=and_list(detached)))
         if flats:
-            problems.append(msg("item_puncture", names="/".join(flats)))
+            problems.append(msg("item_puncture", names=and_list(flats)))
 
         # 충격 전후 공기압 비교 — 서서히 새는 누출 조기 발견
         if self._pre_pressures:
@@ -256,12 +256,13 @@ class HealthAnalyzer:
         heavy_zones = [zone_display(DENT_ZONES[i]) for i, s in enumerate(dents) if s >= 2]
         light = any(s == 1 for s in dents)
         if heavy_zones:
-            problems.append(msg("item_heavy_body", zones="/".join(heavy_zones)))
+            problems.append(msg("item_heavy_body", zones=and_list(heavy_zones)))
 
         if problems:
             need_box = bool(detached or flats)
             advice = msg("report_advice_box") if need_box else msg("report_advice_keep")
-            message = msg("report_problems", problems=", ".join(problems), advice=advice)
+            message = msg("report_problems", problems=join_problems(problems),
+                          advice=advice)
             state.set_issue("damage", "점검 결과: " + ", ".join(problems))
         elif light:
             message = msg("report_marks")

@@ -360,24 +360,7 @@ namespace TeamRadio56.Core.Logic
             {
                 string kind = detail[0];
                 string reason = detail[1];
-                string reasonD = reason.Length > 0
-                    ? Messages.PenaltyReasonDisplay(reason) : "";
-                string head = Messages.Get("penalty_head",
-                        "kind", Messages.PenaltyKindDisplay(kind))
-                    + (reasonD.Length > 0 ? ", " + reasonD : "");
-                string advice;
-                switch (kind)
-                {
-                    case "drive-through":
-                    case "stop-and-go":
-                    case "time penalty":
-                        advice = Messages.Get("penalty_advice_" + kind);
-                        break;
-                    default:
-                        advice = Messages.Get("penalty_advice_default");
-                        break;
-                }
-                message = head + ". " + advice;
+                message = Messages.PenaltyText(kind, reason);
                 issue = "미소화 페널티 " + n + "건 (" + kind
                         + (reason.Length > 0 ? ", " + reason : "") + ")";
                 topic = "방금 페널티가 부여됐다: " + kind + ", 사유 "

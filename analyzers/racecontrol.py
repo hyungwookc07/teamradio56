@@ -15,7 +15,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
-from messages import msg, penalty_kind_display, penalty_reason_display
+from messages import msg, penalty_text
 from state import SessionState
 from telemetry import Snapshot
 
@@ -275,14 +275,7 @@ class RaceControlAnalyzer:
                 break
         if detail:
             kind, reason = detail
-            kind_d = penalty_kind_display(kind)
-            reason_d = penalty_reason_display(reason) if reason else ""
-            head = msg("penalty_head", kind=kind_d) + (f", {reason_d}" if reason_d else "")
-            try:
-                advice = msg(f"penalty_advice_{kind}")
-            except KeyError:
-                advice = msg("penalty_advice_default")
-            message = f"{head}. {advice}"
+            message = penalty_text(kind, reason)
             issue = f"미소화 페널티 {n}건 ({kind}{', ' + reason if reason else ''})"
             topic = f"방금 페널티가 부여됐다: {kind}, 사유 {reason or '불명'}. " \
                     "다음 피트와 엮어 언제 소화할지 판단을 짧게."

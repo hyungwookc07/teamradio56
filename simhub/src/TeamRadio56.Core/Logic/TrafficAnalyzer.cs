@@ -824,18 +824,10 @@ namespace TeamRadio56.Core.Logic
                 }
                 counts[key]++;
             }
-            var parts = new List<string>();
+            var pairs = new List<KeyValuePair<string, int>>(order.Count);
             foreach (string name in order)
-            {
-                int n = counts[name];
-                if (n == 1)
-                    parts.Add(Messages.Get("multi_one", "name", name));
-                else if (n == 2)
-                    parts.Add(Messages.Get("multi_two", "name", name));
-                else
-                    parts.Add(Messages.Get("multi_n", "name", name, "n", n));
-            }
-            return string.Join(", ", parts);
+                pairs.Add(new KeyValuePair<string, int>(name, counts[name]));
+            return Messages.MultiNames(pairs);
         }
     }
 }

@@ -538,22 +538,14 @@ class TrafficAnalyzer:
         같은 상태의 차량들을 한 절로 합치고(클래스별 카운트), 위협도 순
         상위 2개 절만 한 문장으로. "뒤로 하이퍼카 하나, GT3 하나 붙는다" 식.
         """
-        from messages import msg, class_display
+        from messages import msg, class_display, multi_names
 
         def names_of(cars: list[CarTrack]) -> str:
-            counts: dict[str, int] = {}
+            counts: dict[str, int] = {}          # 처음 본 순서 유지
             for c in cars:
                 key = class_display(c.cls)
                 counts[key] = counts.get(key, 0) + 1
-            parts = []
-            for name, n in counts.items():
-                if n == 1:
-                    parts.append(msg("multi_one", name=name))
-                elif n == 2:
-                    parts.append(msg("multi_two", name=name))
-                else:
-                    parts.append(msg("multi_n", name=name, n=n))
-            return ", ".join(parts)
+            return multi_names(list(counts.items()))
 
         by_state: dict[str, list[CarTrack]] = {}
         for t in active:

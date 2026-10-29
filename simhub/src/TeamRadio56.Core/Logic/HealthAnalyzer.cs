@@ -14,7 +14,7 @@ namespace TeamRadio56.Core.Logic
     /// </summary>
     public sealed class HealthAnalyzer
     {
-        private static readonly string[] DentZones =
+        internal static readonly string[] DentZones =
         {
             "front", "front right", "right", "rear right",
             "rear", "rear left", "left", "front left",
@@ -305,10 +305,10 @@ namespace TeamRadio56.Core.Logic
             }
             if (detached.Count > 0)
                 problems.Add(Messages.Get("item_wheel_damage",
-                    "names", string.Join("/", detached)));
+                    "names", Messages.AndList(detached)));
             if (flats.Count > 0)
                 problems.Add(Messages.Get("item_puncture",
-                    "names", string.Join("/", flats)));
+                    "names", Messages.AndList(flats)));
 
             // 충격 전후 공기압 비교 — 서서히 새는 누출 조기 발견
             if (_prePressures != null)
@@ -340,7 +340,7 @@ namespace TeamRadio56.Core.Logic
             }
             if (heavyZones.Count > 0)
                 problems.Add(Messages.Get("item_heavy_body",
-                    "zones", string.Join("/", heavyZones)));
+                    "zones", Messages.AndList(heavyZones)));
 
             string message;
             if (problems.Count > 0)
@@ -349,7 +349,7 @@ namespace TeamRadio56.Core.Logic
                 string advice = Messages.Get(needBox
                     ? "report_advice_box" : "report_advice_keep");
                 message = Messages.Get("report_problems",
-                    "problems", string.Join(", ", problems), "advice", advice);
+                    "problems", Messages.JoinProblems(problems), "advice", advice);
                 state.SetIssue("damage", "점검 결과: " + string.Join(", ", problems));
             }
             else if (light)

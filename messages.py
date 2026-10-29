@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import re
+
 LANG = "en"
 
 
@@ -165,6 +167,65 @@ def fmt_laptime(sec: float) -> str:
     return f"{s:.1f}"
 
 
+# -- 문장 조립 헬퍼 (Messages.cs와 1:1 미러) ---------------------------------
+
+_SENT_SPLIT = re.compile(r"(?<=[.!?]) +")
+
+
+def split_sentences(text: str) -> list[str]:
+    """문장 단위 분할 — 소수점("7.8")은 뒤에 공백이 없어 갈라지지 않는다."""
+    return [s for s in _SENT_SPLIT.split(text.strip()) if s]
+
+
+def and_list(items: list[str]) -> str:
+    """en "a and b" / "a, b and c" — ko는 기존 "a/b" 그대로."""
+    if LANG == "ko" or len(items) < 2:
+        return "/".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def join_problems(problems: list[str]) -> str:
+    """en은 문제 하나당 한 문장(첫 글자 대문자) — ko는 기존 ", " 연결 그대로."""
+    if LANG == "ko":
+        return ", ".join(problems)
+    return ". ".join(p[:1].upper() + p[1:] for p in problems)
+
+
+def multi_names(pairs: list[tuple[str, int]]) -> str:
+    """(표시 이름, 대수) 쌍 → "one GT3, two Hypercars" — 순서는 호출자가 정한다."""
+    parts = []
+    for name, n in pairs:
+        if n == 1:
+            parts.append(msg("multi_one", name=name))
+        elif n == 2:
+            parts.append(msg("multi_two", name=name))
+        else:
+            parts.append(msg("multi_n", name=name, n=n))
+    return ", ".join(parts)
+
+
+def penalty_text(kind: str, reason) -> str:
+    """페널티 콜 문장 — kind/reason은 내부(영문) 값, 표시 변환은 여기서."""
+    reason_d = penalty_reason_display(reason) if reason else ""
+    head = msg("penalty_head", kind=penalty_kind_display(kind)) \
+        + (f", {reason_d}" if reason_d else "")
+    try:
+        advice = msg(f"penalty_advice_{kind}")
+    except KeyError:
+        advice = msg("penalty_advice_default")
+    return f"{head}. {advice}"
+
+
+_DECIMAL = re.compile(r"(\d)\.(\d)")
+
+
+def speech_text(text: str) -> str:
+    """합성 전용 정규화 — Kokoro는 "1.3"을 "one. three"로 읽는다.
+    캐시 키와 화면 표시는 원문을 쓰므로 C# 대응 없음 (C#은 Kokoro를 합성하지 않는다)."""
+    text = _DECIMAL.sub(r"\1 point \2", text)
+    return text.replace("GT3s", "GT threes").replace("LMP2s", "LMP twos")
+
+
 # -- 문장 테이블 ------------------------------------------------------------
 
 _T = {
@@ -269,17 +330,19 @@ _T = {
                        "We catch him in {laps}.",
         "rival_defend": "Car behind in class is {diff:.1f} a lap quicker. "
                         "With us in {laps}. Be ready.",
-        "tyre_hot": "{wheel} tyre running {delta:.0f} degrees hot. Ease that side.",
-        "tyre_wear": "{wheel} tyre, about {laps} left. Factoring it in.",
+        "tyre_hot": "{wheel} tyre running hot. Up {delta:.0f} degrees. Ease that side.",
+        "tyre_wear": "{wheel} tyre going off. About {laps} left. Factoring it in.",
         "pace_lost": "Lost {delta:.1f} on that lap. Checking why.",
         "pace_quick": "{delta:.1f} quicker. Keep the rhythm.",
-        "gap_behind_closing": "Car behind closing {rate:.1f} a lap. Gap {gap}. "
+        # 갭 문장은 "Gap behind/ahead {gap}." 한 문장을 여섯 변형이 공유한다 —
+        # 문장 단위 사전 생성(슬롯 하나당 한 문장)을 위해 쉼표로 잇지 말 것
+        "gap_behind_closing": "Gap behind {gap}. Closing {rate:.1f} a lap. "
                               "Just no mistakes.",
-        "gap_behind_opening": "Gap behind {gap} and opening. Good.",
-        "gap_behind_holding": "Gap behind {gap}, holding. Rhythm's good.",
-        "gap_ahead_closing": "Gap ahead {gap}, closing {rate:.1f} a lap. We can get him.",
-        "gap_ahead_opening": "Gap ahead {gap} and opening. Don't overdo it.",
-        "gap_ahead_holding": "Gap ahead {gap}, holding. Keep the rhythm.",
+        "gap_behind_opening": "Gap behind {gap}. Opening up. Good.",
+        "gap_behind_holding": "Gap behind {gap}. Holding steady. Rhythm's good.",
+        "gap_ahead_closing": "Gap ahead {gap}. Closing {rate:.1f} a lap. We can get him.",
+        "gap_ahead_opening": "Gap ahead {gap}. Opening up. Don't overdo it.",
+        "gap_ahead_holding": "Gap ahead {gap}. Holding steady. Keep the rhythm.",
     },
     "ko": {
         "stopped_hazard": "전방 정지 차량. 라인 미리 바꿔.",
