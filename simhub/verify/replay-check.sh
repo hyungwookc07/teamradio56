@@ -4,7 +4,7 @@
 # data/replays/*.jsonl.gz 각각에 대해:
 #   1) 파이썬 기준값 생성 (tools/replay_calls.py)
 #   2) C# 러너 실행 (tests/TeamRadio56.Replay)
-#   3) 수락 이벤트 시퀀스 비교 (순서·타이밍·데이터 완전 일치 요구)
+#   3) 수락 이벤트 시퀀스 비교 (순서·타이밍·데이터·결정적 멘트 'say' 완전 일치 요구)
 #
 # 사용법:  bash simhub/verify/replay-check.sh
 set -euo pipefail
@@ -54,6 +54,17 @@ if [ -d audio_cache ] && ls audio_cache/*_rfx3.wav > /dev/null 2>&1; then
     if ! "$RUNNER" --check-cache audio_cache; then
         fail=1
     fi
+fi
+
+# 무전 효과 출력 고정 — 배포 캐시(_rfx3)를 만드는 체인의 리팩터 가드
+echo
+echo "▶ 무전 효과(radiofx) 출력 md5 대조"
+if python3 -c "import numpy, soundfile" > /dev/null 2>&1; then
+    if ! python3 tools/radiofx_selftest.py; then
+        fail=1
+    fi
+else
+    echo "⏭  건너뜀 — numpy/soundfile 미설치"
 fi
 
 for replay in data/replays/*.jsonl.gz; do

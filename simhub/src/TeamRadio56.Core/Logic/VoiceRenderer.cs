@@ -36,6 +36,28 @@ namespace TeamRadio56.Core.Logic
             return new KeyValuePair<string, string>(text, text != null ? "cache" : "none");
         }
 
+        /// <summary>
+        /// 변형 풀(랜덤)을 안 쓰는 렌더러 — voice.py DETERMINISTIC_TYPES와 같은 집합.
+        /// </summary>
+        public static readonly string[] DeterministicTypes =
+        {
+            EventTypes.GapComment, EventTypes.PaceComment, EventTypes.LapAnalysis,
+            EventTypes.StintBriefing, EventTypes.RivalPit, EventTypes.RivalPace,
+            EventTypes.TyreWarning, EventTypes.RaceMilestone,
+        };
+
+        /// <summary>
+        /// voice.render_deterministic 대응 — 리플레이 'say' 대조용. 조립 멘트
+        /// (Message 있음)나 대상 밖 타입은 null.
+        /// </summary>
+        public string RenderDeterministic(RadioEvent ev)
+        {
+            if (!string.IsNullOrEmpty(ev.Message)
+                || Array.IndexOf(DeterministicTypes, ev.Type) < 0)
+                return null;
+            return Render(ev);
+        }
+
         private string Render(RadioEvent ev)
         {
             Dictionary<string, object> d = ev.Data;
@@ -120,7 +142,8 @@ namespace TeamRadio56.Core.Logic
                 }
                 case EventTypes.RaceMilestone:
                 {
-                    if (!d.ContainsKey("remaining_min"))
+                    object rm;
+                    if (d == null || !d.TryGetValue("remaining_min", out rm) || rm == null)
                         return null;
                     int m = GetInt(d, "remaining_min", 0);
                     if (m >= 60)
@@ -133,7 +156,10 @@ namespace TeamRadio56.Core.Logic
                 }
                 case EventTypes.LapAnalysis:
                 {
-                    if (d.ContainsKey("pit_window_laps"))
+                    // 연료 상태를 통째로 실어 피트 불필요면 키가 있고 값이 null —
+                    // 파이썬 d.get(...) is not None과 같게 null도 침묵
+                    object pw;
+                    if (d != null && d.TryGetValue("pit_window_laps", out pw) && pw != null)
                     {
                         return Messages.Get("pit_window",
                             "n", Messages.LapsText(GetInt(d, "pit_window_laps", 0)));

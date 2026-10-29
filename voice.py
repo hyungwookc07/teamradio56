@@ -490,6 +490,24 @@ class VoiceGenerator:
         return msg("gap_ahead_holding", gap=gap_s)
 
 
+# 변형 풀(랜덤)을 안 쓰는 렌더러 — 같은 data면 항상 같은 문장.
+# 리플레이 대조('say')가 C# VoiceRenderer.RenderDeterministic과 같은 집합을 쓴다.
+DETERMINISTIC_TYPES = (
+    EventType.GAP_COMMENT, EventType.PACE_COMMENT, EventType.LAP_ANALYSIS,
+    EventType.STINT_BRIEFING, EventType.RIVAL_PIT, EventType.RIVAL_PACE,
+    EventType.TYRE_WARNING, EventType.RACE_MILESTONE,
+)
+
+
+def render_deterministic(ev_type: str, data: dict,
+                         tone: str = "casual") -> Optional[str]:
+    """LLM 없이 나갈 템플릿 문장. 대상 타입이 아니면 None.
+    이 렌더러들은 self(풀/LLM)를 건드리지 않으므로 인스턴스 없이 호출한다."""
+    if ev_type not in DETERMINISTIC_TYPES:
+        return None
+    return getattr(VoiceGenerator, f"_render_{ev_type}")(None, data, tone)
+
+
 def iter_pregen_texts(pool: PhrasePool):
     """
     사전 캐시 대상 텍스트 전체를 생성 (tools/pregen_audio.py용).

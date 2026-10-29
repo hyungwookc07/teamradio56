@@ -13,8 +13,8 @@ namespace TeamRadio56.Replay
     ///
     /// 녹화 JSONL을 C# 파이프라인(현재: 트래픽 분석기)에 먹이고, 이벤트
     /// 버스가 "수락한" 이벤트를 JSONL로 출력한다. 두 출력이 같으면 포팅이
-    /// 파이썬과 같은 판단을 한다는 뜻 (멘트 문구/랜덤은 비교 대상 아님 —
-    /// 판단·타이밍·데이터가 비교 대상).
+    /// 파이썬과 같은 판단을 한다는 뜻 (변형 풀 랜덤 멘트는 비교 대상 아님 —
+    /// 판단·타이밍·데이터, 그리고 결정적 템플릿 문장 "say"가 비교 대상).
     ///
     /// 사용법: dotnet run -- --replay race.jsonl[.gz] [--out calls.jsonl]
     /// </summary>
@@ -97,7 +97,13 @@ namespace TeamRadio56.Replay
 
             var lines = new List<string>();
             var accepted = new List<RadioEvent>();
-            bus.Accepted = ev => { lines.Add(Format(clock, ev)); accepted.Add(ev); };
+            // 'say'는 수락 시점 data로 렌더 — 파이썬 recording_push의 깊은 복사와 같은 시점
+            var sayRenderer = new VoiceRenderer(new PhrasePool(new Random(7)));
+            bus.Accepted = ev =>
+            {
+                lines.Add(Format(clock, ev, sayRenderer.RenderDeterministic(ev)));
+                accepted.Add(ev);
+            };
 
             int ticks = 0;
             foreach ((Snapshot snap, bool connected) in ReplayLoader.Read(replayPath))
@@ -284,7 +290,7 @@ namespace TeamRadio56.Replay
             return hit == total ? 0 : 1;
         }
 
-        private static string Format(double t, RadioEvent ev)
+        private static string Format(double t, RadioEvent ev, string say)
         {
             // 파이썬 쪽과 같은 형식: 키 정렬된 JSON 한 줄
             var sb = new StringBuilder();
@@ -296,6 +302,8 @@ namespace TeamRadio56.Replay
             AppendKv(sb, "message", ev.Message);
             sb.Append(',');
             AppendKv(sb, "prio", ((int)ev.Priority).ToString(CultureInfo.InvariantCulture), raw: true);
+            sb.Append(',');
+            AppendKv(sb, "say", say);
             sb.Append(',');
             AppendKv(sb, "t", Num(Math.Round(t, 2)), raw: true);
             sb.Append(',');

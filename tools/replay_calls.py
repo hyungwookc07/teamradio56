@@ -4,7 +4,8 @@
 녹화 JSONL을 분석기 파이프라인(현재: 트래픽)에 먹이고, 이벤트 버스가
 "수락한" 이벤트를 JSONL로 출력한다. C# 러너 출력과 이 출력이 같으면
 포팅이 파이썬과 같은 판단·타이밍·데이터를 낸다는 뜻이다.
-(멘트 문구/랜덤 선택은 비교 대상이 아니다 — 그건 보이스 계층.)
+(변형 풀 랜덤 멘트는 비교 대상이 아니다. 대신 결정적 템플릿 렌더러
+ — voice.DETERMINISTIC_TYPES — 의 문장은 "say"로 기록해 C#과 대조한다.)
 
 결정성:
   - 버스의 시계를 가상 시계(스냅샷 기록 시각)로 패치 — 쿨다운 판정이
@@ -27,6 +28,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import events                                    # noqa: E402
+import voice                                     # noqa: E402
 from events import Event, EventBus, EventType, Priority  # noqa: E402
 from state import SessionState                   # noqa: E402
 from analyzers.traffic import TrafficAnalyzer    # noqa: E402
@@ -92,7 +94,10 @@ def main() -> int:
     def recording_push(ev):
         ok = orig_push(ev)
         if ok:
+            say = (None if ev.message else voice.render_deterministic(
+                ev.type, copy.deepcopy(ev.data), ev.tone))
             accepted.append({
+                "say": say,
                 "t": round(vclock.t, 2),
                 "type": ev.type,
                 "prio": int(ev.priority),
