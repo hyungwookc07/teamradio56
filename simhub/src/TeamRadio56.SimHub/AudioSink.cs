@@ -8,12 +8,14 @@ namespace TeamRadio56.SimHub
 {
     /// <summary>
     /// 내장(C#) 엔진의 발화 출력 — 폴백 순서:
-    ///   1) kokoro 통문장 캐시 (무전 효과 wav 우선)
+    ///   1) kokoro 통문장 캐시 (무전 효과가 켜져 있으면 효과 wav만)
     ///   2) 문장 세그먼트 조립 (모든 문장이 있을 때만, 메모리 PCM16 wav)
-    ///   3) 이전에 저장된 edge mp3 캐시
-    ///   4) 캐시 미스 → edge 서비스로 런타임 합성 (mp3, 캐시에 저장돼 재사용)
-    ///   5) 오프라인/실패 → Windows TTS(SpeechOutput)
-    /// 파이썬 엔진의 ChainEngine[통문장 → 세그먼트 → edge] + SAPI 폴백과 같은 구조.
+    ///   3) 효과 전 kokoro 통문장 원본 (효과 켜짐인데 _rfx3가 없을 때)
+    ///   4) 이전에 저장된 edge mp3 캐시
+    ///   5) 캐시 미스 → edge 서비스로 런타임 합성 (mp3, 캐시에 저장돼 재사용)
+    ///   6) 오프라인/실패 → Windows TTS(SpeechOutput)
+    /// 파이썬 엔진의 ChainEngine[효과 통문장 → 세그먼트 → 원본 통문장 → edge] + SAPI
+    /// 폴백과 같은 구조 (파이썬은 3)에 효과를 입히고, C#은 원본 그대로 낸다).
     /// 런타임 합성분에는 아직 무전 효과가 안 입혀진다 (캐시 항목만).
     ///
     /// 겹침 방지 규칙: 이 프로세스의 모든 발화는 PlaybackGate 하나를 지나고,
@@ -144,10 +146,13 @@ namespace TeamRadio56.SimHub
             if (_stopped || string.IsNullOrEmpty(text))
                 return;
             // 파일 확인·조립·합성은 게이트 밖에서 — 앞 콜 재생 중에 준비해 둔다
-            string path = _cache != null ? _cache.ResolveWhole(text, tone) : null;
+            string path = _cache != null ? _cache.ResolveWholeFx(text, tone) : null;
             byte[] wav = null;
             if (path == null)
                 wav = TryAssemble(text, tone);
+            // 효과 전 원본 통문장은 조립 뒤 — 효과본 세그먼트를 가리면 안 된다
+            if (path == null && wav == null && _cache != null)
+                path = _cache.ResolveWhole(text, tone);
             if (path == null && wav == null)
                 path = ResolveEdgeOrSynthesize(text, tone);
             lock (PlaybackGate)

@@ -14,6 +14,10 @@ sf.write(subtype='ULAW')로 쓴 실제 libsndfile 파일, 그리고 규약 밖 �
 soundfile이 있으면 read_samples가 libsndfile 복호(sf.read int16)와
 같은지도 확인한다 (μ-law 256개 코드 전체 포함).
 
+파이썬 전용 점검도 곁들인다 (D/engine/, C# 대조와 무관): KokoroPackEngine
+조립본 재사용·팩 교체 감지·임시 폴더 정리, speech_text 소수 읽기,
+load_track_names의 BOM 처리.
+
 사용법: python tools/assemble_check.py --dir <폴더>
 종료 코드: 0 = 통과, 1 = 파이썬 쪽 기대와 다름.
 """
@@ -24,6 +28,7 @@ import argparse
 import math
 import os
 import random
+import shutil
 import struct
 import sys
 
@@ -196,6 +201,69 @@ def soundfile_checks(root: str, sf, expected: dict) -> list[str]:
     return errors
 
 
+def engine_checks(root: str) -> list[str]:
+    """파이썬 엔진 쪽 점검 — 팩 복사본(D/engine)에서만 돌려 C# 대조 입력은 그대로 둔다."""
+    from messages import speech_text
+    from tts import KokoroPackEngine
+    from voice import load_track_names
+
+    errors = []
+    cache = os.path.join(root, "engine")
+    shutil.copytree(os.path.join(root, "pack"), cache)
+    _, tone, text, _ = CASES[1]
+    paths = ra.segment_paths(cache, VOICE, tone, text)
+
+    def read(p):
+        with open(p, "rb") as f:
+            return f.read()
+
+    eng = KokoroPackEngine(cache, VOICE)
+    eng._tmp_dir = os.path.join(root, "engine_tmp")
+    first = eng.synth(text, tone)
+    if first is None or read(first) != ra.build(cache, tone, paths):
+        errors.append("KokoroPackEngine 조립 결과가 radio_assemble.build와 다름")
+        return errors
+    if eng.synth(text, tone) != first:
+        errors.append("KokoroPackEngine이 같은 팩의 조립본을 재사용하지 않음")
+
+    # 팩 교체 — 새 세그먼트의 mtime이 조립본보다 옛날이어도(압축 해제) 다시 조립
+    old_t = os.path.getmtime(first) - 86400
+    write_pcm16(paths[0], synth(999, 900))
+    os.utime(paths[0], (old_t, old_t))
+    second = eng.synth(text, tone)
+    if second is None or second == first or read(second) != ra.build(cache, tone, paths):
+        errors.append("팩 교체 후에도 옛 조립본을 재생함")
+
+    # 캐시 폴더에 못 쓰면 임시 폴더로, 거기도 MAX_ASSEMBLED개만 (C# assembled.wav는 보존)
+    eng._asm_dir = os.path.join(first, "x")       # 파일 아래 폴더 — makedirs 실패
+    eng.MAX_ASSEMBLED = 2
+    os.makedirs(eng._tmp_dir, exist_ok=True)
+    keep = os.path.join(eng._tmp_dir, "assembled.wav")
+    write_pcm16(keep, [0])
+    for k in range(4):
+        os.utime(paths[0], (old_t - k, old_t - k))
+        if eng.synth(text, tone) is None:
+            errors.append("임시 폴더 조립 실패")
+    asm = [n for n in os.listdir(eng._tmp_dir) if "_asm" in n]
+    if len(asm) != 2 or not os.path.exists(keep):
+        errors.append(f"임시 폴더 정리 이상: 조립본 {len(asm)}개")
+
+    for src, want in [("Gap 1.25 seconds.", "Gap 1 point 2 5 seconds."),
+                      ("0.15", "0 point 1 5"),
+                      ("Closing 1.3 a lap.", "Closing 1 point 3 a lap."),
+                      ("-1.3 on two LMP2s", "-1 point 3 on two LMP twos")]:
+        if speech_text(src) != want:
+            errors.append(f"speech_text({src!r}) = {speech_text(src)!r}, 기대 {want!r}")
+
+    # 윈도 편집기의 UTF-8 BOM — C# File.ReadAllLines(UTF8)처럼 떼어야 한다
+    tracks = os.path.join(root, "tracks_bom.txt")
+    with open(tracks, "wb") as f:
+        f.write("\ufeff# 주석\nFuji Speedway\n".encode("utf-8"))
+    if load_track_names(tracks) != ["Fuji Speedway"]:
+        errors.append(f"load_track_names BOM 처리 이상: {load_track_names(tracks)!r}")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", required=True)
@@ -246,6 +314,8 @@ def main() -> int:
         if ra.read_samples(out) != want or len(wav) != 44 + 2 * len(want):
             errors.append(f"#{i} 조립 결과 순서/길이 다름")
 
+    errors += engine_checks(root)
+
     if sf is not None:
         errors += soundfile_checks(root, sf, expected)
         sf_note = "libsndfile 복호 대조 포함"
@@ -256,7 +326,8 @@ def main() -> int:
         print(f"❌ {e}")
     if errors:
         return 1
-    print(f"✅ 파이썬 조립 {hits}/{len(CASES)}건 (나머지는 의도된 미스), {sf_note}")
+    print(f"✅ 파이썬 조립 {hits}/{len(CASES)}건 (나머지는 의도된 미스), {sf_note}, "
+          "팩 엔진·speech_text·트랙 BOM 점검 통과")
     return 0
 
 

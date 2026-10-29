@@ -256,10 +256,12 @@ class KokoroEngine(TTSEngine):
 class KokoroPackEngine(TTSEngine):
     """
     배포 kokoro 팩 전용 (캐시만, 합성 없음): 통문장 _rfx 클립 → 문장 세그먼트
-    조립 → None 순서. C# AudioSink(ResolveWhole → TryAssemble)와 같은 순서·규칙.
+    조립 → None 순서. C# AudioSink(ResolveWholeFx → TryAssemble)와 같은 순서·규칙.
 
     조립 결과는 cache_dir/_assembled/에 파일로 남겨 재사용한다 (pygame은 파일
-    재생). 생성 시 최신 MAX_ASSEMBLED개만 남기고 정리.
+    재생). 파일명에 원천(세그먼트·자산)의 이름·크기·mtime 해시를 넣어, 팩을
+    갈아끼우면 mtime이 더 옛날이어도(압축 해제는 mtime 보존) 새로 조립한다.
+    캐시 폴더에 못 쓰면 임시 폴더로. 두 폴더 다 최신 MAX_ASSEMBLED개만 남긴다.
     """
 
     MAX_ASSEMBLED = 200
@@ -274,19 +276,25 @@ class KokoroPackEngine(TTSEngine):
         self._tmp_dir = os.path.join(tempfile.gettempdir(), "teamradio56")
         self._assets: Optional[bool] = None
         self._missed: set = set()
-        self._prune()
+        self._prune(self._asm_dir)
+        self._prune(self._tmp_dir)
 
-    def _prune(self) -> None:
+    def _prune(self, d: str) -> None:
+        # "_asm"이 든 이름만 — 임시 폴더의 C# assembled.wav 등은 건드리지 않는다
         try:
-            names = [os.path.join(self._asm_dir, n)
-                     for n in os.listdir(self._asm_dir)]
+            names = [os.path.join(d, n) for n in os.listdir(d) if "_asm" in n]
         except OSError:
             return
-        files = [p for p in names if os.path.isfile(p)]
+        files = []
+        for p in names:
+            try:
+                files.append((os.path.getmtime(p), p))
+            except OSError:
+                pass
         if len(files) <= self.MAX_ASSEMBLED:
             return
-        files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
-        for p in files[self.MAX_ASSEMBLED:]:
+        files.sort(reverse=True)
+        for _, p in files[self.MAX_ASSEMBLED:]:
             try:
                 os.remove(p)
             except OSError:
@@ -313,13 +321,16 @@ class KokoroPackEngine(TTSEngine):
         if paths is None:
             self._log_miss(tone, missing)
             return None
+        tag = self._source_tag(paths + [os.path.join(self.cache_dir, n)
+                                        for n in self._ra.ASSET_NAMES])
+        if tag is None:
+            self._log_miss(tone, None, text)
+            return None
         name = (os.path.splitext(os.path.basename(raw))[0]
-                + f"_asm{self._ra.SEG_VERSION}.wav")
-        sources = paths + [os.path.join(self.cache_dir, n)
-                           for n in self._ra.ASSET_NAMES]
+                + f"_asm{self._ra.SEG_VERSION}_{tag}.wav")
         for d in (self._asm_dir, self._tmp_dir):
             dst = os.path.join(d, name)
-            if self._fresh(dst, sources):
+            if os.path.isfile(dst):
                 return dst
         data = self._ra.build(self.cache_dir, tone, paths)
         if data is None:
@@ -333,19 +344,24 @@ class KokoroPackEngine(TTSEngine):
                 with open(tmp, "wb") as f:
                     f.write(data)
                 os.replace(tmp, dst)
-                return dst
             except OSError:
                 continue
+            self._prune(d)
+            return dst
         return None
 
     @staticmethod
-    def _fresh(dst: str, sources: list) -> bool:
-        """조립본이 있고 원천(세그먼트·자산)보다 새것인지 — 팩을 갈아끼우면 다시 조립."""
+    def _source_tag(sources: list) -> Optional[str]:
+        """원천 파일들의 (이름, 크기, mtime) 해시 8자 — 하나라도 못 읽으면 None."""
+        h = hashlib.md5()
         try:
-            t = os.path.getmtime(dst)
-            return all(os.path.getmtime(p) <= t for p in sources)
+            for p in sources:
+                st = os.stat(p)
+                h.update(f"{os.path.basename(p)}|{st.st_size}|{st.st_mtime_ns}\n"
+                         .encode("utf-8"))
         except OSError:
-            return False
+            return None
+        return h.hexdigest()[:8]
 
     def _log_miss(self, tone: str, sentence: Optional[str],
                   text: Optional[str] = None) -> None:

@@ -637,8 +637,9 @@ SEG_BRIEF_FUEL = range(1, 131)
 
 
 def load_track_names(path: str) -> list[str]:
-    """트랙 이름 목록 파일 — 한 줄에 하나, 빈 줄과 '#' 주석은 무시."""
-    with open(path, "r", encoding="utf-8") as f:
+    """트랙 이름 목록 파일 — 한 줄에 하나, 빈 줄과 '#' 주석은 무시.
+    utf-8-sig: 윈도 편집기가 붙인 BOM을 C# File.ReadAllLines(UTF8)처럼 떼어낸다."""
+    with open(path, "r", encoding="utf-8-sig") as f:
         return [ln.strip() for ln in f
                 if ln.strip() and not ln.strip().startswith("#")]
 

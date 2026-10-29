@@ -88,6 +88,21 @@ namespace TeamRadio56.Core.Logic
         }
 
         /// <summary>
+        /// 재생 1단계 통문장 — 무전 효과가 켜져 있으면 _rfx3만 본다. 효과 전 원본은
+        /// 세그먼트 조립 뒤에 ResolveWhole로 (파이썬 KokoroPackEngine → RadioFXEngine 순서).
+        /// 효과가 꺼져 있으면 ResolveWhole과 같다.
+        /// </summary>
+        public string ResolveWholeFx(string text, string tone)
+        {
+            if (!_radioFx)
+                return ResolveWhole(text, tone);
+            if (_edgeOnly || !Available || string.IsNullOrEmpty(text))
+                return null;
+            string rfx = RfxPath(KokoroBase(text, tone ?? "casual"));
+            return File.Exists(rfx) ? rfx : null;
+        }
+
+        /// <summary>
         /// 이전 미스 때 저장된 edge mp3 (_rfx3 우선). 세그먼트 조립보다 뒤에 봐야
         /// 한다 — 옛 edge 파일이 새로 배포된 세그먼트를 가리면 안 된다.
         /// </summary>
@@ -145,12 +160,16 @@ namespace TeamRadio56.Core.Logic
         {
             if (_radioFx)
             {
-                string rfx = Path.ChangeExtension(basePath, null)
-                             + "_rfx" + RadioFxVersion + ".wav";
+                string rfx = RfxPath(basePath);
                 if (File.Exists(rfx))
                     return rfx;
             }
             return File.Exists(basePath) ? basePath : null;
+        }
+
+        private static string RfxPath(string basePath)
+        {
+            return Path.ChangeExtension(basePath, null) + "_rfx" + RadioFxVersion + ".wav";
         }
 
         /// <summary>

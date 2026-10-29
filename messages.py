@@ -235,13 +235,15 @@ def brief_length_text(minutes: int) -> str:
     return msg("brief_minutes", m=m)
 
 
-_DECIMAL = re.compile(r"(\d)\.(\d)")
+_DECIMAL = re.compile(r"(\d)\.(\d+)")
 
 
 def speech_text(text: str) -> str:
     """합성 전용 정규화 — Kokoro는 "1.3"을 "one. three"로 읽는다.
+    소수부는 한 자리씩 ("1.25" → "1 point 2 5", "one point twenty-five"가 아니게).
     캐시 키와 화면 표시는 원문을 쓰므로 C# 대응 없음 (C#은 Kokoro를 합성하지 않는다)."""
-    text = _DECIMAL.sub(r"\1 point \2", text)
+    text = _DECIMAL.sub(
+        lambda m: m.group(1) + " point " + " ".join(m.group(2)), text)
     return text.replace("GT3s", "GT threes").replace("LMP2s", "LMP twos")
 
 
