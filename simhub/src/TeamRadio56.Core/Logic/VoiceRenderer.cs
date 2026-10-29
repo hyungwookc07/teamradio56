@@ -400,6 +400,89 @@ namespace TeamRadio56.Core.Logic
                     }
                 }
             }
+            if (!Messages.IsKo)
+            {
+                foreach (KeyValuePair<string, string> item in ComposedWhole())
+                    yield return item;
+            }
+        }
+
+        // 페널티 콜 열거 — RaceControlAnalyzer.ParsePenalty가 내는 값 전체
+        // (reason ""은 사유 미상). voice.py PEN_KINDS/PEN_REASONS와 일치.
+        internal static readonly string[] PenaltyKinds =
+            { "drive-through", "stop-and-go", "time penalty", "penalty" };
+        internal static readonly string[] PenaltyReasons =
+        {
+            "", "pit lane speeding", "track limits", "yellow flag infringement",
+            "start infringement", "contact", "blocking", "unsafe rejoin",
+        };
+
+        /// <summary>
+        /// voice.py iter_composed_whole_texts 미러 — 분석기가 조립하는 문장 중
+        /// 경우의 수가 작은 것을 통째로 사전 생성 (en 전용, ko는 빈 열거).
+        /// </summary>
+        public static IEnumerable<KeyValuePair<string, string>> ComposedWhole()
+        {
+            if (Messages.IsKo)
+                yield break;
+            for (int n = 0; n <= 40; n++)
+                yield return Casual(Messages.Get("pit_window", "n", Messages.LapsText(n)));
+            foreach (string rel in new[] { "ahead", "behind" })
+            {
+                // RivalAnalyzer: undercut_risk == (뒤차가 먼저 피트)
+                string tail = Messages.Get(rel == "behind"
+                    ? "rival_pit_undercut" : "rival_pit_gap");
+                for (int p = 1; p <= 30; p++)
+                {
+                    yield return Casual(Messages.Get("rival_pit_base",
+                        "rel", Messages.Get("rival_rel_" + rel), "p", p) + tail);
+                }
+            }
+            var renderer = new VoiceRenderer(new PhrasePool(new Random(0)));
+            foreach (int m in RaceControlAnalyzer.MilestonesMin)
+            {
+                yield return Casual(renderer.RenderDeterministic(new RadioEvent
+                {
+                    Type = EventTypes.RaceMilestone,
+                    Data = new Dictionary<string, object> { { "remaining_min", m } },
+                }));
+            }
+            foreach (string key in new[] { "stint_brief", "final_lap", "pen_clear",
+                                           "dmg_no_effect", "report_marks",
+                                           "report_clean", "align_mild" })
+                yield return Casual(Messages.Get(key));
+            for (int i = 0; i < 4; i++)
+            {
+                yield return Casual(Messages.Get("slow_puncture", "wheel", Messages.WheelName(i)));
+                yield return Casual(Messages.Get("puncture_now", "wheel", Messages.WheelName(i)));
+            }
+            foreach (string what in new[] { "engine_what_water", "engine_what_oil",
+                                            "engine_what_engine" })
+                yield return Casual(Messages.Get("engine_warn", "what", Messages.Get(what)));
+
+            for (int n = 1; n <= 3; n++)
+                yield return Urgent(Messages.Get("sector_yellow", "n", n));
+            yield return Urgent(Messages.Get("stopped_hazard"));
+            for (int i = 0; i < 4; i++)
+                yield return Urgent(Messages.Get("wheel_gone", "wheel", Messages.WheelName(i)));
+            foreach (string key in new[] { "part_detached_rear", "part_detached",
+                                           "align_severe", "rear_instab" })
+                yield return Urgent(Messages.Get(key));
+            foreach (string kind in PenaltyKinds)
+            {
+                foreach (string reason in PenaltyReasons)
+                    yield return Urgent(Messages.PenaltyText(kind, reason));
+            }
+        }
+
+        private static KeyValuePair<string, string> Casual(string text)
+        {
+            return new KeyValuePair<string, string>("casual", text);
+        }
+
+        private static KeyValuePair<string, string> Urgent(string text)
+        {
+            return new KeyValuePair<string, string>("urgent", text);
         }
 
         private static void Add(
@@ -458,6 +541,254 @@ namespace TeamRadio56.Core.Logic
                 });
             }
             return list;
+        }
+    }
+
+    /// <summary>
+    /// voice.py iter_pregen_sentences 미러 — 문장 단위 사전 생성 대상 (톤, 문장).
+    /// 실제 멘트를 슬롯 도메인 전체에 대해 렌더한 뒤 SplitSentences로 쪼갠다
+    /// (중복 제거). en 전용. 도메인 상수는 파이썬 SEG_*와 값이 같아야 한다 —
+    /// replay-check가 집합을 diff한다.
+    /// </summary>
+    public static class PregenSentences
+    {
+        public static readonly double[] SegGaps = Gaps();
+        public static readonly double[] SegRates = Tenths(1, 99);
+        public static readonly double[] SegPace = Tenths(7, 99);
+        public static readonly double[] SegRivalDiff = Tenths(3, 50);
+        public const int SegRivalLapsMin = 1, SegRivalLapsMax = 16;
+        public const int SegTyreHotMin = 12, SegTyreHotMax = 40;
+        public const int SegTyreLapsMin = 0, SegTyreLapsMax = 30;
+        public static readonly string[] SegMultiClasses =
+            { "Hypercar", "LMP2", "GT3", "GTE", "faster car" };
+        public const int SegMultiMaxCars = 3;
+        public const int SegDentMaxZones = 3;
+
+        /// <summary>
+        /// maxTier 이하 단계의 (톤, 문장). tracks는 2단계(세션 브리핑)용.
+        /// </summary>
+        public static IEnumerable<KeyValuePair<string, string>> Enumerate(
+            int maxTier = 2, IEnumerable<string> tracks = null)
+        {
+            if (Messages.IsKo)
+                yield break;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            if (maxTier >= 1)
+            {
+                foreach (KeyValuePair<string, string> m in Tier1Messages())
+                {
+                    foreach (string s in Messages.SplitSentences(m.Value))
+                    {
+                        if (seen.Add(m.Key + "\t" + s))
+                            yield return new KeyValuePair<string, string>(m.Key, s);
+                    }
+                }
+            }
+        }
+
+        /// <summary>트랙 이름 목록 파일 — 한 줄에 하나, 빈 줄과 '#' 주석은 무시.</summary>
+        public static List<string> LoadTracks(string path)
+        {
+            var list = new List<string>();
+            foreach (string line in System.IO.File.ReadAllLines(path, System.Text.Encoding.UTF8))
+            {
+                string t = line.Trim();
+                if (t.Length > 0 && !t.StartsWith("#", StringComparison.Ordinal))
+                    list.Add(t);
+            }
+            return list;
+        }
+
+        /// <summary>1단계 도메인의 전체 멘트 (분할 전).</summary>
+        private static IEnumerable<KeyValuePair<string, string>> Tier1Messages()
+        {
+            // 갭 — VoiceRenderer GapComment
+            foreach (double g in SegGaps)
+            {
+                string gs = Messages.SecondsText(g);
+                foreach (string who in new[] { "behind", "ahead" })
+                {
+                    yield return C(Messages.Get("gap_" + who + "_opening", "gap", gs));
+                    yield return C(Messages.Get("gap_" + who + "_holding", "gap", gs));
+                    foreach (double r in SegRates)
+                        yield return C(Messages.Get("gap_" + who + "_closing", "rate", r, "gap", gs));
+                }
+            }
+            // 페이스 — PaceComment
+            foreach (double d in SegPace)
+            {
+                yield return C(Messages.Get("pace_lost", "delta", d));
+                yield return C(Messages.Get("pace_quick", "delta", d));
+            }
+            // 라이벌 페이스 — RivalPace
+            foreach (double d in SegRivalDiff)
+            {
+                for (int n = SegRivalLapsMin; n <= SegRivalLapsMax; n++)
+                {
+                    yield return C(Messages.Get("rival_catch", "diff", d, "laps", Messages.LapsText(n)));
+                    yield return C(Messages.Get("rival_defend", "diff", d, "laps", Messages.LapsText(n)));
+                }
+            }
+            // 타이어 — TyreWarning
+            for (int i = 0; i < 4; i++)
+            {
+                for (int d = SegTyreHotMin; d <= SegTyreHotMax; d++)
+                    yield return C(Messages.Get("tyre_hot", "wheel", Messages.WheelName(i), "delta", d));
+                for (int n = SegTyreLapsMin; n <= SegTyreLapsMax; n++)
+                {
+                    yield return C(Messages.Get("tyre_wear",
+                        "wheel", Messages.WheelName(i), "laps", Messages.LapsText(n)));
+                }
+            }
+            // 데미지 리포트 — HealthAnalyzer.DamageReport (문제 하나 = 한 문장)
+            var wheels = new List<string>();
+            for (int i = 0; i < 4; i++)
+                wheels.Add(Messages.WheelName(i));
+            var problems = new List<string>();
+            for (int k = 1; k <= 4; k++)
+            {
+                foreach (List<string> sub in Combinations(wheels, k))
+                {
+                    problems.Add(Messages.Get("item_wheel_damage", "names", Messages.AndList(sub)));
+                    problems.Add(Messages.Get("item_puncture", "names", Messages.AndList(sub)));
+                }
+            }
+            foreach (string w in wheels)
+                problems.Add(Messages.Get("item_losing_pressure", "name", w));
+            var zones = new List<string>();
+            foreach (string z in HealthAnalyzer.DentZones)
+                zones.Add(Messages.ZoneDisplay(z));
+            for (int k = 1; k <= SegDentMaxZones; k++)
+            {
+                foreach (List<string> sub in Combinations(zones, k))
+                    problems.Add(Messages.Get("item_heavy_body", "zones", Messages.AndList(sub)));
+            }
+            foreach (string p in problems)
+            {
+                foreach (string adv in new[] { "report_advice_box", "report_advice_keep" })
+                {
+                    yield return C(Messages.Get("report_problems",
+                        "problems", Messages.JoinProblems(new[] { p }),
+                        "advice", Messages.Get(adv)));
+                }
+            }
+            // 다중 차량 — TrafficAnalyzer.ComposeMulti (절 하나 = 한 문장)
+            foreach (string c in SegMultiClasses)
+            {
+                foreach (string key in new[] { "multi_alongside_left", "multi_alongside_right",
+                                               "multi_alongside" })
+                    yield return U(Messages.Get(key, "cls", c) + ".");
+            }
+            yield return U(Messages.Get("multi_ahead_clear"));
+            for (int k = 1; k <= SegMultiMaxCars; k++)
+            {
+                foreach (List<string> classes in Permutations(SegMultiClasses, k))
+                {
+                    foreach (int[] counts in Counts(k, SegMultiMaxCars))
+                    {
+                        var pairs = new List<KeyValuePair<string, int>>();
+                        for (int j = 0; j < k; j++)
+                            pairs.Add(new KeyValuePair<string, int>(classes[j], counts[j]));
+                        string names = Messages.MultiNames(pairs);
+                        yield return U(Messages.Get("multi_behind", "names", names) + ".");
+                        yield return U(Messages.Get("multi_closing", "names", names) + ".");
+                    }
+                }
+            }
+        }
+
+        private static KeyValuePair<string, string> C(string text)
+        {
+            return new KeyValuePair<string, string>("casual", text);
+        }
+
+        private static KeyValuePair<string, string> U(string text)
+        {
+            return new KeyValuePair<string, string>("urgent", text);
+        }
+
+        private static double[] Tenths(int lo, int hi)
+        {
+            var v = new double[hi - lo + 1];
+            for (int i = lo; i <= hi; i++)
+                v[i - lo] = i / 10.0;
+            return v;
+        }
+
+        private static double[] Gaps()
+        {
+            var v = new List<double>(Tenths(0, 99));
+            for (int s = 10; s <= 120; s++)
+                v.Add(s);
+            return v.ToArray();
+        }
+
+        /// <summary>itertools.combinations — 인덱스 순서 유지.</summary>
+        private static IEnumerable<List<string>> Combinations(IList<string> items, int k)
+        {
+            var idx = new int[k];
+            for (int i = 0; i < k; i++)
+                idx[i] = i;
+            while (k <= items.Count)
+            {
+                var pick = new List<string>(k);
+                foreach (int i in idx)
+                    pick.Add(items[i]);
+                yield return pick;
+                int pos = k - 1;
+                while (pos >= 0 && idx[pos] == items.Count - k + pos)
+                    pos--;
+                if (pos < 0)
+                    yield break;
+                idx[pos]++;
+                for (int j = pos + 1; j < k; j++)
+                    idx[j] = idx[j - 1] + 1;
+            }
+        }
+
+        /// <summary>itertools.permutations — 서로 다른 k개의 순서 있는 나열.</summary>
+        private static IEnumerable<List<string>> Permutations(IList<string> items, int k)
+        {
+            if (k == 0)
+            {
+                yield return new List<string>();
+                yield break;
+            }
+            for (int i = 0; i < items.Count; i++)
+            {
+                var rest = new List<string>(items);
+                rest.RemoveAt(i);
+                foreach (List<string> tail in Permutations(rest, k - 1))
+                {
+                    tail.Insert(0, items[i]);
+                    yield return tail;
+                }
+            }
+        }
+
+        /// <summary>k칸 각 1 이상, 합 max 이하인 대수 조합 (product + 합 필터).</summary>
+        private static IEnumerable<int[]> Counts(int k, int max)
+        {
+            var c = new int[k];
+            for (int i = 0; i < k; i++)
+                c[i] = 1;
+            while (true)
+            {
+                int sum = 0;
+                foreach (int x in c)
+                    sum += x;
+                if (sum <= max)
+                    yield return (int[])c.Clone();
+                int pos = k - 1;
+                while (pos >= 0 && c[pos] == max)
+                {
+                    c[pos] = 1;
+                    pos--;
+                }
+                if (pos < 0)
+                    yield break;
+                c[pos]++;
+            }
         }
     }
 }

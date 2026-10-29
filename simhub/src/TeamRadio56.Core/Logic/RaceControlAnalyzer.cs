@@ -20,7 +20,7 @@ namespace TeamRadio56.Core.Logic
         private const int YPitLeadLap = 3;
         private const int YPitOpen = 4;
 
-        private static readonly int[] MilestonesMin = { 60, 30, 10 };
+        internal static readonly int[] MilestonesMin = { 60, 30, 10 };
         private const double PitLimitMarginKmh = 5.0;
         private const double DefaultPitLimitKmh = 80.0;
         private const double PenaltyWaitSec = 1.5;   // 종류 메시지 대기

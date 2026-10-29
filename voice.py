@@ -24,7 +24,9 @@ import yaml
 from events import Event, EventType
 from messages import (msg, class_display, gap_slot, side_slot,
                       fuel_slot, laps_text, seconds_text,
-                      is_ko, set_language)
+                      is_ko, set_language, and_list, join_problems,
+                      multi_names, penalty_text, split_sentences,
+                      wheel_name, zone_display)
 
 log = logging.getLogger("voice")
 
@@ -558,3 +560,153 @@ def iter_pregen_texts(pool: PhrasePool):
                         yield tone, phrase.format(**slots)
                     except (KeyError, IndexError):
                         continue
+    if not is_ko():
+        yield from iter_composed_whole_texts()
+
+
+# 페널티 콜 열거 — analyzers.racecontrol._parse_penalty가 내는 값 전체
+# (reason ""은 사유 미상). C# PregenTexts.PenaltyKinds/Reasons와 일치.
+PEN_KINDS = ("drive-through", "stop-and-go", "time penalty", "penalty")
+PEN_REASONS = ("", "pit lane speeding", "track limits",
+               "yellow flag infringement", "start infringement",
+               "contact", "blocking", "unsafe rejoin")
+
+
+def iter_composed_whole_texts():
+    """
+    분석기가 조립하는(ev.message) 문장 중 경우의 수가 작은 것 — 통째로
+    사전 생성한다 (en 전용, ko는 아무것도 내지 않는다). C# PregenTexts.ComposedWhole 미러.
+    """
+    if is_ko():
+        return
+    from analyzers.racecontrol import MILESTONES_MIN
+    for n in range(0, 41):
+        yield "casual", msg("pit_window", n=laps_text(n))
+    for rel in ("ahead", "behind"):
+        # rivals.py: undercut_risk == (뒤차가 먼저 피트)
+        tail = msg("rival_pit_undercut") if rel == "behind" else msg("rival_pit_gap")
+        for p in range(1, 31):
+            yield "casual", msg("rival_pit_base", rel=msg("rival_rel_" + rel), p=p) + tail
+    for m in MILESTONES_MIN:
+        yield "casual", render_deterministic("race_milestone", {"remaining_min": m})
+    for key in ("stint_brief", "final_lap", "pen_clear", "dmg_no_effect",
+                "report_marks", "report_clean", "align_mild"):
+        yield "casual", msg(key)
+    for i in range(4):
+        yield "casual", msg("slow_puncture", wheel=wheel_name(i))
+        yield "casual", msg("puncture_now", wheel=wheel_name(i))
+    for what in ("engine_what_water", "engine_what_oil", "engine_what_engine"):
+        yield "casual", msg("engine_warn", what=msg(what))
+
+    for n in range(1, 4):
+        yield "urgent", msg("sector_yellow", n=n)
+    yield "urgent", msg("stopped_hazard")
+    for i in range(4):
+        yield "urgent", msg("wheel_gone", wheel=wheel_name(i))
+    for key in ("part_detached_rear", "part_detached", "align_severe", "rear_instab"):
+        yield "urgent", msg(key)
+    for kind in PEN_KINDS:
+        for reason in PEN_REASONS:
+            yield "urgent", penalty_text(kind, reason)
+
+
+# -- 문장 단위 사전 생성 도메인 (C# PregenSentences와 값·순서 동일) ----------
+# 도메인 밖 값은 런타임에 edge로 폴백한다 (문장 하나라도 없으면 통째로 미스).
+SEG_GAPS = [i / 10 for i in range(100)] + [float(s) for s in range(10, 121)]
+SEG_RATES = [i / 10 for i in range(1, 100)]
+SEG_PACE = [i / 10 for i in range(7, 100)]
+SEG_RIVAL_DIFF = [i / 10 for i in range(3, 51)]
+SEG_RIVAL_LAPS = range(1, 17)
+SEG_TYRE_HOT = range(12, 41)
+SEG_TYRE_LAPS = range(0, 31)
+SEG_MULTI_CLASSES = ("Hypercar", "LMP2", "GT3", "GTE", "faster car")
+SEG_MULTI_MAX_CARS = 3
+SEG_DENT_MAX_ZONES = 3
+
+
+def load_track_names(path: str) -> list[str]:
+    """트랙 이름 목록 파일 — 한 줄에 하나, 빈 줄과 '#' 주석은 무시."""
+    with open(path, "r", encoding="utf-8") as f:
+        return [ln.strip() for ln in f
+                if ln.strip() and not ln.strip().startswith("#")]
+
+
+def iter_pregen_sentences(tiers=(1, 2), tracks=()):
+    """
+    문장 단위 사전 생성 대상 (톤, 문장) — 실제 멘트를 msg()/헬퍼로 슬롯
+    도메인 전체에 대해 렌더한 뒤 split_sentences로 쪼갠다 (중복 제거).
+    en 전용. tracks는 2단계(세션 브리핑)용.
+    """
+    if is_ko():
+        return
+    seen: set = set()
+
+    def emit(tone: str, text: str):
+        for s in split_sentences(text):
+            if (tone, s) not in seen:
+                seen.add((tone, s))
+                yield tone, s
+
+    if 1 in tiers:
+        for tone, text in _tier1_messages():
+            yield from emit(tone, text)
+
+
+def _tier1_messages():
+    """1단계 도메인의 전체 멘트 (분할 전)."""
+    from itertools import combinations, permutations, product
+    from analyzers.health import DENT_ZONES
+
+    # 갭 — VoiceGenerator._render_gap_comment
+    for g in SEG_GAPS:
+        gs = seconds_text(g)
+        for who in ("behind", "ahead"):
+            yield "casual", msg(f"gap_{who}_opening", gap=gs)
+            yield "casual", msg(f"gap_{who}_holding", gap=gs)
+            for r in SEG_RATES:
+                yield "casual", msg(f"gap_{who}_closing", rate=r, gap=gs)
+    # 페이스 — _render_pace_comment
+    for d in SEG_PACE:
+        yield "casual", msg("pace_lost", delta=d)
+        yield "casual", msg("pace_quick", delta=d)
+    # 라이벌 페이스 — _render_rival_pace
+    for d in SEG_RIVAL_DIFF:
+        for n in SEG_RIVAL_LAPS:
+            yield "casual", msg("rival_catch", diff=d, laps=laps_text(n))
+            yield "casual", msg("rival_defend", diff=d, laps=laps_text(n))
+    # 타이어 — _render_tyre_warning
+    for i in range(4):
+        for d in SEG_TYRE_HOT:
+            yield "casual", msg("tyre_hot", wheel=wheel_name(i), delta=d)
+        for n in SEG_TYRE_LAPS:
+            yield "casual", msg("tyre_wear", wheel=wheel_name(i), laps=laps_text(n))
+    # 데미지 리포트 — health._damage_report (문제 하나 = 한 문장)
+    wheels = [wheel_name(i) for i in range(4)]
+    problems = []
+    for k in range(1, 5):
+        for sub in combinations(wheels, k):
+            problems.append(msg("item_wheel_damage", names=and_list(list(sub))))
+            problems.append(msg("item_puncture", names=and_list(list(sub))))
+    for w in wheels:
+        problems.append(msg("item_losing_pressure", name=w))
+    zones = [zone_display(z) for z in DENT_ZONES]
+    for k in range(1, SEG_DENT_MAX_ZONES + 1):
+        for sub in combinations(zones, k):
+            problems.append(msg("item_heavy_body", zones=and_list(list(sub))))
+    for p in problems:
+        for adv in ("report_advice_box", "report_advice_keep"):
+            yield "casual", msg("report_problems", problems=join_problems([p]),
+                                advice=msg(adv))
+    # 다중 차량 — traffic._compose_multi (절 하나 = 한 문장)
+    for c in SEG_MULTI_CLASSES:
+        for key in ("multi_alongside_left", "multi_alongside_right", "multi_alongside"):
+            yield "urgent", msg(key, cls=c) + "."
+    yield "urgent", msg("multi_ahead_clear")
+    for k in range(1, SEG_MULTI_MAX_CARS + 1):
+        for classes in permutations(SEG_MULTI_CLASSES, k):
+            for counts in product(range(1, SEG_MULTI_MAX_CARS + 1), repeat=k):
+                if sum(counts) > SEG_MULTI_MAX_CARS:
+                    continue
+                names = multi_names(list(zip(classes, counts)))
+                yield "urgent", msg("multi_behind", names=names) + "."
+                yield "urgent", msg("multi_closing", names=names) + "."

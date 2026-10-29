@@ -22,6 +22,12 @@ namespace TeamRadio56.Core.Logic
     {
         private const int RadioFxVersion = 3;   // radiofx.py VERSION과 일치
 
+        /// <summary>
+        /// 문장 세그먼트 접미사 "_seg{버전}.wav" — 세그먼트 렌더 규약(속도/효과)이
+        /// 바뀌면 버전을 올린다. 파이썬 tools/dump_pregen.py SEG_SUFFIX와 일치.
+        /// </summary>
+        public const string SegSuffix = "_seg1.wav";
+
         // EdgeTTSEngine.TONE_DELIVERY와 일치 (기본 속도에 더할 %, 피치)
         private static readonly Dictionary<string, KeyValuePair<int, string>> ToneDelivery =
             new Dictionary<string, KeyValuePair<int, string>>
@@ -132,7 +138,19 @@ namespace TeamRadio56.Core.Logic
                 "mp3");
         }
 
+        /// <summary>문장 세그먼트 파일명 — 통문장과 같은 kokoro 키에 접미사만 다르다.</summary>
+        public static string SegmentFileName(string sentence, string tone,
+                                             string voice = "bm_george")
+        {
+            return Md5Prefix("kokoro|" + voice + "|" + tone + "|" + sentence) + SegSuffix;
+        }
+
         private string CachePath(string key, string ext)
+        {
+            return Path.Combine(_cacheDir, Md5Prefix(key) + "." + ext);
+        }
+
+        private static string Md5Prefix(string key)
         {
             using (MD5 md5 = MD5.Create())
             {
@@ -141,7 +159,7 @@ namespace TeamRadio56.Core.Logic
                 foreach (byte b in hash)
                     sb.Append(b.ToString("x2", CultureInfo.InvariantCulture));
                 // 파이썬 _cache_path는 hexdigest()[:20] — 반드시 20자로 자른다
-                return Path.Combine(_cacheDir, sb.ToString(0, 20) + "." + ext);
+                return sb.ToString(0, 20);
             }
         }
     }

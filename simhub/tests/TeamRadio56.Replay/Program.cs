@@ -30,6 +30,10 @@ namespace TeamRadio56.Replay
             bool gec = false;
             string synthText = null;
             bool coverage = false;
+            bool dumpSentences = false;
+            bool dumpSegNames = false;
+            int maxTier = 2;
+            string tracksPath = null;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
@@ -50,6 +54,14 @@ namespace TeamRadio56.Replay
                     coverage = true;
                 else if (args[i] == "--synth" && i + 1 < args.Length)
                     synthText = args[++i];
+                else if (args[i] == "--dump-sentences")
+                    dumpSentences = true;
+                else if (args[i] == "--dump-seg-names")
+                    dumpSegNames = true;
+                else if (args[i] == "--tier" && i + 1 < args.Length)
+                    maxTier = int.Parse(args[++i], CultureInfo.InvariantCulture);
+                else if (args[i] == "--tracks" && i + 1 < args.Length)
+                    tracksPath = args[++i];
             }
             if (gec)
             {
@@ -71,6 +83,12 @@ namespace TeamRadio56.Replay
                 return DumpPregen(outPath);
             if (dumpCacheNames)
                 return DumpCacheNames(outPath);
+            if (dumpSentences || dumpSegNames)
+            {
+                List<string> tracks = tracksPath != null
+                    ? PregenSentences.LoadTracks(tracksPath) : new List<string>();
+                return DumpSentences(outPath, maxTier, tracks, dumpSegNames);
+            }
             if (checkCacheDir != null)
                 return CheckCache(checkCacheDir);
             if (replayPath == null)
@@ -78,6 +96,7 @@ namespace TeamRadio56.Replay
                 Console.Error.WriteLine(
                     "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] [--lang en|ko]"
                     + " | --dump-pregen [--out f] | --dump-cache-names [--out f]"
+                    + " | --dump-sentences|--dump-seg-names [--tier N] [--tracks f] [--out f]"
                     + " | --check-cache <오디오캐시폴더> | --gec | --synth <텍스트>");
                 return 2;
             }
@@ -243,6 +262,36 @@ namespace TeamRadio56.Replay
             {
                 writer.Dispose();
                 Console.Error.WriteLine($"캐시 파일명 {set.Count}줄 → {outPath}");
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// 문장 단위 사전 생성 대상을 "톤\t문장"(또는 --dump-seg-names면
+        /// "톤\t세그먼트파일명\t문장") 정렬·중복 제거로 출력 — 파이썬
+        /// dump_pregen.py --sentences / --seg-names와 diff한다.
+        /// </summary>
+        private static int DumpSentences(string outPath, int maxTier,
+                                         List<string> tracks, bool segNames)
+        {
+            var set = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, string> item
+                     in PregenSentences.Enumerate(maxTier, tracks))
+            {
+                set.Add(segNames
+                    ? item.Key + "\t" + VoiceCache.SegmentFileName(item.Value, item.Key)
+                      + "\t" + item.Value
+                    : item.Key + "\t" + item.Value);
+            }
+            TextWriter writer = outPath != null
+                ? new StreamWriter(outPath, false, new UTF8Encoding(false))
+                : Console.Out;
+            foreach (string line in set)
+                writer.WriteLine(line);
+            if (outPath != null)
+            {
+                writer.Dispose();
+                Console.Error.WriteLine($"사전 생성 문장 {set.Count}개 → {outPath}");
             }
             return 0;
         }
