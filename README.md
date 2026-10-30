@@ -41,8 +41,16 @@ feature is finished; everything above works without them.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for full installation (including the
 shared-memory plugin). For the SimHub plugin, see
-[simhub/README.md](simhub/README.md) — after the first build, updating is a
-double-click on `update.bat` (pull + build + copy DLLs).
+[simhub/README.md](simhub/README.md).
+
+**Updating the SimHub plugin**: from 0.16 the plugin updates itself from
+[GitHub Releases](https://github.com/hyungwookc07/teamradio56/releases) —
+open the teamradio56 settings in SimHub → **Updates** → *Check for updates*,
+then *Update plugin* (restart SimHub afterwards) or *Update voice pack*.
+Nothing installs without a click. Coming from 0.15 or older, install 0.16
+once by hand (copy the two DLLs from the release zip into the SimHub folder).
+Building from source still works with a double-click on `update.bat`
+(pull + build + copy DLLs).
 
 ```bat
 python -m venv venv

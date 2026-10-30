@@ -54,6 +54,11 @@ namespace TeamRadio56.Replay
                     return FixedCheck(args[++i], outPath ?? FindOut(args));
                 else if (args[i] == "--update-selftest")
                     return UpdateSelfTest.Run();
+                else if (args[i] == "--release-check" && i + 1 < args.Length)
+                    return ReleaseCheck.Run(args[++i],
+                        ArgValue(args, "--plugin-source")
+                            ?? "simhub/src/TeamRadio56.SimHub/TeamRadio56Plugin.cs",
+                        ArgValue(args, "--manifest"));
                 else if (args[i] == "--gec")
                     gec = true;
                 else if (args[i] == "--coverage")
@@ -111,6 +116,7 @@ namespace TeamRadio56.Replay
                     + " | --check-cache <오디오캐시폴더> [--tier N] [--tracks f]"
                     + " | --assemble-check <폴더>"
                     + " | --update-selftest"
+                    + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f]"
                     + " | --gec | --synth <텍스트>");
                 return 2;
             }
@@ -484,10 +490,12 @@ namespace TeamRadio56.Replay
             return ok ? 0 : 1;
         }
 
-        private static string FindOut(string[] args)
+        private static string FindOut(string[] args) => ArgValue(args, "--out");
+
+        private static string ArgValue(string[] args, string name)
         {
             for (int j = 0; j + 1 < args.Length; j++)
-                if (args[j] == "--out")
+                if (args[j] == name)
                     return args[j + 1];
             return null;
         }

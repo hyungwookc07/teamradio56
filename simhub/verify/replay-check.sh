@@ -111,6 +111,60 @@ if ! "$RUNNER" --update-selftest; then
     fail=1
 fi
 
+# 릴리스 도구 — 음성 팩 기술자와 매니페스트 형식을 Core 파서로 대조하고, pwsh가 있으면
+# release.ps1을 검증 모드(빌드·게시 없음)로 돌려 그 출력으로 사용자 업데이트 흐름을 재현한다.
+# TEAMRADIO56_AUDIO_DIR에 팩 zip 폴더를 주면 음성 팩 설치 흐름까지 돈다 (선택).
+echo
+echo "▶ 릴리스 도구 (voice_lines/audio_pack.txt · release.ps1 · release.bat)"
+if ! "$RUNNER" --release-check voice_lines/audio_pack.txt; then
+    fail=1
+fi
+# bat은 CRLF여야 cmd가 줄을 제대로 읽고, ps1은 BOM이 있어야 Windows PowerShell 5가 한글을 읽는다
+for bat in update.bat release.bat; do
+    if [ "$(grep -c $'\r$' "$bat")" != "$(wc -l < "$bat")" ] || [ -n "$(tail -c1 "$bat")" ]; then
+        echo "❌ $bat 줄 끝이 CRLF가 아닙니다"
+        fail=1
+    fi
+done
+for ps in update.ps1 release.ps1; do
+    if [ "$(head -c3 "$ps" | od -An -tx1 | tr -d ' ')" != "efbbbf" ]; then
+        echo "❌ $ps 에 UTF-8 BOM이 없습니다"
+        fail=1
+    fi
+done
+PWSH=$(command -v pwsh || true)
+if [ -z "$PWSH" ] && [ -x "$HOME/.dotnet/tools/pwsh" ]; then
+    PWSH="$HOME/.dotnet/tools/pwsh"
+fi
+if [ -n "$PWSH" ]; then
+    if ! "$PWSH" -NoProfile -NonInteractive -File simhub/verify/ps-check.ps1 \
+        update.ps1 release.ps1 simhub/verify/ps-check.ps1; then
+        fail=1
+    fi
+    mkdir -p "$OUT/rel/dlls"
+    printf 'MZ release-check core' > "$OUT/rel/dlls/TeamRadio56.Core.dll"
+    printf 'MZ release-check simhub' > "$OUT/rel/dlls/TeamRadio56.SimHub.dll"
+    REL_AUDIO=()
+    if [ -n "${TEAMRADIO56_AUDIO_DIR:-}" ]; then
+        REL_AUDIO=(-AudioDir "$TEAMRADIO56_AUDIO_DIR")
+    fi
+    if "$PWSH" -NoProfile -NonInteractive -File release.ps1 -TestDllDir "$OUT/rel/dlls" \
+        -OutDir "$OUT/rel/out" -Notes "릴리스 도구 검증" ${REL_AUDIO[@]+"${REL_AUDIO[@]}"} \
+        > "$OUT/rel/log.txt" 2>&1; then
+        echo "✅ release.ps1 검증 모드 실행 — $(ls "$OUT/rel/out" | wc -l)개 파일"
+        if ! "$RUNNER" --release-check voice_lines/audio_pack.txt \
+            --manifest "$OUT/rel/out/teamradio56-release.txt"; then
+            fail=1
+        fi
+    else
+        echo "❌ release.ps1 검증 모드 실패:"
+        cat "$OUT/rel/log.txt"
+        fail=1
+    fi
+else
+    echo "⏭  release.ps1 실행 검사 건너뜀 — pwsh 없음 (dotnet tool install -g PowerShell)"
+fi
+
 # 무전 효과 출력 고정 — 배포 캐시(_rfx3)를 만드는 체인의 리팩터 가드
 echo
 echo "▶ 무전 효과(radiofx) 출력 md5 대조"

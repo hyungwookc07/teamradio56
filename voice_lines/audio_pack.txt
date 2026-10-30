@@ -1,0 +1,16 @@
+# 음성 팩 기술자 — release.ps1이 읽어 릴리스 매니페스트의 audio_* 줄을 만든다.
+#
+#   pack   팩 ID. 사용자 오디오 캐시의 표식(teamradio56_audio_pack.txt)과 다르면
+#          설정 화면에 [음성 팩 업데이트]가 뜬다
+#   tag    팩 zip이 자산으로 올라가 있는 릴리스 태그. 팩은 한 번만 올리고 이후
+#          릴리스 매니페스트는 이 태그를 가리킨다 — 이 태그의 릴리스는 지우지 말 것
+#   asset  zip 이름,sha256,바이트 수 (설치 순서대로 한 줄씩). zip 루트에 *.wav만 둔다
+#
+# 새 팩을 낼 때: pack을 새 ID로, tag를 이번 릴리스 태그로, asset 줄을 새 zip으로
+# 바꾸고  release.ps1 -AudioDir <zip 폴더>  로 그 릴리스를 만든다.
+pack=kokoro-v015
+tag=v0.16.0
+asset=teamradio56_kokoro_v015_1of4.zip,bf9ab0afd1c2875444ba73bb369fc4b02a5a6fec79a7f1c921f525b340f771ad,23753492
+asset=teamradio56_kokoro_v015_2of4.zip,c21a5102a919146aa8663d67b80334670202b43a8d06e5b95bdfa061a74b13fb,23696378
+asset=teamradio56_kokoro_v015_3of4.zip,9db5a7cf3dd5bf2718dd6a76c84b2f712c53b0fe9a38db6ba1e02011aa75b6bd,23718727
+asset=teamradio56_kokoro_v015_4of4.zip,4d364adebe07c0610af4ef27a750a04323615d3a6be9bb9f0a4698fc1b35fa93,21704901

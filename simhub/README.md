@@ -59,10 +59,68 @@ SimHub이 기본 경로가 아니면:
 dotnet build -c Release -p:SimHubPath="D:\SimHub"
 ```
 
-## 업데이트 (원클릭)
+## 업데이트 (설정 화면에서 — 사용자)
 
-이후 업데이트는 저장소 루트의 **`update.bat` 더블클릭** 하나로 끝난다 —
-pull, 빌드, SimHub 폴더 DLL 복사까지. (PowerShell 기본 보안 정책이
+0.16부터 플러그인이 **GitHub 릴리스에서 직접 업데이트**한다. 저장소·빌드 도구가
+필요 없다.
+
+1. SimHub → teamradio56 설정 화면 맨 아래 **업데이트** 섹션
+2. **[업데이트 확인]** → 현재 버전 / 최신 버전, 설치된 음성 팩 / 최신 음성 팩이 보인다
+   ("시작 시 확인"이 켜져 있으면 하루 한 번 SimHub 시작 15초 뒤 **확인만** 자동으로 한다.
+   새 버전이 있으면 화면 위에 안내가 뜬다)
+3. **[플러그인 업데이트]** → 끝나면 **SimHub을 재시작**해야 적용된다
+4. **[음성 팩 업데이트]** (팩이 바뀐 릴리스에서만 켜짐, 약 89 MB) → 끝나면
+   [엔진 재시작] 또는 SimHub 재시작
+
+설치는 **버튼을 누르고 확인 창에서 [예]를 눌렀을 때만** 한다. 받는 동안 진행률이
+보이고 [취소]할 수 있다.
+
+**안에서 일어나는 일**
+
+- 릴리스마다 붙는 `teamradio56-release.txt`(버전, zip 이름, sha256)를
+  `https://github.com/hyungwookc07/teamradio56/releases/latest/download/` 에서 받는다.
+  GitHub API·로그인을 쓰지 않으므로 호출 제한도 없다.
+- 플러그인: zip 받기 → **sha256 검증** → 두 DLL이 다 있는지 확인 → 작업 폴더에 풀기 →
+  실행 중인 `TeamRadio56.*.dll`을 `.old`로 **이름만 바꾸고**(로드된 DLL은 덮어쓸 수는
+  없어도 이름은 바꿀 수 있다) 새 DLL을 넣는다. 중간에 하나라도 실패하면 바꾼 이름을
+  전부 되돌리므로 **반쯤 설치된 상태는 남지 않는다.** `.old`는 다음 SimHub 시작 때 지워진다.
+- 음성 팩: zip을 **전부 받고 sha256을 확인한 뒤에야** 오디오 캐시에 푼다. 오디오 캐시
+  폴더의 `teamradio56_audio_pack.txt`가 설치된 팩 이름이다 (중간에 끊기면 "설치 미완료"로
+  보이고 다시 받을 수 있다). 표식 없이 조립 자산 4개(`_seg1_*.wav`)만 있으면 손으로 넣은
+  `kokoro-v015`로 본다.
+- 받는 중 임시 파일은 SimHub 폴더의 `teamradio56_update\`(쓸 수 없으면 `%TEMP%`)에
+  두고, 다음 시작 때 정리한다.
+
+**처음 한 번은 손으로**: 0.15 이하에는 업데이터가 없다. 릴리스 페이지에서
+`teamradio56-plugin-x.y.z.zip`을 받아 두 DLL을 SimHub 폴더에 복사하거나(SimHub 종료 후),
+소스가 있으면 아래 `update.bat`을 쓴다. 그 다음부터는 설정 화면에서 된다.
+
+| 메시지 | 원인/조치 |
+|---|---|
+| 인터넷에 연결할 수 없습니다 | 오프라인·방화벽·프록시. 시스템 프록시 설정을 그대로 쓴다. 안 되면 릴리스 페이지에서 직접 받기 |
+| 릴리스 파일을 찾을 수 없습니다 | 새 릴리스를 막 올리는 중이거나 아직 업데이터 릴리스가 없음 — 잠시 후 다시 |
+| 폴더에 쓸 권한이 없습니다 | SimHub 폴더가 쓰기 금지 (보통은 플러그인이 설정·로그를 쓰는 폴더라 괜찮다). SimHub을 한 번 관리자 권한으로 실행해 업데이트하거나 직접 복사 |
+| 받은 파일이 손상되었습니다 | sha256 불일치 — 기존 플러그인은 그대로다. 다시 시도 |
+
+### 되돌리기 (.old)
+
+업데이트 뒤 SimHub을 켰는데 플러그인이 안 뜨면(새 DLL이 로드조차 안 되면 정리가
+돌지 않아 `.old`가 남아 있다):
+
+1. SimHub 종료
+2. SimHub 폴더에서 `TeamRadio56.Core.dll`, `TeamRadio56.SimHub.dll` 삭제
+3. `TeamRadio56.Core.dll.old` → `TeamRadio56.Core.dll`,
+   `TeamRadio56.SimHub.dll.old` → `TeamRadio56.SimHub.dll` 로 이름 변경
+   (`.old1`, `.old2`…가 있으면 번호 없는 `.old`가 업데이트 직전에 돌던 버전이다)
+4. SimHub 시작, `teamradio56.log`를 알려주세요
+
+`.old`가 이미 지워졌으면 릴리스 페이지에서 이전 버전 zip을 받아 두 DLL을 복사하면 된다.
+업데이터는 **더 높은 버전만** 제안하므로 이전 버전으로 내려가는 건 이 수동 복사뿐이다.
+
+## 업데이트 (소스에서 빌드 — 개발자)
+
+저장소를 받아 직접 빌드해 쓰는 경우는 루트의 **`update.bat` 더블클릭** 하나로
+끝난다 — pull, 빌드, SimHub 폴더 DLL 복사까지. (PowerShell 기본 보안 정책이
 .ps1 직접 실행을 막으므로, bat이 이번 실행에 한해 우회해서 돌려준다.)
 
 터미널에서 돌리려면:
@@ -74,6 +132,103 @@ cd D:\teamradio56
 ```
 
 SimHub이 켜져 있으면 DLL이 잠기므로 스크립트가 종료를 기다렸다가 복사한다.
+
+## 릴리스 만들기 (메인테이너)
+
+**실제 SimHub이 설치된 Windows PC에서만** 한다. 릴리스 DLL은 반드시 실제 SimHub
+어셈블리로 빌드해야 한다 — `verify/build-check.sh`의 스텁으로 빌드한 DLL은 컴파일
+확인용이라 배포하면 안 된다 (스크립트가 `SimHubWPF.exe`가 없는 경로는 거부한다).
+
+필요한 것: .NET SDK 8, 그리고 있으면 편한 GitHub CLI
+(`winget install GitHub.cli` → `gh auth login`). gh가 없어도 된다 — 그땐 브라우저로 올린다.
+
+1. `TeamRadio56Plugin.Version`을 올린다 (`"0.17.0-…"` — **숫자 x.y.z가 게시된
+   최신보다 커야** 사용자에게 업데이트가 뜬다. 뒤 꼬리표는 화면 표시용)
+2. 커밋하고 **push**
+3. 저장소 루트의 **`release.bat` 더블클릭** (또는 터미널에서 옵션과 함께)
+
+```powershell
+.\release.bat -Notes "한 줄 요약 — 설정 화면 '변경 사항'에 그대로 보인다"
+.\release.bat -SimHubPath "D:\SimHub"                 # SimHub이 다른 경로면
+.\release.bat -AudioDir "D:\packs"                    # 음성 팩 zip도 이번 릴리스에 올릴 때
+.\release.bat -NoPublish                              # 파일만 만들고 손으로 올릴 때
+```
+
+스크립트가 하는 일:
+
+1. `TeamRadio56Plugin.cs`에서 버전을 읽어 태그 `v<x.y.z>`를 정한다. 게시된 최신
+   매니페스트보다 버전이 높지 않으면 멈춘다
+2. 실제 SimHub 경로로 `Release` 빌드 (`--no-incremental`, 새로 쓰인 DLL인지 확인)
+3. 두 DLL만 루트에 담은 `teamradio56-plugin-<x.y.z>.zip`과 sha256
+4. `voice_lines/audio_pack.txt`(음성 팩 기술자)로 매니페스트의 `audio_*` 줄을 만들어
+   `teamradio56-release.txt` 작성
+5. 결과물은 `dist\release\<x.y.z>\` (git에 안 들어간다)
+6. gh가 설치·로그인돼 있으면 `gh release create`로 바로 게시 (현재 커밋이 push됐는지,
+   같은 태그가 이미 없는지, 음성 팩 자산이 참조하는 릴리스에 실제로 있는지 확인).
+   없으면 새 릴리스 페이지(`releases/new?tag=v<x.y.z>`)와 결과 폴더를 열고
+   올릴 파일과 순서를 출력한다 — 폴더의 파일을 **이름 그대로 전부** 첨부하고,
+   "Set as the latest release"를 켠 채 Publish
+
+게시 후 확인: `https://github.com/hyungwookc07/teamradio56/releases/latest/download/teamradio56-release.txt`
+가 새 버전을 보여주는지, 그리고 SimHub에서 [업데이트 확인].
+
+### 음성 팩 — 한 번만 올리고 이후 릴리스는 참조
+
+음성 팩 zip(약 89 MB)은 **릴리스마다 다시 올리지 않는다.** 팩 zip은 한 릴리스에
+한 번 올리고, `voice_lines/audio_pack.txt`의 `tag`가 그 릴리스를 가리킨다. 이후
+릴리스의 매니페스트는 `audio_tag`로 그 릴리스의 자산 주소를 가리키기만 한다.
+
+```
+pack=kokoro-v015
+tag=v0.16.0
+asset=teamradio56_kokoro_v015_1of4.zip,<sha256>,<바이트 수>
+...
+```
+
+- **첫 업데이터 릴리스(v0.16.0)에서 한 번**: 이미 배포한 kokoro-v015 팩 zip 4개를
+  한 폴더에 두고 `release.bat -AudioDir "<그 폴더>"`. 스크립트가 크기·sha256과
+  zip 구조(루트에 `*.wav`만)를 기술자와 대조한 뒤 플러그인 zip·매니페스트와 함께 올린다.
+  gh 없이 올릴 때도 이 옵션을 주면 팩 zip을 결과 폴더에 같이 모아 둔다.
+- **v0.16.0 릴리스는 지우지 말 것** — 지우면 모든 사용자의 음성 팩 업데이트가 404가 된다.
+- **새 팩을 낼 때**: `pack`을 새 ID로(예: `kokoro-v020`), `tag`를 이번 릴리스 태그로,
+  `asset` 줄을 새 zip들의 이름·sha256·크기로 바꾸고(`Get-FileHash -Algorithm SHA256`)
+  `-AudioDir`로 릴리스. 팩 ID가 바뀐 사용자에게만 [음성 팩 업데이트]가 켜진다.
+  팩 zip에는 오디오 캐시에 들어갈 `*.wav`만 **zip 루트에** 넣는다 (폴더째 묶으면 아무것도
+  설치되지 않으므로 스크립트가 거부한다).
+
+### 매니페스트 형식 (`teamradio56-release.txt`)
+
+UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를 추가해도 앞 버전이
+깨지지 않는다). 형식을 깨는 변경은 `format`을 올린다 — 모르는 format을 받은 플러그인은
+"릴리스 페이지에서 직접 받으세요"라고 안내한다.
+
+| 키 | 예 | 의미 |
+|---|---|---|
+| `format` | `1` | 형식 버전 |
+| `version` | `0.16.0` | 숫자 x.y.z — 플러그인 `Version`의 숫자부와 비교 |
+| `tag` | `v0.16.0` | 이 릴리스 태그 |
+| `plugin_asset` / `plugin_sha256` | `teamradio56-plugin-0.16.0.zip` / 소문자 hex | 두 DLL zip |
+| `audio_pack` | `kokoro-v015` | 음성 팩 ID (설치된 표식과 다르면 업데이트 제안) |
+| `audio_tag` | `v0.16.0` | 팩 zip이 올라가 있는 릴리스 태그 |
+| `audio_assets` / `audio_sha256` / `audio_size` | 콤마 구분, 같은 순서 | 팩 zip들 (`audio_size`는 선택 — 다운로드 전 크기 표시) |
+| `notes` | 한 줄 | 설정 화면 "변경 사항" (선택) |
+
+### 잘못된 릴리스를 냈을 때
+
+- **아직 아무도 안 받았으면**: GitHub에서 그 릴리스를 지우거나 pre-release로 바꾸면
+  `latest`가 이전 릴리스로 돌아간다 (단, 음성 팩 자산이 있는 릴리스는 지우지 말 것).
+- **이미 받은 사용자가 있으면**: 업데이터는 내려가는 버전을 제안하지 않으므로 고친
+  버전을 **더 높은 번호로** 다시 낸다. 플러그인이 아예 안 뜨는 사용자는 위
+  [되돌리기 (.old)](#되돌리기-old)로 직전 버전을 살린다.
+
+### 검증
+
+`verify/replay-check.sh`가 릴리스 도구도 검사한다: 음성 팩 기술자와 매니페스트를 Core
+파서(`ReleaseManifest`)로 대조하고, pwsh가 있으면 `ps-check.ps1`로 Windows PowerShell 5
+호환(파싱, 7 전용 문법, BOM)을 본 뒤 `release.ps1`을 검증 모드(`-TestDllDir`, 빌드·게시
+없음)로 돌려 그 결과 폴더를 릴리스 서버처럼 내놓고 사용자 업데이트 흐름(확인 → DLL 교체 →
+`.old` 정리)을 그대로 재현한다. `TEAMRADIO56_AUDIO_DIR`에 팩 zip 폴더를 주면 음성 팩 설치까지
+돈다. 리눅스에 pwsh가 없으면 `dotnet tool install -g PowerShell`.
 
 ## 설치
 
@@ -154,6 +309,7 @@ pipenv run pyinstaller teamradio56.spec
 | HUD 대체 | 매 랩 랩타임, N랩마다 상황 리포트 |
 | LLM | 사용 여부, API 키, 시간당 호출 예산 |
 | 동작 | 주행 중에만 발화, 발화 로그 |
+| 업데이트 | 현재/최신 버전, 음성 팩, [업데이트 확인] [플러그인 업데이트] [음성 팩 업데이트] [취소] [릴리스 페이지], 시작 시 확인 |
 
 바꾸는 즉시 `teamradio56.settings.txt`(DLL 옆)에 저장된다.
 

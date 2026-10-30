@@ -34,7 +34,16 @@ LLM 생성 멘트(Anthropic API로 전략/브리핑을 자유 문장 생성)는 
 
 ## 빠른 시작
 
-설치(플러그인 포함)는 [docs/INSTALL.md](docs/INSTALL.md) 참고.
+설치(플러그인 포함)는 [docs/INSTALL.md](docs/INSTALL.md) 참고. SimHub 플러그인은
+[simhub/README.md](simhub/README.md) 참고.
+
+**SimHub 플러그인 업데이트**: 0.16부터 플러그인이
+[GitHub 릴리스](https://github.com/hyungwookc07/teamradio56/releases)에서 직접
+업데이트합니다 — SimHub의 teamradio56 설정 화면 → **업데이트** → [업데이트 확인] →
+[플러그인 업데이트](끝나면 SimHub 재시작) 또는 [음성 팩 업데이트]. 버튼을 누르기
+전에는 아무것도 설치하지 않습니다. 0.15 이하에서 올라올 때만 0.16을 한 번 손으로
+설치합니다 (릴리스 zip의 DLL 두 개를 SimHub 폴더에 복사). 소스로 빌드해 쓰는
+경우는 지금처럼 `update.bat` 더블클릭 (pull + 빌드 + DLL 복사).
 
 ```bat
 python -m venv venv
