@@ -21,6 +21,8 @@ using VoiceWorker = TeamRadio56.Core.Logic.VoiceWorker;
 using VoiceCache = TeamRadio56.Core.Logic.VoiceCache;
 using VoiceKind = TeamRadio56.Core.Logic.VoiceKind;
 using VoicePolicy = TeamRadio56.Core.Logic.VoicePolicy;
+using PregenSentences = TeamRadio56.Core.Logic.PregenSentences;
+using PhraseLines = TeamRadio56.Core.Logic.PhraseLines;
 using VoiceRoute = TeamRadio56.Core.Logic.VoiceRoute;
 using RadioVoice = TeamRadio56.Core.Logic.RadioVoice;
 using RecentCall = TeamRadio56.Core.Logic.RecentCall;
@@ -498,7 +500,7 @@ namespace TeamRadio56.SimHub
                 CountMissingLater(_radio);
         }
 
-        /// <summary>팩에 없는 멘트 수 — 파일 확인 1천여 번이라 시작을 막지 않게 백그라운드로.</summary>
+        /// <summary>팩에 없는 멘트 수 — 파일 확인 6천여 번이라 시작을 막지 않게 백그라운드로.</summary>
         private void CountMissingLater(RadioVoice radio)
         {
             System.Threading.ThreadPool.QueueUserWorkItem(_ =>
@@ -506,7 +508,8 @@ namespace TeamRadio56.SimHub
                 try
                 {
                     int whole, seg;
-                    VoicePolicy.CountMissing(radio.Route.Cache, 0, null, out whole, out seg);
+                    VoicePolicy.CountMissing(radio.Route.Cache, PregenSentences.PackMaxTier,
+                        PhraseLines.TrackNamesEn, out whole, out seg);
                     if (!ReferenceEquals(radio, _radio))
                         return;          // 그새 엔진이 바뀌었다
                     _voiceMissing = whole + seg;

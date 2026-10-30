@@ -58,10 +58,10 @@ done
 
 python3 -I tools/pack_audio.py verify --dir "$DL" --descriptor "$DESC" \
     || problem "음성 팩 zip이 기술자와 다릅니다"
-python3 tools/pack_audio.py expected --tiers 1,2 --tracks voice_lines/track_names_en.txt \
+python3 tools/pack_audio.py expected --tiers 1,2,3 --tracks voice_lines/track_names_en.txt \
     --out "$DL/expected.txt"
 python3 -I tools/pack_audio.py verify --dir "$DL" --descriptor "$DESC" --expect-names "$DL/expected.txt" \
-    || problem "멘트 집합이 팩과 다릅니다 — 새 pack ID로 audio-pack을 실행하세요 (그대로 내면 빠진 멘트는 edge로 나갑니다)"
+    || problem "멘트 집합이 팩과 다릅니다 — 새 pack ID로 audio-pack을 실행하세요 (그대로 내면 빠진 멘트는 자막으로만 나갑니다)"
 
 echo "- ✅ 음성 팩 $PACK ($TAG): zip ${#ASSETS[@]}개 크기·sha256·멘트 집합 확인" >> "$SUMMARY"
 echo "✅ 음성 팩 릴리스 $TAG 확인"

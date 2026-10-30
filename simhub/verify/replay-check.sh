@@ -67,17 +67,17 @@ else
 fi
 
 # 문장 단위 사전 생성 (en 전용) — 문장 집합과 세그먼트 파일명 대조.
-# 트랙 이름 목록은 2단계 브리핑용, 파일이 생기면 양쪽에 같이 넘긴다.
+# 트랙 이름 목록은 2단계 브리핑용, 파일이 생기면 양쪽에 같이 넘긴다. 3단계는 HUD 리포트.
 TRACKS_ARGS=()
 if [ -f voice_lines/track_names_en.txt ]; then
     TRACKS_ARGS=(--tracks voice_lines/track_names_en.txt)
 fi
 
 echo
-echo "▶ 문장 단위 사전 생성 대상 대조 (en, 단계 1~2)"
-python3 tools/dump_pregen.py --sentences --tiers 1,2 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} \
+echo "▶ 문장 단위 사전 생성 대상 대조 (en, 단계 1~3)"
+python3 tools/dump_pregen.py --sentences --tiers 1,2,3 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} \
     --out "$OUT/py_sent.txt"
-"$RUNNER" --dump-sentences --tier 2 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --out "$OUT/cs_sent.txt"
+"$RUNNER" --dump-sentences --tier 3 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --out "$OUT/cs_sent.txt"
 if diff -q "$OUT/py_sent.txt" "$OUT/cs_sent.txt" > /dev/null; then
     echo "✅ 일치 — $(wc -l < "$OUT/py_sent.txt")개 문장 동일"
 else
@@ -88,9 +88,9 @@ fi
 
 echo
 echo "▶ 세그먼트 파일명 규약 대조 (_seg1.wav)"
-python3 tools/dump_pregen.py --seg-names --tiers 1,2 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} \
+python3 tools/dump_pregen.py --seg-names --tiers 1,2,3 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} \
     --out "$OUT/py_seg_names.txt"
-"$RUNNER" --dump-seg-names --tier 2 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --out "$OUT/cs_seg_names.txt"
+"$RUNNER" --dump-seg-names --tier 3 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --out "$OUT/cs_seg_names.txt"
 if diff -q "$OUT/py_seg_names.txt" "$OUT/cs_seg_names.txt" > /dev/null; then
     echo "✅ 일치 — $(wc -l < "$OUT/py_seg_names.txt")개 파일명 동일"
 else
@@ -117,7 +117,7 @@ for lang in en ko; do
     "$RUNNER" --lang "$lang" --fuzz-eval "$OUT/fuzz_cases.jsonl" \
         ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --out "$OUT/fuzz_cs_$lang.tsv"
     if ! python3 tools/coverage_fuzz.py check --py "$OUT/fuzz_py_$lang.tsv" \
-        --cs "$OUT/fuzz_cs_$lang.tsv" --lang "$lang" --report-only-miss; then
+        --cs "$OUT/fuzz_cs_$lang.tsv" --lang "$lang"; then
         fail=1
     fi
 done
@@ -126,7 +126,7 @@ done
 if [ -d audio_cache ] && ls audio_cache/*_rfx3.wav > /dev/null 2>&1; then
     echo
     echo "▶ 실캐시 Resolve 확인 (audio_cache/)"
-    if ! "$RUNNER" --check-cache audio_cache --tier 2 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"}; then
+    if ! "$RUNNER" --check-cache audio_cache --tier 3 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"}; then
         fail=1
     fi
 elif [ "${TEAMRADIO56_REQUIRE_CACHE:-0}" = 1 ]; then
@@ -368,7 +368,7 @@ for replay in data/replays/*.jsonl.gz; do
     echo
     echo "▶ 코코로 커버리지: $name (en, 통문장 + 문장 세그먼트, 기준 100%)"
     cov="$OUT/cov_$name.txt"
-    if "$RUNNER" --replay "$replay" --lang en --coverage --tier 2 \
+    if "$RUNNER" --replay "$replay" --lang en --coverage --tier 3 \
         ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --min 100 > "$cov"; then
         echo "✅ $(grep '^발화 ' "$cov")"
     else

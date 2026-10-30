@@ -23,7 +23,7 @@ from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
 from messages import and_list, join_problems, msg, wheel_name, zone_display
-from speech_domain import brake_ok, wing_ok
+from speech_domain import DENT_MAX_ZONES, brake_ok, repair_big, wing_ok
 from state import SessionState
 from telemetry import Snapshot
 
@@ -103,7 +103,9 @@ def damage_report_message(detached: list, flat: list, losing: list,
     dents = list(dents or [])[:8]
     heavy_zones = [zone_display(DENT_ZONES[i]) for i, s in enumerate(dents) if s >= 2]
     light = any(s == 1 for s in dents)
-    if heavy_zones:
+    if len(heavy_zones) > DENT_MAX_ZONES:
+        problems.append(msg("item_heavy_body_all"))    # 존 조합은 3개까지만 팩에 있다
+    elif heavy_zones:
         problems.append(msg("item_heavy_body", zones=and_list(heavy_zones)))
 
     need_box = bool(det or flats)
@@ -133,7 +135,9 @@ def brake_message(avg: float) -> Optional[str]:
 
 
 def repair_message(delta: float) -> str:
-    """데미지 페이스 손실 → 수리 권고. C# RepairMessage."""
+    """데미지 페이스 손실 → 수리 권고 — 랩당 10초 이상이면 숫자 없이. C# RepairMessage."""
+    if repair_big(delta):
+        return msg("repair_cost_big")
     return msg("repair_cost", delta=delta)
 
 

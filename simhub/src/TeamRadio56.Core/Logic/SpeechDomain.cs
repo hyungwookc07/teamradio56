@@ -56,8 +56,8 @@ namespace TeamRadio56.Core.Logic
         public const int ClassPosMax = 60;
         public const int BriefMinutesMax = 1440;
         public const int BriefLapsMax = 100;
-        public const int BriefCarsMin = 2, BriefCarsMax = 40;
-        public const int BriefPosMax = 40;
+        public const int BriefCarsMin = 2, BriefCarsMax = 60;
+        public const int BriefPosMax = 60;
         public const int BriefTempMin = 1, BriefTempMax = 60;
         public const int BriefFuelMin = 1, BriefFuelMax = 130;
         public const int LaptimeT10Min = 600, LaptimeT10Max = 2699;   // 1:00.0 ~ 4:29.9
@@ -75,14 +75,18 @@ namespace TeamRadio56.Core.Logic
         public static readonly double[] SegRates = Tenths(1, 99);
         public static readonly double[] SegPace = Tenths(7, 99);
         public static readonly double[] SegRivalDiff = Tenths(3, 50);
-        public const int SegTyreHotMin = 12, SegTyreHotMax = 40;
+        public const int SegTyreHotMin = TyreHotMin, SegTyreHotMax = TyreHotMax;
         public const int SegTyreLapsMin = 0, SegTyreLapsMax = TyreWearMax;
         // 2단계 — 차량 상태/연료 세이브/세션 브리핑
-        public const int SegWingMmMin = 10, SegWingMmMax = 60;
-        public const int SegBrakeTMin = 700, SegBrakeTMax = 1200, SegBrakeTStep = 10;
-        public static readonly double[] SegRepair = Tenths(5, 50);
-        public static readonly double[] SegFuelTarget = Tenths(10, 120);
+        public const int SegWingMmMin = WingMmMin, SegWingMmMax = WingMmMax;
+        public const int SegBrakeTMin = BrakeTMin, SegBrakeTMax = BrakeTMax, SegBrakeTStep = BrakeTStep;
+        public static readonly double[] SegRepair = Tenths(5, 99);       // 10.0 이상은 repair_cost_big
+        public static readonly double[] SegFuelTarget = Tenths(5, 150);
         public static readonly double[] SegFuelSave = Tenths(1, 30);
+        public const int SegPitWindowMin = PitWindowWholeMax + 1;        // 0~40은 통문장
+        public const int SegRivalPitMin = RivalPitWholeMax + 1;          // 1~30은 통문장
+        public static readonly double[] SegCoach = Tenths(1, 29);
+        public static readonly int[] CoachSectors = { 1, 2, 3 };
 
         // -- 술어 -----------------------------------------------------------
 
@@ -152,6 +156,12 @@ namespace TeamRadio56.Core.Logic
         {
             int t10 = Messages.LaptimeT10(sec);
             return t10 >= LaptimeT10Min && t10 <= LaptimeT10Max;
+        }
+
+        public static bool StatusFuelOk(double fuelLaps)
+        {
+            int n = LapsValue(fuelLaps);
+            return n >= 0 && n <= StatusFuelMax;
         }
 
         public static bool BriefGridOk(int n, int cp)

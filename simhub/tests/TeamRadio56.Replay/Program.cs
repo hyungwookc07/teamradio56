@@ -33,7 +33,7 @@ namespace TeamRadio56.Replay
             bool coverage = false;
             bool dumpSentences = false;
             bool dumpSegNames = false;
-            int maxTier = 2;
+            int maxTier = PregenSentences.PackMaxTier;
             string tracksPath = null;
             string assembleDir = null;
             double minPct = 0;

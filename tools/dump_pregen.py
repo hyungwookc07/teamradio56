@@ -8,7 +8,7 @@ C# 러너의 --dump-pregen 출력과 diff해 멘트 데이터/슬롯 포매팅 �
 --seg-names는 그 세그먼트 파일명(C# --dump-seg-names와 diff).
 
 사용법: python tools/dump_pregen.py [--out f]
-        python tools/dump_pregen.py --sentences|--seg-names [--tiers 1,2] [--tracks f]
+        python tools/dump_pregen.py --sentences|--seg-names [--tiers 1,2,3] [--tracks f]
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def main() -> int:
                         help="문장 단위 사전 생성 대상 (C# --dump-sentences와 diff)")
     parser.add_argument("--seg-names", action="store_true",
                         help="세그먼트 파일명 (C# --dump-seg-names와 diff)")
-    parser.add_argument("--tiers", default="1,2",
+    parser.add_argument("--tiers", default="1,2,3",
                         help="문장 단계 목록 (예: 1 또는 1,2)")
     parser.add_argument("--tracks", default=None,
                         help="트랙 이름 목록 파일 (2단계 세션 브리핑용)")

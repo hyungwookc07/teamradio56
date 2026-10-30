@@ -479,11 +479,13 @@ bash simhub/verify/replay-check.sh
 파이썬 하니스(tools/replay_calls.py)와 C# 러너(tests/TeamRadio56.Replay)에
 같은 녹화(data/replays/*.jsonl.gz)를 먹여 "버스가 수락한 이벤트"를
 순서·타이밍·데이터까지 비교하고, 사전 캐시 멘트 전체 집합(en 1223개)과
-문장 세그먼트 집합(단계 1~2 + 트랙 이름 목록, 2327개), 세그먼트 조립 출력 바이트도
+문장 세그먼트 집합(단계 1~3 + 트랙 이름 목록, 5254개), 세그먼트 조립 출력 바이트도
 diff한다. 세션 시작 브리핑도 양쪽 러너가 첫 틱에 내보내 en/ko 문장을 대조한다.
 리플레이마다 en 발화가 전부 통문장 클립이나 문장 세그먼트로 나가는지도 확인한다
-(`--coverage --tier 2 --min 100`, 미스면 빠진 문장을 출력). 브리핑 첫 문장의
-트랙 이름이 voice_lines/track_names_en.txt에 없으면 점수에서 빼고 따로 경고한다.
+(`--coverage --tier 3 --min 100`, 미스면 빠진 문장을 출력). en 브리핑은 트랙 이름이
+voice_lines/track_names_en.txt에 없으면 무전 체크로 연다. 커버리지 퍼즈
+(tools/coverage_fuzz.py ↔ 러너 `--fuzz-eval`)는 순수 조립 함수에 도메인 안팎 값
+약 36만 건을 넣어 가상 음성 팩으로 판정하고 파이썬 ↔ C# 결과를 대조한다.
 `race_end_*` 리플레이는 체커 이후까지 가는 짧은 합성 레이스로, 규칙대로 계산한 정답
 (`.truth.json`)과 마지막 랩·체커 콜, 남은 랩 트레이스(`--race-end-trace`, 모든 리플레이에서
 파이썬 ↔ C# 대조)를 tools/race_end_oracle.py가 대조한다
@@ -518,7 +520,7 @@ diff한다. 세션 시작 브리핑도 양쪽 러너가 첫 틱에 내보내 en/
 | 파일 패턴 | 내용 | 만드는 명령 |
 |---|---|---|
 | `*_rfx3.wav` | 통문장 (무전 효과 적용, 8kHz PCM16) — 멘트 풀 + 소수 조합 멘트 | `python tools\pregen_audio.py --engine kokoro` |
-| `*_seg1.wav` | 문장 세그먼트 (무전 효과 적용, 8kHz μ-law) — 숫자 슬롯 멘트용 | `python tools\pregen_audio.py --segments --tiers 1,2 --tracks voice_lines\track_names_en.txt` |
+| `*_seg1.wav` | 문장 세그먼트 (무전 효과 적용, 8kHz μ-law) — 숫자 슬롯 멘트용 | `python tools\pregen_audio.py --segments --tiers 1,2,3 --tracks voice_lines\track_names_en.txt` |
 | `_seg1_*.wav` | 조립 자산 4개 (클릭 / 간격 casual·urgent / 스켈치) | `--segments`가 마지막에 씀 |
 
 - 배포 zip에는 위 세 패턴만 넣는다. 효과 전 원본 `*.wav`(이름이 md5 20자로

@@ -123,17 +123,27 @@ namespace TeamRadio56.Core.Logic
         public static string StatusText(int classPlace, double gapAhead, double gapBehind,
                                         double? fuelLaps, double? tyreLeft, bool hasTyre)
         {
+            // P61 이상·연료 100랩 이상은 그 부분만 뺀다 (음성 팩 3단계 도메인)
             var parts = new List<string>();
-            if (classPlace > 0)
+            if (classPlace > 0 && classPlace <= SpeechDomain.ClassPosMax)
                 parts.Add(Messages.Get("status_pos", "p", classPlace));
             var gaps = new List<string>();
             if (0 <= gapAhead && gapAhead <= 60)
-                gaps.Add(Messages.Get("status_gap_ahead", "g", gapAhead));
+            {
+                gaps.Add(Messages.Get("status_gap_ahead",
+                    "g", gapAhead, "gs", Messages.SecondsText(gapAhead)));
+            }
             if (0 <= gapBehind && gapBehind <= 60)
-                gaps.Add(Messages.Get("status_gap_behind", "g", gapBehind));
+            {
+                gaps.Add(Messages.Get("status_gap_behind",
+                    "g", gapBehind, "gs", Messages.SecondsText(gapBehind)));
+            }
             if (gaps.Count > 0)
-                parts.Add(Messages.Get("status_gaps", "gaps", string.Join(", ", gaps)));
-            if (fuelLaps.HasValue)
+            {
+                parts.Add(Messages.Get("status_gaps",
+                    "gaps", string.Join(Messages.Get("status_gap_join"), gaps)));
+            }
+            if (fuelLaps.HasValue && SpeechDomain.StatusFuelOk(fuelLaps.Value))
                 parts.Add(Messages.Get("status_fuel", "n", Messages.LapsText(fuelLaps.Value)));
             if (hasTyre)
             {

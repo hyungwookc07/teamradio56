@@ -803,6 +803,12 @@ namespace TeamRadio56.Core.Logic
                     clauses.Add(Messages.Get(key,
                         "cls", Messages.ClassDisplay(cars[0].Cls)));
                 }
+                else if (cars.Count > SpeechDomain.MultiMaxCars)
+                {
+                    // 4대 이상은 대수 조합 대신 "여러 대" (음성 팩은 3대까지 조합)
+                    clauses.Add(Messages.Get(st == NearbyBehind
+                        ? "multi_behind_many" : "multi_closing_many"));
+                }
                 else if (st == NearbyBehind)
                 {
                     clauses.Add(Messages.Get("multi_behind", "names", NamesOf(cars)));

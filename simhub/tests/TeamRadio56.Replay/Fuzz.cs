@@ -319,10 +319,17 @@ namespace TeamRadio56.Replay
                 }
                 case "status":
                 {
+                    double? fuel = NDbl(a, "fuel_laps");
                     string text = StatusReporter.StatusText(Int(a, "class_place"),
-                        Dbl(a, "gap_ahead"), Dbl(a, "gap_behind"), NDbl(a, "fuel_laps"),
+                        Dbl(a, "gap_ahead"), Dbl(a, "gap_behind"), fuel,
                         NDbl(a, "tyre_left"), a.GetProperty("has_tyre").GetBoolean());
-                    return Voice("casual", text);
+                    if (text != null)
+                        return Voice("casual", text);
+                    // 도메인 밖 값만 있어서 전부 빠졌으면 억제, 원래 말할 게 없었으면 NONE
+                    if (Int(a, "class_place") > SpeechDomain.ClassPosMax
+                        || (fuel.HasValue && !SpeechDomain.StatusFuelOk(fuel.Value)))
+                        return new[] { "suppress", "status" };
+                    return new[] { "none" };
                 }
                 case "test_speak":
                     return Voice("casual", pool.Lines("pit_call", "casual")[0]);

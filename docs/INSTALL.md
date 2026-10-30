@@ -145,7 +145,7 @@ pipenv run pyinstaller teamradio56.spec
 
   ```bat
   python tools\pregen_audio.py --engine kokoro
-  python tools\pregen_audio.py --segments --tiers 1,2 --tracks voice_lines\track_names_en.txt
+  python tools\pregen_audio.py --segments --tiers 1,2,3 --tracks voice_lines\track_names_en.txt
   ```
 
   배포할 파일은 `*_rfx3.wav`(통문장), `*_seg1.wav`(문장 세그먼트),

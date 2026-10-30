@@ -629,17 +629,22 @@ class VoiceChain(TTSEngine):
         return self.engine.synth(text, tone)
 
 
-def _count_pack_missing(cache_dir: str, voice: str) -> int:
-    """사전 캐시 대상 중 kokoro 통문장(효과본·원본)이 없는 수 — C# CountMissing(maxTier 0)."""
+def _count_pack_missing(cache_dir: str, voice: str) -> tuple[int, int]:
+    """팩에 없는 멘트 수 (통문장, 문장) — 통문장은 kokoro 효과본·원본이 모두 없는 것,
+    문장은 PACK_TIERS 세그먼트 파일이 없는 것. C# VoicePolicy.CountMissing(PackMaxTier)."""
     import radiofx
-    from voice import PhrasePool, iter_pregen_texts, lines_file
-    n = 0
+    from radio_assemble import segment_file_name
+    from speech_domain import track_names_en
+    from voice import PACK_TIERS, PhrasePool, iter_pregen_sentences, iter_pregen_texts, lines_file
+    whole = 0
     for tone, text in set(iter_pregen_texts(PhrasePool(lines_file("en")))):
         raw = _cache_path(cache_dir, f"kokoro|{voice}|{tone}|{text}", ext="wav")
         rfx = os.path.splitext(raw)[0] + f"_rfx{radiofx.VERSION}.wav"
         if not (os.path.isfile(rfx) or os.path.isfile(raw)):
-            n += 1
-    return n
+            whole += 1
+    seg = sum(1 for tone, s in set(iter_pregen_sentences(PACK_TIERS, track_names_en()))
+              if not os.path.isfile(os.path.join(cache_dir, segment_file_name(s, tone, voice))))
+    return whole, seg
 
 
 def build_engine(cfg) -> VoiceChain:
@@ -693,12 +698,13 @@ def build_engine(cfg) -> VoiceChain:
         ])
         if not runtime:
             try:
-                missing = _count_pack_missing(cache_dir, kokoro_voice)
+                whole, seg = _count_pack_missing(cache_dir, kokoro_voice)
+                missing = whole + seg
+                if missing > 0:
+                    log.warning("음성 팩에 없는 멘트 %d개 (통문장 %d, 문장 %d) — 해당 콜은 자막만",
+                                missing, whole, seg)
             except Exception:
                 log.exception("음성 팩 누락 멘트 확인 실패")
-            if missing > 0:
-                log.warning("음성 팩에 없는 멘트 %d개 (통문장 %d, 문장 0) — 해당 콜은 자막만",
-                            missing, missing)
     elif kind == "elevenlabs":
         # 키가 비어 있어도 캐시 전용으로 동작 (배포판 시나리오)
         eleven = ElevenLabsEngine(cache_dir, eleven_key, eleven_id)

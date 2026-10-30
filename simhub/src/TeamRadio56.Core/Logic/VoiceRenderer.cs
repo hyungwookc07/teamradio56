@@ -590,10 +590,11 @@ namespace TeamRadio56.Core.Logic
         public const int SegBriefFuelMax = SpeechDomain.BriefFuelMax;
 
         /// <summary>음성 팩에 들어가는 문장 단계 (voice.PACK_TIERS) — 덤프·CountMissing 기본값.</summary>
-        public const int PackMaxTier = 2;
+        public const int PackMaxTier = 3;
 
         /// <summary>
         /// maxTier 이하 단계의 (톤, 문장). tracks는 2단계(세션 브리핑)용.
+        /// 3단계는 HUD 대체 리포트(랩타임·상황).
         /// </summary>
         public static IEnumerable<KeyValuePair<string, string>> Enumerate(
             int maxTier = PackMaxTier, IEnumerable<string> tracks = null)
@@ -615,6 +616,17 @@ namespace TeamRadio56.Core.Logic
             if (maxTier >= 2)
             {
                 foreach (KeyValuePair<string, string> m in Tier2Messages(tracks))
+                {
+                    foreach (string s in Messages.SplitSentences(m.Value))
+                    {
+                        if (seen.Add(m.Key + "\t" + s))
+                            yield return new KeyValuePair<string, string>(m.Key, s);
+                    }
+                }
+            }
+            if (maxTier >= 3)
+            {
+                foreach (KeyValuePair<string, string> m in Tier3Messages())
                 {
                     foreach (string s in Messages.SplitSentences(m.Value))
                     {
@@ -702,6 +714,7 @@ namespace TeamRadio56.Core.Logic
                 foreach (List<string> sub in Combinations(zones, k))
                     problems.Add(Messages.Get("item_heavy_body", "zones", Messages.AndList(sub)));
             }
+            problems.Add(Messages.Get("item_heavy_body_all"));
             foreach (string p in problems)
             {
                 foreach (string adv in new[] { "report_advice_box", "report_advice_keep" })
@@ -734,6 +747,20 @@ namespace TeamRadio56.Core.Logic
                     }
                 }
             }
+            yield return U(Messages.Get("multi_behind_many") + ".");
+            yield return U(Messages.Get("multi_closing_many") + ".");
+            // 피트 윈도우 41~99랩 / 라이벌 피트 P31~60 — 통문장 범위 밖은 문장 조립
+            for (int n = SpeechDomain.SegPitWindowMin; n <= SpeechDomain.PitWindowMax; n++)
+                yield return C(Messages.Get("pit_window", "n", Messages.LapsText(n)));
+            foreach (string rel in new[] { "ahead", "behind" })
+            {
+                string tail = Messages.Get(rel == "behind" ? "rival_pit_undercut" : "rival_pit_gap");
+                for (int p = SpeechDomain.SegRivalPitMin; p <= SpeechDomain.ClassPosMax; p++)
+                {
+                    yield return C(Messages.Get("rival_pit_base",
+                        "rel", Messages.Get("rival_rel_" + rel), "p", p) + tail);
+                }
+            }
         }
 
         /// <summary>2단계 도메인의 전체 멘트 (분할 전).</summary>
@@ -747,6 +774,7 @@ namespace TeamRadio56.Core.Logic
                 yield return C(Messages.Get("brake_warn", "t", t));
             foreach (double d in SegRepair)
                 yield return C(Messages.Get("repair_cost", "delta", d));
+            yield return C(Messages.Get("repair_cost_big"));
             // 연료 세이브 — FuelAnalyzer SaveCoaching
             foreach (double target in SegFuelTarget)
             {
@@ -786,6 +814,34 @@ namespace TeamRadio56.Core.Logic
             foreach (string key in new[] { "brief_rain", "brief_formation", "brief_start_spotter",
                                            "brief_carry_on", "brief_calm", "brief_out" })
                 yield return C(Messages.Get(key));
+            // 트레이닝 섹터 피드백 — 파이썬 training.LapCoach.feedback_text (C#엔 없는 기능이지만
+            // 문장 집합은 같아야 팩 파일명 대조가 맞는다)
+            foreach (int n in SpeechDomain.CoachSectors)
+            {
+                foreach (double d in SpeechDomain.SegCoach)
+                {
+                    yield return C(Messages.Get("coach_quicker_best", "n", n, "d", d));
+                    yield return C(Messages.Get("coach_quicker", "n", n, "d", d));
+                    yield return C(Messages.Get("coach_losing", "n", n, "d", d));
+                }
+            }
+        }
+
+        /// <summary>3단계 — HUD 대체 리포트 (StatusReporter, 선택 기능).</summary>
+        private static IEnumerable<KeyValuePair<string, string>> Tier3Messages()
+        {
+            for (int t10 = SpeechDomain.LaptimeT10Min; t10 <= SpeechDomain.LaptimeT10Max; t10++)
+            {
+                yield return C(Messages.Get("last_lap_report", "t", Messages.FmtLaptime(t10 / 10.0))
+                               + Messages.Get("best_lap_suffix"));
+            }
+            for (int p = 1; p <= SpeechDomain.ClassPosMax; p++)
+                yield return C(Messages.Get("status_pos", "p", p));
+            for (int n = 0; n <= SpeechDomain.StatusFuelMax; n++)
+                yield return C(Messages.Get("status_fuel", "n", Messages.LapsText(n)));
+            for (int n = 0; n <= SpeechDomain.StatusTyreMax; n++)
+                yield return C(Messages.Get("status_tyres", "n", Messages.LapsText(n)));
+            yield return C(Messages.Get("status_tyres_good"));
         }
 
         private static KeyValuePair<string, string> C(string text)

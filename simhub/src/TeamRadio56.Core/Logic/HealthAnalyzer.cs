@@ -324,7 +324,9 @@ namespace TeamRadio56.Core.Logic
                 if (dents[i] == 1)
                     light = true;
             }
-            if (heavyZones.Count > 0)
+            if (heavyZones.Count > SpeechDomain.DentMaxZones)
+                problems.Add(Messages.Get("item_heavy_body_all"));   // 존 조합은 3개까지만 팩에 있다
+            else if (heavyZones.Count > 0)
                 problems.Add(Messages.Get("item_heavy_body", "zones", Messages.AndList(heavyZones)));
 
             needBox = det.Count > 0 || flats.Count > 0;
@@ -355,9 +357,11 @@ namespace TeamRadio56.Core.Logic
             return Messages.Get("brake_warn", "t", t);
         }
 
-        /// <summary>데미지 페이스 손실 → 수리 권고.</summary>
+        /// <summary>데미지 페이스 손실 → 수리 권고 — 랩당 10초 이상이면 숫자 없이.</summary>
         public static string RepairMessage(double delta)
         {
+            if (SpeechDomain.RepairBig(delta))
+                return Messages.Get("repair_cost_big");
             return Messages.Get("repair_cost", "delta", delta);
         }
 

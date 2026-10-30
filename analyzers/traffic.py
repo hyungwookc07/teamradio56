@@ -545,6 +545,7 @@ def compose_multi(active: list) -> Optional[str]:
     C# TrafficAnalyzer.ComposeMulti.
     """
     from messages import msg, class_display, multi_names
+    from speech_domain import MULTI_MAX_CARS
 
     def names_of(cars: list) -> str:
         counts: dict[str, int] = {}          # 처음 본 순서 유지
@@ -567,6 +568,10 @@ def compose_multi(active: list) -> Optional[str]:
                    "right": "multi_alongside_right"}.get(
                 cars[0].side, "multi_alongside")
             clauses.append(msg(key, cls=class_display(cars[0].cls)))
+        elif len(cars) > MULTI_MAX_CARS:
+            # 4대 이상은 대수 조합 대신 "여러 대" (음성 팩은 3대까지 조합)
+            clauses.append(msg("multi_behind_many" if st == NEARBY_BEHIND
+                               else "multi_closing_many"))
         elif st == NEARBY_BEHIND:
             clauses.append(msg("multi_behind", names=names_of(cars)))
         else:

@@ -13,8 +13,8 @@ en 코코로 음성 팩 도구 — audio_cache → 독립 zip 여러 개 → voi
 verify / descriptor / selftest는 표준 라이브러리만 쓴다 (python3 -I로 돌릴 수 있게
 저장소 모듈은 expected/build에서만 불러온다).
 
-사용법: python tools/pack_audio.py build --cache audio_cache --pack kokoro-v015 --out dist/audio/kokoro-v015
-                                       [--descriptor voice_lines/audio_pack.txt --tag audio-kokoro-v015]
+사용법: python tools/pack_audio.py build --cache audio_cache --pack kokoro-v016 --out dist/audio/kokoro-v016
+                                       [--descriptor voice_lines/audio_pack.txt --tag audio-kokoro-v016]
         python tools/pack_audio.py verify --dir DIR --descriptor FILE [--expect-names FILE]
         python tools/pack_audio.py expected --out FILE
         python tools/pack_audio.py descriptor --print FILE
@@ -82,7 +82,7 @@ def asset_names() -> tuple:
     return tuple(ASSET_NAMES)
 
 
-def expected_names(tiers=(1, 2), tracks: str = DEFAULT_TRACKS, voice: str = "bm_george") -> set:
+def expected_names(tiers=(1, 2, 3), tracks: str = DEFAULT_TRACKS, voice: str = "bm_george") -> set:
     """런타임이 팩에서 찾는 파일 전체 — 통문장 _rfx + 문장 세그먼트 + 조립 자산."""
     _repo_imports()
     import radiofx
@@ -479,7 +479,7 @@ def main(argv=None) -> int:
     b.add_argument("--pack", required=True)
     b.add_argument("--out", required=True)
     b.add_argument("--max-bytes", type=int, default=MAX_BYTES)
-    b.add_argument("--tiers", default="1,2")
+    b.add_argument("--tiers", default="1,2,3")
     b.add_argument("--tracks", default=DEFAULT_TRACKS)
     b.add_argument("--descriptor", default=None)
     b.add_argument("--tag", default=None)
@@ -490,7 +490,7 @@ def main(argv=None) -> int:
     v.add_argument("--expect-names", default=None)
 
     e = sub.add_parser("expected")
-    e.add_argument("--tiers", default="1,2")
+    e.add_argument("--tiers", default="1,2,3")
     e.add_argument("--tracks", default=DEFAULT_TRACKS)
     e.add_argument("--out", required=True)
 

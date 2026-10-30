@@ -53,8 +53,8 @@ FUEL_SAVE_MIN, FUEL_SAVE_MAX = 0.1, 3.0
 CLASS_POS_MAX = 60
 BRIEF_MINUTES_MAX = 1440
 BRIEF_LAPS_MAX = 100
-BRIEF_CARS_MIN, BRIEF_CARS_MAX = 2, 40
-BRIEF_POS_MAX = 40
+BRIEF_CARS_MIN, BRIEF_CARS_MAX = 2, 60
+BRIEF_POS_MAX = 60
 BRIEF_TEMP_MIN, BRIEF_TEMP_MAX = 1, 60
 BRIEF_FUEL_MIN, BRIEF_FUEL_MAX = 1, 130
 LAPTIME_T10_MIN, LAPTIME_T10_MAX = 600, 2699    # 1:00.0 ~ 4:29.9
@@ -73,17 +73,25 @@ SEG_RATES = [i / 10 for i in range(1, 100)]
 SEG_PACE = [i / 10 for i in range(7, 100)]
 SEG_RIVAL_DIFF = [i / 10 for i in range(3, 51)]
 SEG_RIVAL_LAPS = range(RIVAL_LAPS_MIN, RIVAL_LAPS_MAX + 1)
-SEG_TYRE_HOT = range(12, 41)
+SEG_TYRE_HOT = range(TYRE_HOT_MIN, TYRE_HOT_MAX + 1)
 SEG_TYRE_LAPS = range(0, TYRE_WEAR_MAX + 1)
 SEG_MULTI_CLASSES = MULTI_CLASSES
 SEG_MULTI_MAX_CARS = MULTI_MAX_CARS
 SEG_DENT_MAX_ZONES = DENT_MAX_ZONES
 # 2단계 — 차량 상태/연료 세이브/세션 브리핑
-SEG_WING_MM = range(10, 61)
-SEG_BRAKE_T = range(700, 1201, 10)          # health: 10도 단위 반올림
-SEG_REPAIR = [i / 10 for i in range(5, 51)]
-SEG_FUEL_TARGET = [i / 10 for i in range(10, 121)]
+SEG_WING_MM = range(WING_MM_MIN, WING_MM_MAX + 1)
+SEG_BRAKE_T = range(BRAKE_T_MIN, BRAKE_T_MAX + 1, BRAKE_T_STEP)   # health: 10도 단위 반올림
+SEG_REPAIR = [i / 10 for i in range(5, 100)]                     # 10.0 이상은 repair_cost_big
+SEG_FUEL_TARGET = [i / 10 for i in range(5, 151)]
 SEG_FUEL_SAVE = [i / 10 for i in range(1, 31)]
+SEG_PIT_WINDOW = range(PIT_WINDOW_WHOLE_MAX + 1, PIT_WINDOW_MAX + 1)   # 0~40은 통문장
+SEG_RIVAL_PIT = range(RIVAL_PIT_WHOLE_MAX + 1, CLASS_POS_MAX + 1)     # 1~30은 통문장
+SEG_COACH = [i / 10 for i in range(1, 30)]
+# 3단계 — HUD 대체 리포트 (랩타임 콜, 상황 리포트)
+SEG_LAPTIME_T10 = range(LAPTIME_T10_MIN, LAPTIME_T10_MAX + 1)
+SEG_STATUS_POS = range(1, CLASS_POS_MAX + 1)
+SEG_STATUS_FUEL = range(0, STATUS_FUEL_MAX + 1)
+SEG_STATUS_TYRES = range(0, STATUS_TYRE_MAX + 1)
 SEG_BRIEF_MINUTES = range(1, BRIEF_MINUTES_MAX + 1)   # brief_length_text가 126개 값으로 묶는다
 SEG_BRIEF_LAPS = range(1, BRIEF_LAPS_MAX + 1)
 SEG_BRIEF_CARS = range(BRIEF_CARS_MIN, BRIEF_CARS_MAX + 1)
@@ -151,6 +159,10 @@ def laptime_t10(sec: float) -> int:
 
 def laptime_in_pack(sec: float) -> bool:
     return LAPTIME_T10_MIN <= laptime_t10(sec) <= LAPTIME_T10_MAX
+
+
+def status_fuel_ok(fuel_laps: float) -> bool:
+    return 0 <= laps_value(fuel_laps) <= STATUS_FUEL_MAX
 
 
 def brief_grid_ok(n: int, cp: int) -> bool:

@@ -17,7 +17,8 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
-from messages import msg, fmt_laptime, laps_text
+from messages import msg, fmt_laptime, laps_text, seconds_text
+from speech_domain import CLASS_POS_MAX, status_fuel_ok
 from state import SessionState
 from telemetry import Snapshot
 
@@ -85,18 +86,19 @@ class StatusReporter:
     def status_text(class_place: int, gap_ahead: float, gap_behind: float,
                     fuel_laps: Optional[float], tyre_left: Optional[float],
                     has_tyre: bool) -> Optional[str]:
-        """상황 리포트 한 문장 — 순수 조립 (C# StatusReporter.StatusText)."""
+        """상황 리포트 한 문장 — 순수 조립 (C# StatusReporter.StatusText).
+        P61 이상·연료 100랩 이상은 그 부분만 뺀다 (음성 팩 3단계 도메인)."""
         parts: list[str] = []
-        if class_place > 0:
+        if 0 < class_place <= CLASS_POS_MAX:
             parts.append(msg("status_pos", p=class_place))
         gaps: list[str] = []
         if 0 <= gap_ahead <= 60:
-            gaps.append(msg("status_gap_ahead", g=gap_ahead))
+            gaps.append(msg("status_gap_ahead", g=gap_ahead, gs=seconds_text(gap_ahead)))
         if 0 <= gap_behind <= 60:
-            gaps.append(msg("status_gap_behind", g=gap_behind))
+            gaps.append(msg("status_gap_behind", g=gap_behind, gs=seconds_text(gap_behind)))
         if gaps:
-            parts.append(msg("status_gaps", gaps=", ".join(gaps)))
-        if fuel_laps is not None:
+            parts.append(msg("status_gaps", gaps=msg("status_gap_join").join(gaps)))
+        if fuel_laps is not None and status_fuel_ok(fuel_laps):
             parts.append(msg("status_fuel", n=laps_text(fuel_laps)))
         if has_tyre:
             if tyre_left is not None and tyre_left <= 20:

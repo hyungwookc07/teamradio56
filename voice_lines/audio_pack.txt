@@ -8,8 +8,8 @@
 #
 # 새 팩(멘트 집합이 바뀔 때만): GitHub Actions → audio-pack 을 새 pack ID로 실행하면
 # 렌더·zip·audio-<pack> 릴리스·이 파일의 pack/tag/asset 줄 커밋까지 한다 (주석은 그대로 둔다).
-# tag가 audio-<pack>이 아니면(손 배포 시절 v0.16.0) 첫 Actions 릴리스 전에 한 번 audio-pack을
-# pack=kokoro-v015 그대로 실행한다 (simhub/README.md 릴리스 절 '처음 한 번').
+# 다음 팩은 kokoro-v016 (HUD 리포트 3단계·도메인 확장 문장) — audio-pack을 pack=kokoro-v016으로
+# 실행해 만든다 (simhub/README.md 릴리스 절 'v0.17.0'). 아래 줄은 그 실행이 다시 쓴다.
 pack=kokoro-v015
 tag=v0.16.0
 asset=teamradio56_kokoro_v015_1of4.zip,bf9ab0afd1c2875444ba73bb369fc4b02a5a6fec79a7f1c921f525b340f771ad,23753492

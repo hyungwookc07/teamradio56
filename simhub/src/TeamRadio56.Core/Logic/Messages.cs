@@ -477,6 +477,9 @@ namespace TeamRadio56.Core.Logic
             { "multi_behind", "{names} behind" },
             { "multi_closing", "{names} closing" },
             { "multi_ahead_clear", " Ahead is clear." },
+            // 한 절에 4대 이상 — 대수 조합을 다 사전 생성하지 않고 묶어 말한다
+            { "multi_behind_many", "Several cars behind" },
+            { "multi_closing_many", "Several cars closing" },
             { "multi_one", "one {name}" },
             { "multi_two", "two {name}s" },
             { "multi_n", "{n} {name}s" },
@@ -510,6 +513,8 @@ namespace TeamRadio56.Core.Logic
             { "brake_warn", "Brakes averaging {t:.0f} degrees. Brake a touch earlier, cool them." },
             { "repair_cost", "Damage is costing {delta:.1f} a lap. "
                              + "We repair at the next stop. It pays off." },
+            { "repair_cost_big", "Damage is costing a lot of time. "
+                                 + "We repair at the next stop. It pays off." },
             { "dmg_no_effect", "That contact — no effect on pace. Forget it." },
             { "report_problems", "Check done. {problems}. {advice}" },
             { "report_advice_box", "Prepare to box." },
@@ -520,6 +525,7 @@ namespace TeamRadio56.Core.Logic
             { "item_puncture", "{names} puncture" },
             { "item_losing_pressure", "{name} losing pressure" },
             { "item_heavy_body", "heavy bodywork damage, {zones}" },
+            { "item_heavy_body_all", "heavy bodywork damage all round" },
             // tyres
             { "puncture_now", "Puncture, {wheel}! Box now, take it easy." },
             // fuel
@@ -529,9 +535,11 @@ namespace TeamRadio56.Core.Logic
             { "last_lap_report", "Last lap {t}." },
             { "best_lap_suffix", " Best lap." },
             { "status_pos", "P{p}." },
-            { "status_gap_ahead", "ahead {g:.1f}" },
-            { "status_gap_behind", "behind {g:.1f}" },
-            { "status_gaps", "Gap {gaps}." },
+            // 갭은 문장 하나씩 — 1단계 갭 문장("Gap ahead 3.2 seconds.")을 그대로 재사용
+            { "status_gap_ahead", "Gap ahead {gs}" },
+            { "status_gap_behind", "Gap behind {gs}" },
+            { "status_gaps", "{gaps}." },
+            { "status_gap_join", ". " },
             { "status_fuel", "Fuel {n}." },
             { "status_tyres", "Tyres {n}." },
             { "status_tyres_good", "Tyres good." },
@@ -601,6 +609,8 @@ namespace TeamRadio56.Core.Logic
             { "multi_behind", "뒤에 {names} 붙는다" },
             { "multi_closing", "{names} 접근 중" },
             { "multi_ahead_clear", " 앞은 여유." },
+            { "multi_behind_many", "뒤에 여러 대 붙는다" },
+            { "multi_closing_many", "여러 대 접근 중" },
             { "multi_one", "{name} 하나" },
             { "multi_two", "{name} 두 대 줄지어" },
             { "multi_n", "{name} {n}대" },
@@ -629,6 +639,7 @@ namespace TeamRadio56.Core.Logic
             { "engine_what_engine", "엔진 온도" },
             { "brake_warn", "브레이크 평균 {t:.0f}도. 브레이킹 한 템포 일찍, 식히자." },
             { "repair_cost", "데미지로 랩당 {delta:.1f}초 손실. 다음 피트에 수리. 그게 이득." },
+            { "repair_cost_big", "데미지로 손실이 커. 다음 피트에 수리. 그게 이득." },
             { "dmg_no_effect", "아까 접촉, 페이스 영향 없음. 신경 꺼도 돼." },
             { "report_problems", "체크 결과. {problems}. {advice}" },
             { "report_advice_box", "박스 준비." },
@@ -639,6 +650,7 @@ namespace TeamRadio56.Core.Logic
             { "item_puncture", "{names} 펑크" },
             { "item_losing_pressure", "{name} 공기압 빠지는 중" },
             { "item_heavy_body", "{zones} 보디 손상 심각" },
+            { "item_heavy_body_all", "보디 전체 손상 심각" },
             { "puncture_now", "{wheel} 펑크! 바로 박스. 무리하지 마." },
             { "fuel_save", "노피트 목표 랩당 {target:.1f}리터. "
                            + "{delta:.1f}리터씩 세이브 — 리프트 앤 코스트, 숏시프트." },
@@ -648,6 +660,7 @@ namespace TeamRadio56.Core.Logic
             { "status_gap_ahead", "앞 {g:.1f}초" },
             { "status_gap_behind", "뒤 {g:.1f}초" },
             { "status_gaps", "{gaps}." },
+            { "status_gap_join", ", " },
             { "status_fuel", "연료 {n}." },
             { "status_tyres", "타이어 {n}." },
             { "status_tyres_good", "타이어 아직 좋아." },

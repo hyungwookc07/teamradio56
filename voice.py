@@ -649,17 +649,19 @@ from speech_domain import (SEG_GAPS, SEG_RATES, SEG_PACE,  # noqa: E402,F401
                            SEG_REPAIR, SEG_FUEL_TARGET, SEG_FUEL_SAVE,
                            SEG_BRIEF_MINUTES, SEG_BRIEF_LAPS, SEG_BRIEF_CARS,
                            SEG_BRIEF_POS, SEG_BRIEF_TEMP, SEG_BRIEF_FUEL,
-                           load_track_names)
+                           SEG_PIT_WINDOW, SEG_RIVAL_PIT, SEG_COACH,
+                           SEG_LAPTIME_T10, SEG_STATUS_POS, SEG_STATUS_FUEL,
+                           SEG_STATUS_TYRES, COACH_SECTORS, load_track_names)
 
 # 음성 팩에 들어가는 문장 단계 (pregen/pack/CountMissing 기본값). C# PregenSentences.PackMaxTier
-PACK_TIERS = (1, 2)
+PACK_TIERS = (1, 2, 3)
 
 
 def iter_pregen_sentences(tiers=PACK_TIERS, tracks=()):
     """
     문장 단위 사전 생성 대상 (톤, 문장) — 실제 멘트를 msg()/헬퍼로 슬롯
     도메인 전체에 대해 렌더한 뒤 split_sentences로 쪼갠다 (중복 제거).
-    en 전용. tracks는 2단계(세션 브리핑)용.
+    en 전용. tracks는 2단계(세션 브리핑)용. 3단계는 HUD 대체 리포트(랩타임·상황).
     """
     if is_ko():
         return
@@ -676,6 +678,9 @@ def iter_pregen_sentences(tiers=PACK_TIERS, tracks=()):
             yield from emit(tone, text)
     if 2 in tiers:
         for tone, text in _tier2_messages(tracks):
+            yield from emit(tone, text)
+    if 3 in tiers:
+        for tone, text in _tier3_messages():
             yield from emit(tone, text)
 
 
@@ -720,6 +725,7 @@ def _tier1_messages():
     for k in range(1, SEG_DENT_MAX_ZONES + 1):
         for sub in combinations(zones, k):
             problems.append(msg("item_heavy_body", zones=and_list(list(sub))))
+    problems.append(msg("item_heavy_body_all"))
     for p in problems:
         for adv in ("report_advice_box", "report_advice_keep"):
             yield "casual", msg("report_problems", problems=join_problems([p]),
@@ -737,6 +743,15 @@ def _tier1_messages():
                 names = multi_names(list(zip(classes, counts)))
                 yield "urgent", msg("multi_behind", names=names) + "."
                 yield "urgent", msg("multi_closing", names=names) + "."
+    yield "urgent", msg("multi_behind_many") + "."
+    yield "urgent", msg("multi_closing_many") + "."
+    # 피트 윈도우 41~99랩 / 라이벌 피트 P31~60 — 통문장 범위 밖은 문장 조립
+    for n in SEG_PIT_WINDOW:
+        yield "casual", msg("pit_window", n=laps_text(n))
+    for rel in ("ahead", "behind"):
+        tail = msg("rival_pit_undercut") if rel == "behind" else msg("rival_pit_gap")
+        for p in SEG_RIVAL_PIT:
+            yield "casual", msg("rival_pit_base", rel=msg("rival_rel_" + rel), p=p) + tail
 
 
 def _tier2_messages(tracks=()):
@@ -748,6 +763,7 @@ def _tier2_messages(tracks=()):
         yield "casual", msg("brake_warn", t=t)
     for d in SEG_REPAIR:
         yield "casual", msg("repair_cost", delta=d)
+    yield "casual", msg("repair_cost_big")
     # 연료 세이브 — fuel._save_coaching
     for target in SEG_FUEL_TARGET:
         for d in SEG_FUEL_SAVE:
@@ -775,3 +791,23 @@ def _tier2_messages(tracks=()):
     for key in ("brief_rain", "brief_formation", "brief_start_spotter",
                 "brief_carry_on", "brief_calm", "brief_out"):
         yield "casual", msg(key)
+    # 트레이닝 섹터 피드백 — training.LapCoach.feedback_text
+    for n in COACH_SECTORS:
+        for d in SEG_COACH:
+            yield "casual", msg("coach_quicker_best", n=n, d=d)
+            yield "casual", msg("coach_quicker", n=n, d=d)
+            yield "casual", msg("coach_losing", n=n, d=d)
+
+
+def _tier3_messages():
+    """3단계 — HUD 대체 리포트 (analyzers.reporter, 선택 기능)."""
+    from messages import fmt_laptime
+    for t10 in SEG_LAPTIME_T10:
+        yield "casual", msg("last_lap_report", t=fmt_laptime(t10 / 10)) + msg("best_lap_suffix")
+    for p in SEG_STATUS_POS:
+        yield "casual", msg("status_pos", p=p)
+    for n in SEG_STATUS_FUEL:
+        yield "casual", msg("status_fuel", n=laps_text(n))
+    for n in SEG_STATUS_TYRES:
+        yield "casual", msg("status_tyres", n=laps_text(n))
+    yield "casual", msg("status_tyres_good")

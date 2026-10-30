@@ -503,7 +503,13 @@ def _evaluate_case(kind: str, a: dict, ctx: dict):
         from analyzers.reporter import StatusReporter
         text = StatusReporter.status_text(a["class_place"], a["gap_ahead"], a["gap_behind"],
                                           a["fuel_laps"], a["tyre_left"], a["has_tyre"])
-        return ("voice", "casual", text) if text else ("none",)
+        if text:
+            return ("voice", "casual", text)
+        # 도메인 밖 값만 있어서 전부 빠졌으면 억제, 원래 말할 게 없었으면 NONE
+        if a["class_place"] > sd.CLASS_POS_MAX or \
+                (a["fuel_laps"] is not None and not sd.status_fuel_ok(a["fuel_laps"])):
+            return ("suppress", "status")
+        return ("none",)
     if kind == "test_speak":
         return ("voice", "casual", ctx["pool"].lines("pit_call", "casual")[0])
     if kind == "lap_feedback":

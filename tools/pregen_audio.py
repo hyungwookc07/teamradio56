@@ -15,7 +15,7 @@ kokoro는 build_pregen_engine으로 항상 kokoro 렌더 (팩/edge로 건너뛰�
 바꾸면 다시 실행할 것. 이미 캐시된 파일은 건너뛴다.
 
 사용법: python tools/pregen_audio.py [--config config.yaml] [--engine kokoro]
-        python tools/pregen_audio.py --segments [--tiers 1,2] [--tracks voice_lines/track_names_en.txt]
+        python tools/pregen_audio.py --segments [--tiers 1,2,3] [--tracks voice_lines/track_names_en.txt]
         python tools/pregen_audio.py --ab "Gap behind 6.3 seconds. Closing 1.3 a lap." --tone casual --ab-out ab
 """
 
@@ -250,7 +250,7 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="합성 없이 대상 텍스트만 출력")
     parser.add_argument("--segments", action="store_true",
                         help="문장 세그먼트 패스 (en, kokoro) + 조립 자산")
-    parser.add_argument("--tiers", default="1,2",
+    parser.add_argument("--tiers", default="1,2,3",
                         help="--segments 문장 단계 목록 (예: 1 또는 1,2)")
     parser.add_argument("--tracks", default=None,
                         help="--segments 트랙 이름 목록 파일 (2단계 세션 브리핑용)")

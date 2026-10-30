@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       pack:
-        description: 팩 ID (zip 이름·태그 audio-<pack>). kokoro-v015는 수동 배포본과 같은 멘트 집합
+        description: 팩 ID (zip 이름·태그 audio-<pack>). 멘트 집합이 바뀌면 새 ID — kokoro-v016은 HUD 리포트 3단계·도메인 확장 문장 포함
         type: string
-        default: kokoro-v015
+        default: kokoro-v016
       dry_run:
         description: 렌더·zip·아티팩트만 (게시·커밋 안 함)
         type: boolean
@@ -26,7 +26,7 @@ defaults:
 jobs:
   render:
     runs-on: ubuntu-24.04
-    timeout-minutes: 330
+    timeout-minutes: 355
     permissions:
       contents: read
     steps:
@@ -62,13 +62,13 @@ jobs:
         with:
           path: models
           key: ${{ steps.models.outputs.cache-primary-key }}
-      - name: 렌더 (통문장 → 문장 세그먼트, 약 1.5~2.5시간)
-        timeout-minutes: 300
+      - name: 렌더 (통문장 → 문장 세그먼트, 약 2.5~4.5시간)
+        timeout-minutes: 320
         run: |
           [ ! -e config.yaml ] || { echo "::error::config.yaml이 있으면 렌더 설정이 바뀝니다"; exit 1; }
           mkdir -p "$RUNNER_TEMP/logs"
           python tools/pregen_audio.py --engine kokoro 2>&1 | tee "$RUNNER_TEMP/logs/whole.log"
-          python tools/pregen_audio.py --engine kokoro --segments --tiers 1,2 \
+          python tools/pregen_audio.py --engine kokoro --segments --tiers 1,2,3 \
             --tracks voice_lines/track_names_en.txt 2>&1 | tee "$RUNNER_TEMP/logs/segments.log"
       - name: zip 분할 + 기술자 갱신
         run: |
