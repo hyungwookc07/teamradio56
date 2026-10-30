@@ -15,11 +15,12 @@ namespace TeamRadio56.Replay
     /// --release-check: 릴리스 도구(release.ps1)가 만드는 것을 Core 업데이터 기준으로 검증.
     ///
     ///   --release-check voice_lines/audio_pack.txt [--plugin-source TeamRadio56Plugin.cs]
-    ///                   [--manifest dist/release/x.y.z/teamradio56-release.txt]
+    ///                   [--manifest dist/release/x.y.z/teamradio56-release.txt] [--audio-dir 팩zip폴더]
     ///
     /// 기술자만 주면 release.ps1과 같은 모양의 매니페스트를 만들어 ReleaseManifest.Parse로 읽는다.
     /// --manifest를 주면 스크립트가 실제로 만든 폴더를 릴리스 서버처럼 내놓고, 사용자 PC의
     /// 업데이트 흐름(확인 → 플러그인 교체 → 음성 팩 설치, zip이 폴더에 있을 때)을 그대로 돌린다.
+    /// --audio-dir은 audio_tag 릴리스(audio-&lt;pack&gt;)의 자산 폴더 — 팩 설치를 그 폴더에서 받는다.
     /// </summary>
     internal static class ReleaseCheck
     {
@@ -34,7 +35,7 @@ namespace TeamRadio56.Replay
             public readonly List<AudioAsset> Assets = new List<AudioAsset>();
         }
 
-        public static int Run(string packPath, string pluginSource, string manifestPath)
+        public static int Run(string packPath, string pluginSource, string manifestPath, string audioDir = null)
         {
             string fullVersion = null;
             PackDescriptor pack = null;
@@ -57,7 +58,8 @@ namespace TeamRadio56.Replay
                 Section("기술자 → 매니페스트 형식", () => Synthesized(pack, fullVersion));
                 Section("기술자 규칙 위반 거부", RejectsBadDescriptors);
                 if (manifestPath != null)
-                    Section("release.ps1 출력 → 사용자 업데이트 흐름", () => Produced(pack, fullVersion, manifestPath));
+                    Section("release.ps1 출력 → 사용자 업데이트 흐름",
+                            () => Produced(pack, fullVersion, manifestPath, audioDir));
             }
 
             if (Failures.Count > 0)
@@ -175,9 +177,13 @@ namespace TeamRadio56.Replay
             Check(ReleaseManifest.Parse(ManifestText(p, fullVersion, new string('a', 64), null)).Notes == "",
                   "notes 생략 가능");
 
-            // 팩 자산이 아직 없는 미래 태그를 가리키면 사용자 음성 팩 업데이트가 404가 된다
-            Check(PluginVersion.ParseNumeric(p.Tag) != null && PluginVersion.Compare(p.Tag, v) <= 0,
-                  "audio_pack.txt의 tag(" + p.Tag + ")가 이번 버전(" + v + ") 이하");
+            // 팩 자산은 전용 릴리스(audio-<pack>)에 둔다. 예전 방식(플러그인 릴리스에 함께)은
+            // 아직 없는 미래 태그를 가리키면 사용자 음성 팩 업데이트가 404가 된다
+            bool own = p.Tag == "audio-" + p.Pack;
+            bool legacy = p.Tag.StartsWith("v", StringComparison.Ordinal)
+                          && PluginVersion.ParseNumeric(p.Tag) != null && PluginVersion.Compare(p.Tag, v) <= 0;
+            Check(own || legacy,
+                  "audio_pack.txt의 tag(" + p.Tag + ")는 audio-" + p.Pack + " 또는 이번 버전(" + v + ") 이하 v태그");
             Check(p.Assets.Sum(a => a.Size) < 512L * 1024 * 1024, "음성 팩 전체 크기가 상식적 (< 512 MB)");
         }
 
@@ -225,9 +231,10 @@ namespace TeamRadio56.Replay
             }
         }
 
-        private static void Produced(PackDescriptor p, string fullVersion, string manifestPath)
+        private static void Produced(PackDescriptor p, string fullVersion, string manifestPath, string audioDir)
         {
             string dir = Path.GetDirectoryName(Path.GetFullPath(manifestPath));
+            audioDir = audioDir != null ? Path.GetFullPath(audioDir) : null;
             string v = NumericVersion(fullVersion);
             ReleaseManifest m = ReleaseManifest.Parse(File.ReadAllText(manifestPath, Encoding.UTF8));
             Check(Path.GetFileName(manifestPath) == ReleaseManifest.FileName, "매니페스트 파일 이름");
@@ -261,7 +268,7 @@ namespace TeamRadio56.Replay
                 foreach (string n in PluginSwap.DllNames)
                     File.WriteAllBytes(Path.Combine(pluginDir, n), Encoding.ASCII.GetBytes("MZold-" + n));
 
-                var dl = new FolderDownloader(dir, m.Tag);
+                var dl = new FolderDownloader(dir, m.Tag, audioDir, m.AudioTag);
                 var svc = new UpdateService(dl, Base);
                 UpdateCheck oldUser = svc.Check("0.15.0-kokoro", cacheDir, CancellationToken.None);
                 Check(oldUser.PluginUpdateAvailable, "0.15 사용자에게 플러그인 업데이트가 뜸");
@@ -289,15 +296,24 @@ namespace TeamRadio56.Replay
                 Check(UpdateService.CleanupOnStartup(pluginDir) == PluginSwap.DllNames.Length,
                       "다음 시작 때 .old 정리");
 
-                bool packHere = m.AudioAssets.All(a => File.Exists(Path.Combine(dir, a.Name)));
-                if (m.AudioTag == m.Tag && packHere)
+                string packDir = audioDir
+                                 ?? (m.AudioTag == m.Tag ? dir : null);
+                if (audioDir != null)
+                    Check(m.AudioAssets.All(a => File.Exists(Path.Combine(audioDir, a.Name))),
+                          "--audio-dir에 매니페스트의 음성 팩 zip이 전부 있음");
+                if (packDir != null && m.AudioAssets.All(a => File.Exists(Path.Combine(packDir, a.Name))))
                 {
+                    long entries = 0;
+                    foreach (AudioAsset a in m.AudioAssets)
+                        using (ZipArchive za = ZipFile.OpenRead(Path.Combine(packDir, a.Name)))
+                            entries += za.Entries.Count;
                     svc.InstallAudioPack(oldUser.Latest, cacheDir, Path.Combine(root, "work"), null,
                                          CancellationToken.None);
                     Check(AudioPack.Installed(cacheDir) == m.AudioPack, "음성 팩 설치 후 표식 = " + m.AudioPack);
                     int wav = Directory.GetFiles(cacheDir, "*.wav").Length;
-                    Check(wav > 0, "음성 팩 wav 설치됨");
-                    Console.WriteLine($"  음성 팩 {m.AudioPack} 설치 흐름 확인 — wav {wav}개");
+                    Check(wav > 0 && wav == entries, $"음성 팩 wav {wav}개 = zip 항목 {entries}개");
+                    Check(!AudioPack.NeedsUpdate(oldUser.Latest, cacheDir), "설치 후 음성 팩 업데이트가 더 안 뜸");
+                    Console.WriteLine($"  음성 팩 {m.AudioPack} 설치 흐름 확인 ({m.AudioTag}) — wav {wav}개");
                 }
                 else
                 {
@@ -314,28 +330,41 @@ namespace TeamRadio56.Replay
             }
         }
 
-        /// <summary>릴리스 폴더를 GitHub releases/{latest/download, download/tag} 처럼 내놓는다.</summary>
+        /// <summary>릴리스 폴더를 GitHub releases/{latest/download, download/tag} 처럼 내놓는다.
+        /// 음성 팩 폴더를 주면 download/{audioTag}/ 를 그 폴더로 잇는다.</summary>
         private sealed class FolderDownloader : IDownloader
         {
             private readonly string _dir;
             private readonly string _tag;
+            private readonly string _audioDir;
+            private readonly string _audioTag;
 
-            public FolderDownloader(string dir, string tag)
+            public FolderDownloader(string dir, string tag, string audioDir, string audioTag)
             {
                 _dir = dir;
                 _tag = tag;
+                _audioDir = audioDir;
+                _audioTag = audioTag;
             }
 
             private string Map(string url)
             {
                 string latest = Base + "/latest/download/";
                 string tagged = Base + "/download/" + Uri.EscapeDataString(_tag) + "/";
+                string audio = _audioDir != null && _audioTag != _tag
+                    ? Base + "/download/" + Uri.EscapeDataString(_audioTag) + "/" : null;
                 string name = null;
+                string folder = _dir;
                 if (url.StartsWith(latest, StringComparison.Ordinal))
                     name = url.Substring(latest.Length);
                 else if (url.StartsWith(tagged, StringComparison.Ordinal))
                     name = url.Substring(tagged.Length);
-                string path = name != null ? Path.Combine(_dir, Uri.UnescapeDataString(name)) : null;
+                else if (audio != null && url.StartsWith(audio, StringComparison.Ordinal))
+                {
+                    name = url.Substring(audio.Length);
+                    folder = _audioDir;
+                }
+                string path = name != null ? Path.Combine(folder, Uri.UnescapeDataString(name)) : null;
                 if (path == null || !File.Exists(path))
                     throw new UpdateException(UpdateErrorKind.NotFound, "404 (릴리스 폴더): " + url);
                 return path;

@@ -10,6 +10,11 @@
 #      (tools/make_race_end_replays.py가 만들고 --check로 재생성 대조)
 #
 # 사용법:  bash simhub/verify/replay-check.sh
+#
+# 환경 변수 (CI가 쓴다):
+#   TEAMRADIO56_STRICT=1         도구가 없어 건너뛰던 검사(pwsh, numpy/soundfile)를 실패로
+#   TEAMRADIO56_REQUIRE_CACHE=1  audio_cache/*_rfx3.wav가 없으면 실패 (실캐시 Resolve 필수)
+#   TEAMRADIO56_AUDIO_DIR=폴더   음성 팩 zip 폴더 — release.ps1 -AudioDir 대조 + 팩 설치 흐름
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."      # 저장소 루트
@@ -23,6 +28,17 @@ OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
 fail=0
+STRICT=${TEAMRADIO56_STRICT:-0}
+
+# 선택 도구가 없을 때 — 로컬은 건너뛰고, CI(STRICT)는 조용히 빠지지 않게 실패
+skip_or_fail() {
+    if [ "$STRICT" = 1 ]; then
+        echo "❌ $1 (TEAMRADIO56_STRICT=1)"
+        fail=1
+    else
+        echo "⏭  $1"
+    fi
+}
 
 for lang in en ko; do
     echo
@@ -90,6 +106,10 @@ if [ -d audio_cache ] && ls audio_cache/*_rfx3.wav > /dev/null 2>&1; then
     if ! "$RUNNER" --check-cache audio_cache --tier 2 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"}; then
         fail=1
     fi
+elif [ "${TEAMRADIO56_REQUIRE_CACHE:-0}" = 1 ]; then
+    echo
+    echo "❌ audio_cache/*_rfx3.wav 없음 — 실캐시 Resolve 필수 (TEAMRADIO56_REQUIRE_CACHE=1)"
+    fail=1
 fi
 
 # 숫자 표기 — C#이 파이썬과 같은 숫자를 말해야 사전 생성 문장과 맞는다
@@ -155,8 +175,13 @@ if [ -n "$PWSH" ]; then
         -OutDir "$OUT/rel/out" -Notes "릴리스 도구 검증" ${REL_AUDIO[@]+"${REL_AUDIO[@]}"} \
         > "$OUT/rel/log.txt" 2>&1; then
         echo "✅ release.ps1 검증 모드 실행 — $(ls "$OUT/rel/out" | wc -l)개 파일"
+        REL_CHECK_AUDIO=()
+        if [ -n "${TEAMRADIO56_AUDIO_DIR:-}" ]; then
+            REL_CHECK_AUDIO=(--audio-dir "$TEAMRADIO56_AUDIO_DIR")
+        fi
         if ! "$RUNNER" --release-check voice_lines/audio_pack.txt \
-            --manifest "$OUT/rel/out/teamradio56-release.txt"; then
+            --manifest "$OUT/rel/out/teamradio56-release.txt" \
+            ${REL_CHECK_AUDIO[@]+"${REL_CHECK_AUDIO[@]}"}; then
             fail=1
         fi
     else
@@ -165,7 +190,14 @@ if [ -n "$PWSH" ]; then
         fail=1
     fi
 else
-    echo "⏭  release.ps1 실행 검사 건너뜀 — pwsh 없음 (dotnet tool install -g PowerShell)"
+    skip_or_fail "release.ps1 실행 검사 건너뜀 — pwsh 없음 (dotnet tool install -g PowerShell)"
+fi
+
+# 음성 팩 zip 도구 — 분할·이름·기술자 갱신·verify 거부 규칙 (합성 wav, 캐시 불필요)
+echo
+echo "▶ 음성 팩 도구 셀프테스트 (tools/pack_audio.py)"
+if ! python3 tools/pack_audio.py selftest; then
+    fail=1
 fi
 
 # 무전 효과 출력 고정 — 배포 캐시(_rfx3)를 만드는 체인의 리팩터 가드
@@ -176,7 +208,7 @@ if python3 -c "import numpy, soundfile" > /dev/null 2>&1; then
         fail=1
     fi
 else
-    echo "⏭  건너뜀 — numpy/soundfile 미설치"
+    skip_or_fail "건너뜀 — numpy/soundfile 미설치"
 fi
 
 # 문장 세그먼트 조립 — 파이썬 radio_assemble과 C# RadioAssembler 출력 바이트 대조

@@ -61,7 +61,8 @@ namespace TeamRadio56.Replay
                     return ReleaseCheck.Run(args[++i],
                         ArgValue(args, "--plugin-source")
                             ?? "simhub/src/TeamRadio56.SimHub/TeamRadio56Plugin.cs",
-                        ArgValue(args, "--manifest"));
+                        ArgValue(args, "--manifest"),
+                        ArgValue(args, "--audio-dir"));
                 else if (args[i] == "--gec")
                     gec = true;
                 else if (args[i] == "--coverage")
@@ -120,7 +121,7 @@ namespace TeamRadio56.Replay
                     + " | --check-cache <오디오캐시폴더> [--tier N] [--tracks f]"
                     + " | --assemble-check <폴더>"
                     + " | --update-selftest"
-                    + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f]"
+                    + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f [--audio-dir d]]"
                     + " | --gec | --synth <텍스트>");
                 return 2;
             }
