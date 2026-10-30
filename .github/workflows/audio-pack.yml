@@ -1,0 +1,124 @@
+name: audio-pack
+# 코코로 음성 팩 — CI에서 전체 렌더 → zip 분할 → audio-<pack> 릴리스(프리릴리스, latest 아님)
+# → voice_lines/audio_pack.txt를 실행한 브랜치에 커밋. 팩 릴리스는 한 번 게시하면 바꾸지 않는다.
+on:
+  workflow_dispatch:
+    inputs:
+      pack:
+        description: 팩 ID (zip 이름·태그 audio-<pack>). kokoro-v015는 수동 배포본과 같은 멘트 집합
+        type: string
+        default: kokoro-v015
+      dry_run:
+        description: 렌더·zip·아티팩트만 (게시·커밋 안 함)
+        type: boolean
+        default: false
+permissions: {}
+concurrency:
+  group: audio-pack
+  cancel-in-progress: false
+env:
+  REPO: hyungwookc07/teamradio56
+  PACK: ${{ inputs.pack }}
+  KOKORO_MODEL_SHA256: 7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5
+  KOKORO_VOICES_SHA256: bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d
+# 명시한 bash는 -eo pipefail로 돈다 (기본 bash -e는 '| tee' 실패를 삼킨다)
+defaults:
+  run:
+    shell: bash
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    permissions:
+      contents: read
+    steps:
+      - name: 입력 확인 (브랜치에서만, 팩 ID 규칙, 기존 팩 릴리스 없음)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          [ "$REF_TYPE" = branch ] || { echo "::error::브랜치에서 실행하세요 (기술자를 그 브랜치에 커밋합니다)"; exit 1; }
+          [[ "$PACK" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,121}$ && "$PACK" != *..* ]] || { echo "::error::팩 ID 형식: $PACK"; exit 1; }
+          if gh release view "audio-$PACK" --repo "$REPO" > /dev/null 2>&1; then
+            echo "::error::audio-$PACK 릴리스가 이미 있습니다 — 팩은 바꾸지 않습니다. 새 팩 ID를 쓰세요"; exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-gates
+        with:
+          requirements: tools/requirements-pack.txt
+      - name: 렌더 전 게이트 (2시간 렌더 전에 트리가 멀쩡한지)
+        run: bash simhub/verify/build-check.sh && bash simhub/verify/replay-check.sh
+        env:
+          TEAMRADIO56_STRICT: '1'
+      - id: models
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: kokoro-model-files-v1.0-7d5df8ec-bca610b8
+      - name: 코코로 모델 (없으면 받기) + sha256 확인
+        run: bash .github/scripts/kokoro-models.sh models
+      - if: steps.models.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: ${{ steps.models.outputs.cache-primary-key }}
+      - name: 렌더 (통문장 → 문장 세그먼트, 약 1.5~2.5시간)
+        timeout-minutes: 300
+        run: |
+          [ ! -e config.yaml ] || { echo "::error::config.yaml이 있으면 렌더 설정이 바뀝니다"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/logs"
+          python tools/pregen_audio.py --engine kokoro 2>&1 | tee "$RUNNER_TEMP/logs/whole.log"
+          python tools/pregen_audio.py --engine kokoro --segments --tiers 1,2 \
+            --tracks voice_lines/track_names_en.txt 2>&1 | tee "$RUNNER_TEMP/logs/segments.log"
+      - name: zip 분할 + 기술자 갱신
+        run: |
+          python tools/pack_audio.py build --cache audio_cache --pack "$PACK" \
+            --out "dist/audio/$PACK" --descriptor voice_lines/audio_pack.txt --tag "audio-$PACK"
+          cp voice_lines/audio_pack.txt "dist/audio/audio_pack.txt"
+          git diff -- voice_lines/audio_pack.txt
+      - name: 렌더 후 게이트 (실캐시 100% Resolve + 새 zip 기술자 대조 + 음성 팩 설치 흐름)
+        run: bash simhub/verify/replay-check.sh
+        env:
+          TEAMRADIO56_STRICT: '1'
+          TEAMRADIO56_REQUIRE_CACHE: '1'
+          TEAMRADIO56_AUDIO_DIR: dist/audio/${{ inputs.pack }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: teamradio56-audio-${{ inputs.pack }}
+          path: dist/audio/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: render-logs
+          path: ${{ runner.temp }}/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    needs: render
+    if: ${{ !inputs.dry_run && github.repository == 'hyungwookc07/teamradio56' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: teamradio56-audio-${{ inputs.pack }}
+          path: dist/audio
+      - name: 초안 릴리스 → 기술자 커밋·push → 게시 (prerelease, latest 아님)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/publish-audio.sh

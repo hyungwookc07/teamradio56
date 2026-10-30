@@ -1,0 +1,192 @@
+name: release
+# 플러그인 릴리스 — v* 태그 push(게시) 또는 수동 실행(기본 dry_run: 빌드·패키징·아티팩트만).
+# 게시물은 이 워크플로가 Windows에서 실제 SimHub으로 만든 아티팩트 그대로다 (스텁 빌드 금지).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 빌드·패키징·아티팩트만 (게시 안 함)
+        type: boolean
+        default: true
+      simhub_version:
+        description: 빌드에 쓸 SimHub 버전 (SHWotever/SimHub 릴리스 태그)
+        type: string
+        default: '9.13.3'
+      notes:
+        description: 설정 화면 '변경 사항' 한 줄 (태그 push는 주석 태그 제목)
+        type: string
+        default: ''
+permissions: {}
+concurrency:
+  group: release
+  cancel-in-progress: false
+env:
+  REPO: hyungwookc07/teamradio56
+# 명시한 bash는 -eo pipefail로 돈다 (기본 bash -e는 '| tee' 실패를 삼킨다)
+defaults:
+  run:
+    shell: bash
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      version: ${{ steps.ver.outputs.version }}
+      publish: ${{ steps.ver.outputs.publish }}
+      simhub_version: ${{ steps.ver.outputs.simhub_version }}
+      notes: ${{ steps.ver.outputs.notes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --disable-pip-version-check -r tools/requirements-ci.txt
+      - id: ver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          SIMHUB_VERSION: ${{ inputs.simhub_version || '9.13.3' }}
+          NOTES_INPUT: ${{ inputs.notes }}
+        run: bash .github/scripts/release-preflight.sh
+      - name: 음성 팩 릴리스 확인 (존재·크기·sha256·멘트 집합)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ steps.ver.outputs.publish }}
+        run: bash .github/scripts/check-audio-release.sh "$REPO" voice_lines/audio_pack.txt "$RUNNER_TEMP/audio"
+
+  gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-gates
+      - run: bash simhub/verify/build-check.sh
+      - run: bash simhub/verify/replay-check.sh
+        env:
+          TEAMRADIO56_STRICT: '1'
+
+  build:
+    needs: [preflight, gates]
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      SIMHUB_VERSION: ${{ needs.preflight.outputs.simhub_version }}
+      SIMHUB_DIR: C:\simhub-ci\${{ needs.preflight.outputs.simhub_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '8.0.x'
+      - id: simhub-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.SIMHUB_DIR }}
+          key: simhub-${{ env.SIMHUB_VERSION }}-${{ runner.os }}-${{ hashFiles('simhub/ci/install-simhub.ps1') }}
+      - name: SimHub 무인 설치 (캐시 없을 때)
+        if: steps.simhub-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 25
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File simhub\ci\install-simhub.ps1 `
+            -Version $env:SIMHUB_VERSION -Dir $env:SIMHUB_DIR -LogDir "$env:RUNNER_TEMP\simhub-log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: SimHub 설치 확인 (캐시 적중 포함)
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File simhub\ci\install-simhub.ps1 `
+            -Version $env:SIMHUB_VERSION -Dir $env:SIMHUB_DIR -VerifyOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - if: steps.simhub-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.SIMHUB_DIR }}
+          key: ${{ steps.simhub-cache.outputs.cache-primary-key }}
+      - name: 변경 사항 한 줄 → UTF-8 파일 (명령줄에 한글을 싣지 않는다)
+        shell: powershell
+        env:
+          TR56_NOTES: ${{ needs.preflight.outputs.notes }}
+        run: |
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP\notes.txt", "$env:TR56_NOTES", (New-Object Text.UTF8Encoding($false)))
+      - name: release.ps1 (CI 모드 — 실제 SimHub 빌드 → zip → 매니페스트)
+        shell: cmd
+        env:
+          EXPECT_TAG: ${{ needs.preflight.outputs.tag }}
+          DRY: ${{ needs.preflight.outputs.publish != 'true' && '-DryRun' || '' }}
+        run: >-
+          release.bat -Ci -SimHubPath "%SIMHUB_DIR%" -OutDir dist\ci\assets -MetaDir dist\ci\meta
+          -ExpectTag %EXPECT_TAG% -NotesFile "%RUNNER_TEMP%\notes.txt" %DRY%
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: teamradio56-release-${{ needs.preflight.outputs.version }}
+          path: dist/ci/
+          if-no-files-found: error
+          retention-days: 30
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: simhub-install-log
+          path: ${{ runner.temp }}/simhub-log/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  verify-artifact:
+    needs: [preflight, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-gates
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: teamradio56-release-${{ needs.preflight.outputs.version }}
+          path: dist/ci
+      - name: 게시될 파일로 사용자 업데이트 흐름 재현 (플러그인 교체 + 음성 팩 설치)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ needs.preflight.outputs.publish }}
+        run: bash .github/scripts/verify-release-artifact.sh dist/ci "$RUNNER_TEMP/audio"
+
+  publish:
+    needs: [preflight, verify-artifact]
+    if: needs.preflight.outputs.publish == 'true' && github.repository == 'hyungwookc07/teamradio56'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: teamradio56-release-${{ needs.preflight.outputs.version }}
+          path: dist/ci
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          SHA: ${{ github.sha }}
+          MODE: ${{ github.event_name == 'push' && 'tag' || 'dispatch' }}
+        run: bash .github/scripts/publish-release.sh
