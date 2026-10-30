@@ -76,7 +76,14 @@ copy config.yaml.example config.yaml
 `config.yaml`을 열어 필요한 항목을 수정합니다. 최소한 아래를 확인하세요.
 
 - `llm.api_key` — Anthropic API 키 (또는 환경변수 `ANTHROPIC_API_KEY` 설정)
-- `tts.engine` — 기본 `edge` (무료, 인터넷 필요). ElevenLabs 사용 시 `elevenlabs` + 키 입력
+- `tts.engine` — 설정에 없으면 기본 `kokoro` (음성 팩 재생, 인터넷 불필요). 예시 파일은
+  `edge`(무료, 인터넷 필요)로 되어 있습니다. ElevenLabs 사용 시 `elevenlabs` + 키 입력.
+  **세션당 한 목소리**: 고른 목소리로 낼 수 없는 멘트는 다른 목소리로 읽지 않고 로그(`[무전]`)와
+  자막으로만 남깁니다 — kokoro는 음성 팩에 없는 멘트, edge는 오프라인이라 합성하지 못한 멘트.
+  kokoro 음성 팩(`audio_cache\`)이 없으면 세션 전체를 edge로, 한국어 무전은 항상 edge로 말합니다.
+  다른 목소리로라도 듣고 싶으면 `tts.allow_fallback: true` (목소리가 섞입니다).
+  kokoro 음성 팩은 임의 문장을 말할 수 없어서, kokoro로 말할 때는 LLM 멘트를 요청하지 않고
+  템플릿 멘트를 씁니다 (`pip install kokoro-onnx`로 로컬 런타임이 있거나 edge면 LLM 사용)
 - `voice.volume`, 각종 `thresholds` — 취향대로
 
 ## 4. 실행

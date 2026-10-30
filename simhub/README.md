@@ -69,7 +69,7 @@ dotnet build -c Release -p:SimHubPath="D:\SimHub"
    ("시작 시 확인"이 켜져 있으면 하루 한 번 SimHub 시작 15초 뒤 **확인만** 자동으로 한다.
    새 버전이 있으면 화면 위에 안내가 뜬다)
 3. **[플러그인 업데이트]** → 끝나면 **SimHub을 재시작**해야 적용된다
-4. **[음성 팩 업데이트]** (팩이 바뀐 릴리스에서만 켜짐, 약 89 MB) → 끝나면
+4. **[음성 팩 업데이트]** (팩이 바뀐 릴리스에서만 켜짐, 약 150 MB) → 끝나면
    [엔진 재시작] 또는 SimHub 재시작
 
 설치는 **버튼을 누르고 확인 창에서 [예]를 눌렀을 때만** 한다. 받는 동안 진행률이
@@ -87,7 +87,8 @@ dotnet build -c Release -p:SimHubPath="D:\SimHub"
 - 음성 팩: zip을 **전부 받고 sha256을 확인한 뒤에야** 오디오 캐시에 푼다. 오디오 캐시
   폴더의 `teamradio56_audio_pack.txt`가 설치된 팩 이름이다 (중간에 끊기면 "설치 미완료"로
   보이고 다시 받을 수 있다). 표식 없이 조립 자산 4개(`_seg1_*.wav`)만 있으면 손으로 넣은
-  `kokoro-v015`로 본다.
+  `kokoro-v015`로 본다 — 0.17은 `kokoro-v016`을 쓰므로 이 사용자에게 [음성 팩 업데이트]가
+  켜진다. 받기 전까지 v016에만 있는 멘트는 자막으로만 나간다 (다른 목소리로 읽지 않는다).
 - 받는 중 임시 파일은 SimHub 폴더의 `teamradio56_update\`(쓸 수 없으면 `%TEMP%`)에
   두고, 다음 시작 때 정리한다.
 
@@ -156,36 +157,42 @@ SimHub이 켜져 있으면 DLL이 잠기므로 스크립트가 종료를 기다�
 없어도 된다 — Windows 러너가 SimHub을 무인 설치(버전별 캐시)하고 그 실제 어셈블리로
 빌드한다. 스텁(`verify/build-check.sh`)으로 빌드한 DLL은 배포하지 않는다.
 
-**처음 한 번 (첫 Actions 릴리스 전에 반드시)**: 지금 `voice_lines/audio_pack.txt`는 손으로
-배포한 팩(`tag=v0.16.0`, 그런 릴리스는 없다)을 가리키고 있어서, 그대로 태그를 push하면
-preflight가 "CI 릴리스는 audio-<pack> 릴리스만 참조"로 멈춘다. 먼저
+**v0.17.0 (음성 팩 kokoro-v016 먼저)**: 0.17은 멘트 집합이 바뀌어(HUD 리포트 3단계·도메인
+확장 문장) 새 음성 팩 `kokoro-v016`이 필요하다. 지금 `voice_lines/audio_pack.txt`는 손으로
+배포한 `kokoro-v015`(`tag=v0.16.0`, 그런 릴리스는 없다)를 가리키므로 그대로 태그를 push하면
+preflight가 "CI 릴리스는 audio-<pack> 릴리스만 참조"로 멈춘다. 순서:
 
-1. 워크플로를 main에 병합한다
-2. Actions → **audio-pack** → Run workflow, branch `main`, `pack`은 **기본값
-   `kokoro-v015` 그대로** (새 ID를 쓰면 이미 손으로 받은 사용자 전원이 같은 음성을 다시
-   받는다)
-3. 실행이 끝나 main에 `음성 팩 기술자 갱신: kokoro-v015 (audio-kokoro-v015)` 커밋이
-   생긴 것을 확인하고, 그 커밋 위에서 아래 순서로 태그를 만든다
-
-렌더(1.5~2.5시간) 대신 손으로 배포한 zip 4개를 그대로 올려도 된다 — 같은 파일이라
-기술자의 sha256·크기가 맞는다:
+1. 로컬 커밋을 main에 push한다
+2. Actions → **audio-pack** → Run workflow, branch `main`, `pack`=**`kokoro-v016`**(기본값),
+   `dry_run` 끔. 통문장 1223 + 세그먼트 5254 = 약 6500개 렌더라 **약 2.5~4.5시간** 걸린다
+   (잡 제한 355분 — GitHub 최대 360분. 러너가 클립당 약 2.5초보다 느려 시간을 넘기면 렌더를
+   병렬 잡으로 나눠야 한다)
+3. 실행이 끝나 main에 `음성 팩 기술자 갱신: kokoro-v016 (audio-kokoro-v016)` 커밋이 생긴 것을
+   확인한다
+4. **그 커밋 위에서** 주석 태그를 만들어 push한다:
 
 ```bash
-gh release create audio-kokoro-v015 teamradio56_kokoro_v015_*of4.zip \
-  --prerelease --latest=false --title "teamradio56 음성 팩 kokoro-v015"
-# 그다음 voice_lines/audio_pack.txt의 tag= 줄만 audio-kokoro-v015로 바꿔 main에 커밋
+git pull origin main
+git tag -a v0.17.0 -m "한 목소리: 음성 팩에 없는 멘트는 자막으로만, 음성 팩 kokoro-v016"
+git push origin v0.17.0
 ```
+
+- `audio-kokoro-v016`이 공개되기 전에는 release preflight가 게시를 거부한다.
+- v015 사용자(표식 없음 + 조립 자산 4개 → `kokoro-v015`로 판정)에게는 플러그인 업데이트 뒤
+  [음성 팩 업데이트]가 켜진다.
+- `kokoro-v015`는 0.16 멘트 집합에 묶여 있다 — `pack_audio.py`가 다른 집합으로 v015를 다시
+  게시하는 것을 거부한다.
 
 그 뒤 릴리스마다:
 
-1. `TeamRadio56Plugin.Version`을 올린다 (`"0.17.0-…"` — **숫자 x.y.z가 게시된
+1. `TeamRadio56Plugin.Version`을 올린다 (`"0.17.1-…"` — **숫자 x.y.z가 게시된
    최신보다 커야** 사용자에게 업데이트가 뜬다. 뒤 꼬리표는 화면 표시용)
 2. 커밋 → **main에 병합·push** (태그 커밋은 main에 있어야 게시된다)
 3. 주석 태그를 만들어 push — 태그 메시지 첫 줄이 설정 화면 '변경 사항'이 된다:
 
 ```bash
-git tag -a v0.17.0 -m "한 줄 요약"
-git push origin v0.17.0
+git tag -a v0.17.1 -m "한 줄 요약"
+git push origin v0.17.1
 ```
 
 워크플로가 하는 일 (Actions 탭 → release 실행에서 단계별로 보인다):
@@ -204,7 +211,7 @@ git push origin v0.17.0
    `releases/latest/download/teamradio56-release.txt`가 새 버전을 가리키는지 확인.
    쓰기 권한은 이 잡에만 있다 (SimHub 설치 프로그램을 돌리는 Windows 잡에는 없다)
 
-태그가 버전과 다르거나(예: `v0.16.0-rc1`) main에 없으면 실행이 실패한다 — 태그를 지우고
+태그가 버전과 다르거나(예: `v0.17.0-rc1`) main에 없으면 실행이 실패한다 — 태그를 지우고
 (`git push origin :refs/tags/<태그>`) 맞게 다시 만든다.
 
 **시험 빌드 (dry run)**: Actions → release → Run workflow → `dry_run` 켠 채(기본) 실행.
@@ -219,28 +226,27 @@ main 캐시를 쓴다.
 
 ### 음성 팩 — 전용 `audio-<pack>` 릴리스
 
-음성 팩 zip(약 89 MB)은 플러그인 릴리스에 올리지 않는다. 팩마다 한 번 **`audio-<pack>`
+음성 팩 zip(`kokoro-v016` 약 150 MB, 24 MiB 이하로 7개 안팎)은 플러그인 릴리스에 올리지 않는다. 팩마다 한 번 **`audio-<pack>`
 프리릴리스**(latest가 되지 않는다 — `releases/latest`는 항상 플러그인 릴리스)에 올리고,
 `voice_lines/audio_pack.txt`가 그 태그와 zip 이름·sha256·크기를 가리킨다. 플러그인
 릴리스의 매니페스트는 `audio_tag`로 그 주소를 가리키기만 한다.
 
 ```
-pack=kokoro-v015
-tag=audio-kokoro-v015
-asset=teamradio56_kokoro_v015_1of4.zip,<sha256>,<바이트 수>
+pack=kokoro-v016
+tag=audio-kokoro-v016
+asset=teamradio56_kokoro_v016_1of7.zip,<sha256>,<바이트 수>
 ...
 ```
 
 - **멘트 집합이 바뀔 때만** 새 팩: Actions → **audio-pack** → Run workflow, `pack`에
   **새 ID**(예: `kokoro-v020`). 렌더 전 게이트 → 코코로 모델(sha256 고정) → 통문장·세그먼트
-  렌더(약 1.5~2.5시간) → `tools/pack_audio.py`로 24 MiB 이하 zip 분할 → 렌더 후 게이트(실캐시
+  렌더(약 2.5~4.5시간) → `tools/pack_audio.py`로 24 MiB 이하 zip 분할 → 렌더 후 게이트(실캐시
   100% + 팩 설치 흐름) → `audio-<pack>` 초안 → 새 `audio_pack.txt`를 **실행한 브랜치에 커밋**
   → 프리릴리스로 공개. `dry_run`은 렌더·zip·아티팩트까지만. 이미 있는 팩 ID는 거부한다.
-- 팩 ID가 바뀐 사용자에게만 [음성 팩 업데이트]가 켜진다. `kokoro-v015`는 손으로 배포한 팩과
-  **같은 멘트 집합**이라 그 ID를 유지한다 (`pack_audio.py`가 집합 해시로 확인 — 다른 집합에
-  배포된 ID를 쓰면 거부).
+- 팩 ID가 바뀐 사용자에게만 [음성 팩 업데이트]가 켜진다. 배포된 ID는 그 멘트 집합에 묶인다
+  (`pack_audio.py`가 집합 해시로 확인 — `kokoro-v015`처럼 다른 집합에 배포된 ID를 쓰면 거부).
 - 멘트가 바뀌었는데 팩을 안 바꾸면 release preflight가 "멘트 집합이 팩과 다름"으로 게시를
-  막는다 (그대로 내면 빠진 멘트가 edge로 나간다).
+  막는다 (그대로 내면 빠진 멘트는 자막으로만 나간다).
 - **`audio-*` 릴리스는 지우거나 자산을 바꾸지 말 것** — 매니페스트가 sha256으로 고정하고
   있어 모든 사용자의 음성 팩 업데이트가 깨진다.
 - zip 업로드 중에 실패하면 초안을 지운다 — publish 잡만 다시 실행하면 된다 (렌더는
@@ -290,11 +296,11 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
 | 키 | 예 | 의미 |
 |---|---|---|
 | `format` | `1` | 형식 버전 |
-| `version` | `0.16.0` | 숫자 x.y.z — 플러그인 `Version`의 숫자부와 비교 |
-| `tag` | `v0.16.0` | 이 릴리스 태그 |
-| `plugin_asset` / `plugin_sha256` | `teamradio56-plugin-0.16.0.zip` / 소문자 hex | 두 DLL zip |
-| `audio_pack` | `kokoro-v015` | 음성 팩 ID (설치된 표식과 다르면 업데이트 제안) |
-| `audio_tag` | `audio-kokoro-v015` | 팩 zip이 올라가 있는 릴리스 태그 |
+| `version` | `0.17.0` | 숫자 x.y.z — 플러그인 `Version`의 숫자부와 비교 |
+| `tag` | `v0.17.0` | 이 릴리스 태그 |
+| `plugin_asset` / `plugin_sha256` | `teamradio56-plugin-0.17.0.zip` / 소문자 hex | 두 DLL zip |
+| `audio_pack` | `kokoro-v016` | 음성 팩 ID (설치된 표식과 다르면 업데이트 제안) |
+| `audio_tag` | `audio-kokoro-v016` | 팩 zip이 올라가 있는 릴리스 태그 |
 | `audio_assets` / `audio_sha256` / `audio_size` | 콤마 구분, 같은 순서 | 팩 zip들 (`audio_size`는 선택 — 다운로드 전 크기 표시) |
 | `notes` | 한 줄 | 설정 화면 "변경 사항" (선택) |
 
@@ -408,8 +414,8 @@ pipenv run pyinstaller teamradio56.spec
 | 섹션 | 내용 |
 |---|---|
 | 엔진 | 모드(python/builtin), 실행 파일, 추가 인자, [시작][중지][재시작][엔진 로그] |
-| 상태 | 연결 램프, 현재 트랙/순위/랩/연료/속도, 최근 무전 5건, [테스트 발화] [로그 열기] [설정 파일 열기] |
-| 음성 | 출력 on/off, 보이스 선택, 말 속도, 볼륨, 무전기 효과, 노이즈 강도 |
+| 상태 | 연결 램프, 현재 트랙/순위/랩/연료/속도, 최근 무전 5건(말하지 않은 콜은 `(무음)`), 이번 세션 목소리와 그 이유, 자막으로만 낸 콜 수, 음성 팩에 없는 멘트 수, [테스트 발화](결과는 버튼 아래) [로그 열기] [설정 파일 열기] |
+| 음성 | 출력 on/off, 목소리 엔진(kokoro/edge), 보이스 선택, 말 속도, 볼륨, 무전기 효과(edge 목소리에만 — kokoro 팩은 항상 효과 포함), 목소리 섞임 허용(기본 끔), 노이즈 강도 |
 | 수다스러움 | quiet / normal / chatty 프리셋 (긴급 콜은 항상 나감) |
 | 트래픽 | 나란히 판정 거리, 스타트 스포터 모드 길이, 좌우 반전, 레이스에서만 |
 | HUD 대체 | 매 랩 랩타임, N랩마다 상황 리포트 |
@@ -459,6 +465,7 @@ SimHub 게임 이름: 'LMU'            ← 실제로 뭐라고 나오는지 알�
 | 플러그인 목록에 안 보임 | DLL을 SimHub **루트**에 뒀는지 확인, SimHub 재시작 |
 | "엔진을 찾을 수 없습니다" | 실행 파일 경로 확인. 소스 실행이면 venv의 `python.exe`를 지정하고 추가 인자에 `main.py` 전체 경로 |
 | 엔진은 도는데 콜이 없음 | [엔진 로그]에서 파이썬 쪽 오류 확인 (오디오 캐시 미생성, 플러그인 DLL 미설치 등) |
+| 최근 무전에 `(무음)`이 붙음 / 콜이 자막으로만 나감 | 세션 목소리로 낼 수 없는 멘트라 다른 목소리 대신 침묵한 것 (목소리를 섞지 않는다). 로그 `teamradio56.log`의 `[무음]` 줄에 이유가 있다 — `kokoro-miss`(음성 팩에 없는 멘트 → [음성 팩 업데이트], 그래도 남으면 알려주세요), `edge-failed`/`edge-offline`(edge 합성 실패·오프라인 — 2분 뒤 다시 시도, 캐시에 있는 멘트는 계속 나옴), `play-failed`(오디오 장치), `no-cache`(오디오 캐시 없음). 다른 목소리로라도 듣고 싶으면 음성 섹션 **목소리 섞임 허용**을 켜고 [엔진 재시작] (edge, 영어는 그다음 Windows 음성) |
 | 소리가 두 번 들림 / 목소리가 겹침 | 0.14부터 구조적으로 차단됨: 독립 실행 엔진(launch_with_lmu.bat)은 플러그인을 감지하면 물러나고, 플러그인 엔진은 SimHub과 함께 종료됩니다. 그래도 겹치면 작업 관리자에서 python.exe가 여러 개인지 확인 — 이전 버전이 남긴 프로세스면 재부팅 한 번으로 정리됩니다. 플러그인을 쓴다면 Steam 시작 옵션의 launch_with_lmu.bat은 지우세요 |
 
 ## C# 내장 엔진 (builtin 모드) — 포팅 현황
@@ -466,9 +473,23 @@ SimHub 게임 이름: 'LMU'            ← 실제로 뭐라고 나오는지 알�
 **판단 계층은 포팅 완료**: 이벤트 버스(쿨다운/우선순위/TTL), 상태(랩
 히스토리/베이스라인), 분석기 9종(트래픽·스포터/레이스컨트롤/차량상태/
 연료/페이스/타이어/라이벌/전략/리포터), 세션 브리핑, 멘트 풀(자동 생성),
-보이스 워커 + 사전 캐시 오디오 재생, 캐시 미스 시 edge 런타임 합성
+보이스 워커 + 사전 캐시 오디오 재생, edge 목소리의 캐시 미스 시 런타임 합성
 (EdgeTtsClient — 파이썬 edge-tts와 같은 서비스·같은 캐시 키라 결과가
-서로 재사용된다; 오프라인이면 Windows TTS 폴백, 2분 서킷 브레이커).
+서로 재사용된다; 실패하면 2분 서킷 브레이커 동안 캐시에 있는 멘트만 말하고 나머지는 자막만).
+
+**한 목소리 정책**: 엔진 시작 때 세션 목소리를 한 번 정하고(로그 `목소리: kokoro|edge — 이유`)
+모든 콜을 그 목소리로만 말하거나 아예 말하지 않는다. 말하지 않은 콜도 로그 `[무전] 텍스트`,
+최근 무전(`(무음)` 표시), `LastRadio` 자막에는 남는다.
+
+- kokoro 선택 + 음성 팩 설치됨 → kokoro. 팩에 없는 멘트는 edge·Windows 음성으로 읽지 않는다
+- kokoro 선택 + 팩 없음 / 설치 미완료 → 세션 전체를 edge (설정 화면에 이유 표시)
+- 한국어 무전 → 항상 edge (kokoro는 영어 전용), Windows 음성은 절대 쓰지 않음
+- edge 선택 → edge만 (오프라인이면 캐시에 없는 멘트는 자막만)
+- 설정 **목소리 섞임 허용**(`AllowVoiceFallback`, 기본 끔)을 켜면 세션 목소리가 못 낸 콜을
+  edge 캐시 → edge 실시간 → Windows 음성(영어만) 순으로 대신 말한다 (목소리가 섞인다)
+- 파이썬 엔진도 같은 규칙 (`tts.allow_fallback`). LLM 멘트(전략/브리지 후속)는 세션 목소리가
+  임의 문장을 말할 수 있을 때만(edge, 로컬 kokoro 런타임, 또는 섞임 허용) 요청하고, 아니면 API를
+  부르지 않고 템플릿 멘트를 쓴다 — kokoro 음성 팩만으로는 LLM 멘트가 꺼진다.
 
 **리플레이 회귀로 파이썬과 동작 일치가 검증된다**:
 
@@ -514,8 +535,12 @@ voice_lines/track_names_en.txt에 없으면 무전 체크로 연다. 커버리�
 
 ### 배포 오디오 캐시 (`audio_cache\`)
 
-영어 kokoro 팩은 두 층이다. 런타임 순서: 통문장 클립 → 문장 세그먼트 조립
-→ 이전에 저장된 edge mp3 → edge 실시간 합성 → Windows TTS.
+영어 kokoro 팩은 두 층이다(`kokoro-v016` 약 150 MB — 통문장 1223 + 세그먼트 5254 + 조립
+자산 4). 런타임 순서는 세션 목소리별로 따로다:
+
+- kokoro: 통문장 클립(효과본) → 문장 세그먼트 조립 → 효과 전 원본(개발 캐시) → **무음(자막만)**
+- edge: 이전에 저장된 edge mp3 → edge 실시간 합성 → **무음(자막만)**
+- 목소리 섞임 허용을 켰을 때만 위 무음 자리에 edge 캐시 → edge 실시간 → Windows 음성(영어만)
 
 | 파일 패턴 | 내용 | 만드는 명령 |
 |---|---|---|
@@ -527,7 +552,8 @@ voice_lines/track_names_en.txt에 없으면 무전 체크로 연다. 커버리�
   끝나는 파일)는 재생성용이라 **배포하지 않는다**.
 - 세그먼트는 멘트의 문장이 **전부** 있을 때만 쓰인다 (한 멘트 안에서 목소리가
   섞이지 않게). 빠진 문장은 SimHub 로그에 `코코로 문장 미스 [톤] 문장`으로
-  처음 20건만 남는다 — 그 문장을 사전 생성 도메인에 추가하면 된다.
+  처음 20건만 남고 그 콜은 `[무음]`(자막만)이 된다 — 그 문장을 사전 생성 도메인에
+  추가하면 된다. 엔진 시작 때 팩에 없는 멘트 수를 세어 설정 화면에 보인다.
 - 조립 자산이 없으면 세그먼트 조립은 통째로 꺼진다 (로그 `조립 자산 없음`).
 - 세그먼트 렌더 규약(속도/효과/간격)을 바꿔 다시 배포할 땐
   `radio_assemble.SEG_VERSION`과 `VoiceCache.SegSuffix`를 함께 올린다.
@@ -543,6 +569,7 @@ voice_lines/track_names_en.txt에 없으면 무전 체크로 연다. 커버리�
 | 프로퍼티 | 타입 | 의미 |
 |---|---|---|
 | `LastRadio` / `LastRadioAgeSec` | string / double | 마지막 무전 텍스트 / 경과 초 (자막 페이드용) |
+| `LastRadioDropped` | bool | 마지막 무전을 목소리로 내지 않고 자막으로만 냈는지 (한 목소리 정책) — 자막을 강조하는 데 쓴다 |
 | `SpotterLeft` / `SpotterRight` | bool | 좌/우 나란히 (유령 차 필터 적용) |
 | `NearestAheadM` / `NearestBehindM` | double | 앞/뒤 최근접 실존 차 거리 m (없으면 -1) |
 | `GapAheadSec` / `GapBehindSec` | double | 동클래스 앞/뒤 시간 갭 (없으면 -1) |

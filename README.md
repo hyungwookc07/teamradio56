@@ -21,9 +21,16 @@ it means — not a stream of raw numbers.
 - **Silence discipline** — if there's nothing worth saying, it says nothing.
   No per-lap chatter; per-type cooldowns and a chattiness preset
 - **Natural voice with zero latency** — urgent calls come from pre-generated
-  phrase pools with a bundled, pre-rendered voice (Kokoro), so nothing is
-  synthesised mid-corner. Anything not in the cache falls back to online
-  TTS (edge) and is cached for next time
+  phrase pools with a pre-rendered voice pack (Kokoro), so nothing is
+  synthesised mid-corner. Every safety call (spotter, flags, damage, box,
+  critical fuel) is in the pack
+- **One voice per session** — the radio never mixes voices. With Kokoro, a
+  line that isn't in the voice pack is shown as a subtitle (and in recent
+  radio) instead of being spoken in another voice; with the edge voice, a
+  line that can't be synthesised (offline, not cached) is likewise text
+  only. Korean radio always uses edge. An opt-in setting, *Allow mixed
+  voices* (off by default), brings back the old edge / Windows speech
+  fallback
 - **Radio effect** — bandpass, saturation, band-limited noise and squelch
   for a real team-radio texture
 - **English or Korean** radio, and a bilingual settings UI
@@ -35,7 +42,11 @@ it means — not a stream of raw numbers.
 LLM-generated lines (free-form strategy/briefing commentary via the
 Anthropic API) exist as an **experimental, opt-in** feature of the Python
 engine and need your own API key. They are hidden in the SimHub UI until the
-feature is finished; everything above works without them.
+feature is finished; everything above works without them. Because the Kokoro
+voice pack can't say free text, LLM lines are only requested when the session
+voice can speak them (edge, or Kokoro with a local Kokoro runtime installed);
+otherwise
+the template line is used and no API call is made.
 
 ## Quick start
 
@@ -49,6 +60,9 @@ open the teamradio56 settings in SimHub → **Updates** → *Check for updates*,
 then *Update plugin* (restart SimHub afterwards) or *Update voice pack*.
 Nothing installs without a click. Coming from 0.15 or older, install 0.16
 once by hand (copy the two DLLs from the release zip into the SimHub folder).
+0.17 uses a new voice pack (`kokoro-v016`, about 150 MB): after updating the
+plugin, run *Update voice pack* too — until then, lines that exist only in the
+new pack are shown as subtitles instead of being spoken.
 Building from source still works with a double-click on `update.bat`
 (pull + build + copy DLLs).
 
@@ -151,7 +165,7 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
 - [x] SimHub plugin with a bilingual (한국어/English) settings UI; runs the
   Python engine as a child process, or the **built-in C# engine** — all nine
   analyzers, session briefing, phrase pools, cached audio (Kokoro), runtime
-  edge synthesis fallback, Korean radio. Verified against the Python engine
+  edge synthesis for the edge voice, Korean radio. Verified against the Python engine
   by a replay regression (identical accepted events, en/ko, down to the
   sentence text). Only the experimental LLM lines still require Python mode.
 
