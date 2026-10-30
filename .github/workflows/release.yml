@@ -19,9 +19,8 @@ on:
         type: string
         default: ''
 permissions: {}
-concurrency:
-  group: release
-  cancel-in-progress: false
+# 직렬화는 게시 잡에만 건다 — 워크플로 전체에 걸면 대기 중인 태그 게시 실행이 뒤에 들어온
+# dry run에 밀려 취소된다 (그룹마다 대기 실행은 하나만 남는다)
 env:
   REPO: hyungwookc07/teamradio56
 # 명시한 bash는 -eo pipefail로 돈다 (기본 bash -e는 '| tee' 실패를 삼킨다)
@@ -174,6 +173,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: release
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:

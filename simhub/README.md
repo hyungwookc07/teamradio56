@@ -156,6 +156,28 @@ SimHub이 켜져 있으면 DLL이 잠기므로 스크립트가 종료를 기다�
 없어도 된다 — Windows 러너가 SimHub을 무인 설치(버전별 캐시)하고 그 실제 어셈블리로
 빌드한다. 스텁(`verify/build-check.sh`)으로 빌드한 DLL은 배포하지 않는다.
 
+**처음 한 번 (첫 Actions 릴리스 전에 반드시)**: 지금 `voice_lines/audio_pack.txt`는 손으로
+배포한 팩(`tag=v0.16.0`, 그런 릴리스는 없다)을 가리키고 있어서, 그대로 태그를 push하면
+preflight가 "CI 릴리스는 audio-<pack> 릴리스만 참조"로 멈춘다. 먼저
+
+1. 워크플로를 main에 병합한다
+2. Actions → **audio-pack** → Run workflow, branch `main`, `pack`은 **기본값
+   `kokoro-v015` 그대로** (새 ID를 쓰면 이미 손으로 받은 사용자 전원이 같은 음성을 다시
+   받는다)
+3. 실행이 끝나 main에 `음성 팩 기술자 갱신: kokoro-v015 (audio-kokoro-v015)` 커밋이
+   생긴 것을 확인하고, 그 커밋 위에서 아래 순서로 태그를 만든다
+
+렌더(1.5~2.5시간) 대신 손으로 배포한 zip 4개를 그대로 올려도 된다 — 같은 파일이라
+기술자의 sha256·크기가 맞는다:
+
+```bash
+gh release create audio-kokoro-v015 teamradio56_kokoro_v015_*of4.zip \
+  --prerelease --latest=false --title "teamradio56 음성 팩 kokoro-v015"
+# 그다음 voice_lines/audio_pack.txt의 tag= 줄만 audio-kokoro-v015로 바꿔 main에 커밋
+```
+
+그 뒤 릴리스마다:
+
 1. `TeamRadio56Plugin.Version`을 올린다 (`"0.17.0-…"` — **숫자 x.y.z가 게시된
    최신보다 커야** 사용자에게 업데이트가 뜬다. 뒤 꼬리표는 화면 표시용)
 2. 커밋 → **main에 병합·push** (태그 커밋은 main에 있어야 게시된다)
@@ -221,14 +243,20 @@ asset=teamradio56_kokoro_v015_1of4.zip,<sha256>,<바이트 수>
   막는다 (그대로 내면 빠진 멘트가 edge로 나간다).
 - **`audio-*` 릴리스는 지우거나 자산을 바꾸지 말 것** — 매니페스트가 sha256으로 고정하고
   있어 모든 사용자의 음성 팩 업데이트가 깨진다.
-- 커밋이 막히면(보호 규칙 등) 초안을 지우고 끝난다 — 새 기술자는 아티팩트
-  `teamradio56-audio-<pack>`의 `audio_pack.txt`에 있다.
+- zip 업로드 중에 실패하면 초안을 지운다 — publish 잡만 다시 실행하면 된다 (렌더는
+  아티팩트를 그대로 쓴다).
+- 기술자 커밋·push가 막히면(보호 규칙 등) **초안은 남긴다** (사용자에겐 안 보인다). 손으로
+  마무리: 아티팩트 `teamradio56-audio-<pack>`의 `audio_pack.txt`를 그 브랜치의
+  `voice_lines/audio_pack.txt`로 커밋·push → `gh release edit audio-<pack> --draft=false
+  --prerelease --latest=false`. 또는 원인을 풀고 publish 잡만 다시 실행 (남은 초안은 지우고
+  다시 올린다). 이미 **공개된** `audio-<pack>`이 있으면 그 팩 ID로는 다시 내지 않는다.
 
 ### 필요한 저장소 설정
 
 - Actions 사용, 워크플로 권한은 기본(읽기)이어도 된다 — 잡마다 필요한 권한을 적어 두었다
 - audio-pack이 `github-actions[bot]`으로 실행 브랜치(보통 main)에 push한다. main에 보호
-  규칙이 있으면 github-actions 우회를 허용하거나 커밋을 손으로 옮긴다
+  규칙이 있으면 github-actions 우회를 허용하거나, 위 '손으로 마무리'대로 기술자 커밋과 초안
+  공개를 손으로 한다 (기술자만 옮기고 초안을 공개하지 않으면 release preflight가 거부한다)
 - (선택) Environment `release`에 Required reviewers를 걸면 게시 잡마다 승인을 받는다
 
 ### 대체 경로 — `release.bat` (실제 SimHub이 있는 Windows PC)
