@@ -52,6 +52,8 @@ namespace TeamRadio56.Replay
                     checkCacheDir = args[++i];
                 else if (args[i] == "--fixed-check" && i + 1 < args.Length)
                     return FixedCheck(args[++i], outPath ?? FindOut(args));
+                else if (args[i] == "--update-selftest")
+                    return UpdateSelfTest.Run();
                 else if (args[i] == "--gec")
                     gec = true;
                 else if (args[i] == "--coverage")
@@ -108,6 +110,7 @@ namespace TeamRadio56.Replay
                     + " | --replay <f> --coverage [--tier N] [--tracks f] [--min 퍼센트]"
                     + " | --check-cache <오디오캐시폴더> [--tier N] [--tracks f]"
                     + " | --assemble-check <폴더>"
+                    + " | --update-selftest"
                     + " | --gec | --synth <텍스트>");
                 return 2;
             }

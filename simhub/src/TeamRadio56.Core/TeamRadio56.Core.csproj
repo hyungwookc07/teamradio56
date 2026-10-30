@@ -20,6 +20,8 @@
     <Reference Include="System.Management" />
     <!-- Messages.PyFixed: 파이썬과 같은 반올림을 위한 정확한 정수 연산 -->
     <Reference Include="System.Numerics" />
+    <!-- 업데이터: 릴리스 zip 풀기 (ZipArchive만 쓴다 — ZipFile/FileSystem 불필요) -->
+    <Reference Include="System.IO.Compression" />
   </ItemGroup>
 
 </Project>

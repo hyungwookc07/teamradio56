@@ -103,6 +103,14 @@ else
     fail=1
 fi
 
+# 업데이터 Core — 매니페스트·버전 비교·DLL 교체/롤백·zip-slip·sha·음성 팩 표식.
+# 로드된 DLL 이름 바꾸기 자체는 Windows 전용이라 가짜 파일 조작으로 흉내 낸다.
+echo
+echo "▶ 업데이터 셀프테스트 (임시 폴더, 네트워크 없음 — HTTP는 로컬 서버)"
+if ! "$RUNNER" --update-selftest; then
+    fail=1
+fi
+
 # 무전 효과 출력 고정 — 배포 캐시(_rfx3)를 만드는 체인의 리팩터 가드
 echo
 echo "▶ 무전 효과(radiofx) 출력 md5 대조"
