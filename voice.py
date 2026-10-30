@@ -17,7 +17,7 @@ import logging
 import os
 import random
 from collections import deque
-from typing import Optional
+from typing import Callable, Optional
 
 import yaml
 
@@ -311,11 +311,18 @@ def build_situation(state, event: Event) -> str:
 
 
 class VoiceGenerator:
-    def __init__(self, cfg, state):
+    def __init__(self, cfg, state, speakable: Callable[[], bool] = lambda: True):
         self.cfg = cfg
         self.state = state
         self.pool = PhrasePool(lines_file(cfg.get("voice.language", "en")))
         self.llm = CrewChiefLLM(cfg)
+        # 세션 목소리가 임의 문장을 말할 수 있는가 (tts.VoiceChain.free_text) —
+        # 말할 수 없으면 LLM을 부르지 않고 템플릿 멘트를 쓴다 (API 호출도 없음)
+        self._speakable = speakable
+
+    @property
+    def llm_speakable(self) -> bool:
+        return self.llm.available and bool(self._speakable())
 
     NONURGENT = (EventType.PACE_COMMENT, EventType.GAP_COMMENT,
                  EventType.LAP_ANALYSIS, EventType.STINT_BRIEFING,
@@ -415,7 +422,7 @@ class VoiceGenerator:
         긴급 콜 직후 이어붙일 LLM 후속 멘트 (브리지 기법).
         긴급 콜이 이미 사실을 전달했으므로, 후속은 맥락/조언만 더한다.
         """
-        if not self.llm.available or not ev.bridge:
+        if not self.llm_speakable or not ev.bridge:
             return None
         lines = ["[레이스 상황]"]
         if self.state.narrative:
@@ -429,7 +436,7 @@ class VoiceGenerator:
         return self.llm.generate("\n".join(lines))
 
     def _llm_or(self, ev: Event, fallback: Optional[str]) -> tuple[Optional[str], str]:
-        if self.llm.available:
+        if self.llm_speakable:
             text = self.llm.generate(build_situation(self.state, ev))
             if text:
                 return text, "llm"
@@ -611,7 +618,7 @@ def iter_composed_whole_texts():
 
 
 # -- 문장 단위 사전 생성 도메인 (C# PregenSentences와 값·순서 동일) ----------
-# 도메인 밖 값은 런타임에 edge로 폴백한다 (문장 하나라도 없으면 통째로 미스).
+# 도메인 밖 값은 kokoro 세션에서 자막만 나간다 (문장 하나라도 없으면 통째로 미스).
 SEG_GAPS = [i / 10 for i in range(100)] + [float(s) for s in range(10, 121)]
 SEG_RATES = [i / 10 for i in range(1, 100)]
 SEG_PACE = [i / 10 for i in range(7, 100)]

@@ -39,7 +39,8 @@ DEFAULTS: dict[str, Any] = {
         "driver_name": "드라이버",   # 멘트에서 부르는 호칭
     },
     "tts": {
-        # kokoro(기본) = 동봉 사전 생성 캐시 우선 + 캐시 미스 edge 폴백
+        # kokoro(기본) = 음성 팩만 — 팩에 없는 멘트는 말하지 않고 자막만
+        # (팩이 없으면 세션 전체를 edge로). 목소리는 세션 동안 섞이지 않는다.
         "engine": "kokoro",         # kokoro | edge | elevenlabs
         "edge_voice": "en-GB-RyanNeural",   # 영국 레이스 엔지니어 톤
         "edge_rate": "+10%",
@@ -48,6 +49,7 @@ DEFAULTS: dict[str, Any] = {
         "cache_dir": "audio_cache",
         "radio_fx": True,           # 무전기 효과 (밴드패스+새추레이션+스켈치)
         "radio_noise": 0.004,       # 무전 배경 노이즈 레벨 (0 = 노이즈 없음)
+        "allow_fallback": False,    # 켜면 세션 목소리로 못 내는 멘트를 edge로 (목소리가 섞인다)
     },
     "reports": {                    # HUD 대체용 정기 무전 (기본 꺼짐 — 침묵 철학의 예외)
         "laptime_every_lap": False,  # 매 랩 랩타임 콜
@@ -174,6 +176,7 @@ PLUGIN_SETTINGS_MAP = {
     "EdgeVoice": "tts.edge_voice",
     "RadioFx": "tts.radio_fx",
     "RadioNoise": "tts.radio_noise",
+    "AllowVoiceFallback": "tts.allow_fallback",
     "AlongsideMeters": "thresholds.alongside_m",
     "StartSpotterSeconds": "thresholds.start_spotter_sec",
     "SideInvert": "thresholds.side_invert",

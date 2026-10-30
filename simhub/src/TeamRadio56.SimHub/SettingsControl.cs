@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using TeamRadio56.Core.Config;
 using TeamRadio56.Core.Diagnostics;
+using TeamRadio56.Core.Logic;
 using TeamRadio56.Core.Update;
 
 namespace TeamRadio56.SimHub
@@ -31,6 +32,7 @@ namespace TeamRadio56.SimHub
         private TextBlock _status = new TextBlock();
         private TextBlock _recent = new TextBlock();
         private TextBlock _engineState = new TextBlock();
+        private TextBlock _testSpeak = new TextBlock();
         private readonly DispatcherTimer _timer = new DispatcherTimer();
 
         // 업데이트 섹션 — Build마다 새로 만든다 (상태는 플러그인의 UpdateController에)
@@ -208,6 +210,12 @@ namespace TeamRadio56.SimHub
             buttons.Children.Add(MakeButton(L("btn_open_log"), () => OpenFile(FileLog.Path)));
             buttons.Children.Add(MakeButton(L("btn_open_settings"), () => OpenFile(SettingsStore.Path)));
             box.Children.Add(buttons);
+
+            _testSpeak = new TextBlock();
+            _testSpeak.Foreground = Dim;
+            _testSpeak.TextWrapping = TextWrapping.Wrap;
+            _testSpeak.Margin = new Thickness(0, 4, 0, 0);
+            box.Children.Add(_testSpeak);
         }
 
         private void BuildEngine(StackPanel root)
@@ -361,6 +369,11 @@ namespace TeamRadio56.SimHub
             {
                 S.RadioFx = v;
             }), L("hint_radiofx"));
+
+            Row(box, L("row_voice_fallback"), MakeCheck(S.AllowVoiceFallback, v =>
+            {
+                S.AllowVoiceFallback = v;
+            }), L("hint_voice_fallback"));
 
             if (!builtin)
             {
@@ -618,6 +631,8 @@ namespace TeamRadio56.SimHub
                         connected ? Ok : Off);
                 SetText(_status, _plugin.StatusText ?? "", Fg);
 
+                bool voiceWarn;
+                string voiceLines = VoiceLines(out voiceWarn);
                 if (_plugin.UsingPythonEngine)
                 {
                     string error = _plugin.EngineError;
@@ -625,7 +640,8 @@ namespace TeamRadio56.SimHub
                         SetText(_engineState, L("engine_error") + error, Off);
                     else if (_plugin.EngineRunning)
                         SetText(_engineState,
-                                L("engine_running") + _plugin.EngineExePath(), Ok);
+                                L("engine_running") + _plugin.EngineExePath() + voiceLines,
+                                voiceWarn ? Off : Ok);
                     else
                         SetText(_engineState,
                                 L("engine_stopped") + _plugin.EngineExePath(), Dim);
@@ -637,21 +653,51 @@ namespace TeamRadio56.SimHub
                         ? L("cache_missing")
                         : string.Format(L("cache_status"),
                             _plugin.BuiltinCacheCount, _plugin.BuiltinCacheDir);
-                    SetText(_engineState, L("engine_builtin") + "\n" + cache,
-                        _plugin.BuiltinCacheCount > 0 ? Dim : Off);
+                    SetText(_engineState, L("engine_builtin") + "\n" + cache + voiceLines,
+                        _plugin.BuiltinCacheCount > 0 && !voiceWarn ? Dim : Off);
                 }
 
                 RefreshUpdate();
 
-                string[] calls = _plugin.RecentCalls();
+                RecentCall[] calls = _plugin.RecentCallItems();
+                var lines = new string[calls.Length];
+                for (int i = 0; i < calls.Length; i++)
+                    lines[i] = calls[i].Line + (calls[i].Dropped ? " " + L("recent_dropped") : "");
                 SetText(_recent, calls.Length == 0
                     ? L("no_recent")
-                    : L("recent_title") + "\n  " + string.Join("\n  ", calls), Dim);
+                    : L("recent_title") + "\n  " + string.Join("\n  ", lines), Dim);
+                SetText(_testSpeak, _plugin.TestSpeakResult ?? "", Dim);
             }
             catch (Exception)
             {
                 // 설정 화면 때문에 SimHub이 흔들리지 않게
             }
+        }
+
+        /// <summary>
+        /// 세션 목소리 줄들 ("\n"으로 시작, 없으면 ""). 음성 팩에 없는 멘트가 있으면
+        /// warn — 상태 블록을 경고색으로.
+        /// </summary>
+        private string VoiceLines(out bool warn)
+        {
+            warn = false;
+            TeamRadio56Plugin.VoiceInfo info = _plugin.CurrentVoiceInfo();
+            if (info == null)
+                return "";
+            var sb = new System.Text.StringBuilder();
+            sb.Append("\n").Append(string.Format(L("voice_active"), info.Kind));
+            if (!string.IsNullOrEmpty(info.Note))
+                sb.Append(" — ").Append(L("voice_note_" + info.Note.Replace('-', '_')));
+            if (info.Dropped > 0)
+                sb.Append("\n").Append(string.Format(L("voice_dropped"), info.Dropped));
+            if (info.Missing > 0)
+            {
+                warn = true;
+                sb.Append("\n").Append(string.Format(L("voice_pack_missing"), info.Missing));
+            }
+            if (info.LlmOn == true && info.LlmVoice == false)
+                sb.Append("\n").Append(L("llm_unspeakable"));
+            return sb.ToString();
         }
 
         /// <summary>업데이트 작업 스레드의 알림 — 여러 번 와도 UI 갱신은 한 번만 예약.</summary>

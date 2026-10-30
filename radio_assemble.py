@@ -78,16 +78,18 @@ def segment_paths(cache_dir: str, voice: str, tone: str,
     return segment_lookup(cache_dir, voice, tone, text)[0]
 
 
-def segment_lookup(cache_dir: str, voice: str, tone: str, text: str
+def segment_lookup(cache_dir: str, voice: str, tone: str, text: str,
+                   exists=os.path.isfile
                    ) -> tuple[Optional[list[str]], Optional[str]]:
-    """(경로 목록 또는 None, 처음 빠진 문장) — C# SegmentPaths(out firstMissing)."""
+    """(경로 목록 또는 None, 처음 빠진 문장) — C# SegmentPaths(out firstMissing).
+    exists는 파일 확인 함수 (가상 팩 대조용으로 바꿔 끼운다)."""
     sents = split_sentences(text)
     if not sents:
         return None, None
     paths = []
     for s in sents:
         p = os.path.join(cache_dir, segment_file_name(s, tone, voice))
-        if not os.path.isfile(p):
+        if not exists(p):
             return None, s
         paths.append(p)
     return paths, None

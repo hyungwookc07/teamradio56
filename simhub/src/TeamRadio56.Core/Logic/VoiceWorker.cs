@@ -5,11 +5,43 @@ using TeamRadio56.Core.Diagnostics;
 
 namespace TeamRadio56.Core.Logic
 {
-    /// <summary>발화 출력 계층 — 플러그인이 구현 (오디오 재생/TTS 폴백).</summary>
+    /// <summary>발화 출력 계층 — RadioVoice (세션 목소리 하나로 재생, 없으면 무음).</summary>
     public interface IVoiceSink
     {
         /// <summary>완성된 멘트를 소리로 낸다. 블로킹해도 된다 (전용 스레드).</summary>
-        void Speak(string text, string tone, bool urgent);
+        SpeakResult Speak(string text, string tone, bool urgent);
+    }
+
+    /// <summary>최근 무전 한 줄 — Dropped면 목소리를 섞지 않으려고 자막으로만 낸 콜.</summary>
+    public sealed class RecentCall
+    {
+        public RecentCall(string time, string text)
+        {
+            Time = time ?? "";
+            Text = text ?? "";
+        }
+
+        /// <summary>"HH:mm:ss" (상태 파일에서 못 읽으면 빈 문자열).</summary>
+        public string Time { get; private set; }
+        public string Text { get; private set; }
+        public volatile bool Dropped;
+
+        public string Line
+        {
+            get { return Time.Length > 0 ? Time + "  " + Text : Text; }
+        }
+
+        /// <summary>"HH:mm:ss  텍스트" 한 줄을 나눈다 (상태 파일·이전 형식).</summary>
+        public static RecentCall Parse(string line, bool dropped = false)
+        {
+            string raw = line ?? "";
+            int sep = raw.IndexOf("  ", StringComparison.Ordinal);
+            RecentCall call = sep > 0
+                ? new RecentCall(raw.Substring(0, sep), raw.Substring(sep + 2))
+                : new RecentCall("", raw);
+            call.Dropped = dropped;
+            return call;
+        }
     }
 
     /// <summary>
@@ -23,7 +55,7 @@ namespace TeamRadio56.Core.Logic
         private readonly EventBus _bus;
         private readonly VoiceRenderer _renderer;
         private readonly IVoiceSink _sink;
-        private readonly Queue<string> _recent = new Queue<string>();
+        private readonly Queue<RecentCall> _recent = new Queue<RecentCall>();
         private readonly object _recentGate = new object();
         private Thread _thread;
         private volatile bool _stop;
@@ -51,6 +83,15 @@ namespace TeamRadio56.Core.Logic
         }
 
         public string[] RecentCalls()
+        {
+            RecentCall[] items = RecentCallItems();
+            var lines = new string[items.Length];
+            for (int i = 0; i < items.Length; i++)
+                lines[i] = items[i].Line;
+            return lines;
+        }
+
+        public RecentCall[] RecentCallItems()
         {
             lock (_recentGate)
             {
@@ -92,15 +133,18 @@ namespace TeamRadio56.Core.Logic
             if (string.IsNullOrEmpty(text))
                 return;
             FileLog.Info("[무전] " + text);
+            var call = new RecentCall(DateTime.Now.ToString("HH:mm:ss"), text);
             lock (_recentGate)
             {
-                _recent.Enqueue(DateTime.Now.ToString("HH:mm:ss") + "  " + text);
+                _recent.Enqueue(call);
                 while (_recent.Count > RecentKept)
                     _recent.Dequeue();
             }
             if (!Enabled || _sink == null)
                 return;
-            _sink.Speak(text, ev.Tone ?? "casual", ev.Priority == Priority.Critical);
+            SpeakResult r = _sink.Speak(text, ev.Tone ?? "casual", ev.Priority == Priority.Critical);
+            if (r == SpeakResult.Dropped)
+                call.Dropped = true;
         }
 
         /// <summary>

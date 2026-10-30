@@ -129,6 +129,59 @@ namespace TeamRadio56.Core.Engine
             return calls.ToArray();
         }
 
+        /// <summary>최근 무전 + 말하지 않았는지 (call{i}_dropped).</summary>
+        public Logic.RecentCall[] RecentCallItems()
+        {
+            var calls = new List<Logic.RecentCall>();
+            for (int i = 1; i <= 5; i++)
+            {
+                string line = Get("call" + i);
+                if (!string.IsNullOrEmpty(line))
+                    calls.Add(Logic.RecentCall.Parse(line, GetBool("call" + i + "_dropped")));
+            }
+            return calls.ToArray();
+        }
+
+        // -- 한 목소리 정책 (파이썬 main._publish_status) -------------------------
+
+        /// <summary>엔진의 세션 목소리 (kokoro/edge/elevenlabs). 아직 안 썼으면 null.</summary>
+        public string Voice { get { return Get("voice"); } }
+
+        public string VoiceNote
+        {
+            get
+            {
+                string v = Get("voice_note");
+                return string.IsNullOrEmpty(v) ? null : v;
+            }
+        }
+
+        public int VoiceDropped { get { return GetInt("voice_dropped", 0); } }
+
+        /// <summary>팩에 없는 멘트 수 (-1 = 해당 없음/모름).</summary>
+        public int VoiceMissing { get { return GetInt("voice_missing", -1); } }
+
+        public bool? LlmOn { get { return GetOptBool("llm"); } }
+
+        /// <summary>세션 목소리가 LLM 임의 문장을 말할 수 있는가.</summary>
+        public bool? LlmVoice { get { return GetOptBool("llm_voice"); } }
+
+        public int GetInt(string key, int fallback)
+        {
+            int v;
+            return int.TryParse(Get(key), System.Globalization.NumberStyles.Integer,
+                                System.Globalization.CultureInfo.InvariantCulture, out v)
+                ? v : fallback;
+        }
+
+        private bool? GetOptBool(string key)
+        {
+            string v = Get(key);
+            if (v == null)
+                return null;
+            return v.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static void Append(StringBuilder sb, string part)
         {
             if (string.IsNullOrEmpty(part))

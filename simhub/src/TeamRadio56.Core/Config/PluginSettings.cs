@@ -35,8 +35,8 @@ namespace TeamRadio56.Core.Config
         // -- 음성 --------------------------------------------------------
         public bool VoiceEnabled { get; set; } = true;
         /// <summary>
-        /// kokoro = 동봉 사전 생성 캐시 음성 우선(권장, 캐시 미스는 edge 폴백),
-        /// edge = edge-tts 보이스만. 엔진에도 전달된다 (tts.engine).
+        /// kokoro = 음성 팩만 (팩에 없는 멘트는 자막만), edge = edge 목소리만.
+        /// 엔진에도 전달된다 (tts.engine).
         /// </summary>
         public string VoiceEngine { get; set; } = "kokoro";
         /// <summary>
@@ -49,6 +49,11 @@ namespace TeamRadio56.Core.Config
         public int SpeechRatePercent { get; set; } = 10;      // edge-tts "+10%"
         public bool RadioFx { get; set; } = true;             // 무전기 효과
         public double RadioNoise { get; set; } = 0.004;       // 배경 지직임
+        /// <summary>
+        /// 켜면 세션 목소리로 낼 수 없는 멘트를 edge(영어는 그다음 Windows 음성)가
+        /// 대신 말한다 — 목소리가 섞인다. 기본 끔: 그런 멘트는 자막만 (tts.allow_fallback).
+        /// </summary>
+        public bool AllowVoiceFallback { get; set; } = false;
 
         // -- 수다스러움 --------------------------------------------------
         /// <summary>quiet | normal | chatty — 유형별 쿨다운에 배율로 적용.</summary>

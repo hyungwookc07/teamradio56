@@ -57,6 +57,12 @@ namespace TeamRadio56.Replay
                     return FixedCheck(args[++i], outPath ?? FindOut(args));
                 else if (args[i] == "--update-selftest")
                     return UpdateSelfTest.Run();
+                else if (args[i] == "--voice-selftest")
+                    return VoiceSelfTest.Run();
+                else if (args[i] == "--dump-voice-table")
+                    return VoiceSelfTest.DumpTable(FindOut(args));
+                else if (args[i] == "--pack-state-check" && i + 1 < args.Length)
+                    return VoiceSelfTest.PackStateCheck(args[++i]);
                 else if (args[i] == "--release-check" && i + 1 < args.Length)
                     return ReleaseCheck.Run(args[++i],
                         ArgValue(args, "--plugin-source")
@@ -120,7 +126,8 @@ namespace TeamRadio56.Replay
                     + " | --replay <f> --coverage [--tier N] [--tracks f] [--min 퍼센트]"
                     + " | --check-cache <오디오캐시폴더> [--tier N] [--tracks f]"
                     + " | --assemble-check <폴더>"
-                    + " | --update-selftest"
+                    + " | --update-selftest | --voice-selftest"
+                    + " | --dump-voice-table [--out f] | --pack-state-check <폴더>"
                     + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f [--audio-dir d]]"
                     + " | --gec | --synth <텍스트>");
                 return 2;
@@ -308,7 +315,7 @@ namespace TeamRadio56.Replay
             int hit = whole + seg;
             double pct = spoken > 0 ? 100.0 * hit / spoken : 100.0;
             Console.WriteLine($"발화 {spoken}건 중 코코로 {hit}건 ({pct:F0}%) — "
-                + $"통문장 {whole}, 문장 조립 {seg}, 미스 {spoken - hit}");
+                + $"통문장 {whole}, 문장 조립 {seg}, 미스(무음) {spoken - hit}");
             foreach (var kv in byType)
                 Console.WriteLine($"  {kv.Key}: {kv.Value[1]}/{kv.Value[0]}");
             foreach (string t in trackMisses)
@@ -460,7 +467,9 @@ namespace TeamRadio56.Replay
                 if (!seen.Add(item.Key + "\t" + item.Value))
                     continue;   // 파이썬 pregen과 같은 기준: (톤, 텍스트) 유일
                 total++;
-                string path = cache.Resolve(item.Value, item.Key);
+                // kokoro 통문장만 — edge mp3는 "팩에 있다"로 세지 않는다
+                string path = cache.ResolveWholeFx(item.Value, item.Key)
+                              ?? cache.ResolveWhole(item.Value, item.Key);
                 if (path == null)
                 {
                     if (misses.Count < 5)

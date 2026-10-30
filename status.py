@@ -16,6 +16,16 @@ from typing import Optional
 log = logging.getLogger("status")
 
 
+def recent_call_fields(recent) -> dict:
+    """최근 무전 → call1..5 (+ 말하지 않은 콜은 call{i}_dropped = true)."""
+    fields: dict = {}
+    for i, call in enumerate(list(recent)[-5:], start=1):
+        fields[f"call{i}"] = getattr(call, "line", call)
+        if getattr(call, "dropped", False):
+            fields[f"call{i}_dropped"] = True
+    return fields
+
+
 class StatusWriter:
     """상태 파일 기록기. 경로가 없으면 아무것도 하지 않는다 (단독 실행 시)."""
 

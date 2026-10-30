@@ -19,6 +19,12 @@ using CrewChiefEngine = TeamRadio56.Core.Logic.CrewChiefEngine;
 using EngineSettings = TeamRadio56.Core.Logic.EngineSettings;
 using VoiceWorker = TeamRadio56.Core.Logic.VoiceWorker;
 using VoiceCache = TeamRadio56.Core.Logic.VoiceCache;
+using VoiceKind = TeamRadio56.Core.Logic.VoiceKind;
+using VoicePolicy = TeamRadio56.Core.Logic.VoicePolicy;
+using VoiceRoute = TeamRadio56.Core.Logic.VoiceRoute;
+using RadioVoice = TeamRadio56.Core.Logic.RadioVoice;
+using RecentCall = TeamRadio56.Core.Logic.RecentCall;
+using SpeakResult = TeamRadio56.Core.Logic.SpeakResult;
 using OverlayState = TeamRadio56.Core.Logic.OverlayState;
 using HttpDownloader = TeamRadio56.Core.Update.HttpDownloader;
 using UpdateController = TeamRadio56.Core.Update.UpdateController;
@@ -56,18 +62,21 @@ namespace TeamRadio56.SimHub
         private bool _ending;
 
         private const double PollHz = 5.0;
-        private const int RecentCallsKept = 5;
 
         private readonly Rf2SharedMemoryReader _reader = new Rf2SharedMemoryReader();
-        private readonly Queue<string> _recent = new Queue<string>();
-        private readonly object _recentGate = new object();
 
         private readonly EngineHost _engine = new EngineHost();
         private readonly EngineStatus _engineStatus = new EngineStatus();
-        private SpeechOutput _speech;
+        private SpeechOutput _speech;        // 목소리 섞임 허용(en)일 때만 만든다
+        private readonly object _speechGate = new object();
         private CrewChiefEngine _chief;      // 내장(C#) 엔진 모드
         private VoiceWorker _voice;
-        private AudioSink _sink;
+        private RadioVoice _radio;
+        private AudioSink _player;
+        private string _voiceNote;
+        private volatile int _voiceMissing = -1;
+        // [테스트 발화] 결과 — 설정 화면 표시용
+        private volatile string _testResult;
         // 오버레이 프로퍼티용 실시간 상태 — 엔진 모드와 무관하게 공유 메모리에서
         private readonly OverlayState _overlay = new OverlayState();
         private DateTime _nextStatusRead = DateTime.MinValue;
@@ -201,16 +210,18 @@ namespace TeamRadio56.SimHub
         private void ShutdownBuiltin()
         {
             VoiceWorker voice = _voice;
-            AudioSink sink = _sink;
+            RadioVoice radio = _radio;
+            AudioSink player = _player;
             _chief = null;
             _voice = null;
-            _sink = null;
-            if (sink != null)
-                sink.Stop();
+            _radio = null;
+            _player = null;
+            if (radio != null)
+                radio.Stop();
             if (voice != null)
                 voice.Dispose();
-            if (sink != null)
-                sink.Dispose();
+            if (player != null)
+                player.Dispose();
         }
 
         /// <summary>설정 화면에 보여줄 한 줄 상태.</summary>
@@ -254,7 +265,6 @@ namespace TeamRadio56.SimHub
                 FileLog.Warn("구조체 레이아웃 불일치! 텔레메트리 읽기를 중단한다 — " + layoutError);
             }
 
-            _speech = new SpeechOutput();
             StatusText = "대기 중";
             AttachOverlayProperties();
 
@@ -449,26 +459,20 @@ namespace TeamRadio56.SimHub
             _chief = new CrewChiefEngine(cfg,
                 Settings.LapTimeEveryLap, Settings.StatusEveryLaps);
 
-            string cacheDir = ResolveCacheDir(true);
-            // 파이썬 build_engine과 같은 자동 보정 — 멘트 언어와 보이스 불일치,
-            // kokoro는 영어 전용이라 ko 멘트는 edge로
-            bool ko = string.Equals(Settings.VoiceLanguage, "ko",
-                                    StringComparison.OrdinalIgnoreCase);
-            string edgeVoice = Settings.EdgeVoice ?? "en-GB-RyanNeural";
-            if (ko && !edgeVoice.StartsWith("ko"))
-                edgeVoice = "ko-KR-InJoonNeural";
-            else if (!ko && edgeVoice.StartsWith("ko"))
-                edgeVoice = "en-GB-RyanNeural";
-            string enginePref = ko ? "edge" : Settings.VoiceEngine;
-            var cache = new VoiceCache(cacheDir, edgeVoice,
-                Settings.SpeechRatePercent, "bm_george", Settings.RadioFx,
-                enginePref);
-            _sink = new AudioSink(cache, _speech, Settings.Volume);
-            _voice = new VoiceWorker(_chief.Bus, _sink);
+            VoiceKind kind;
+            string note;
+            AudioSink player;
+            _radio = CreateRadio(null, out player, out kind, out note);
+            _player = player;
+            _voiceNote = note;
+            _voiceMissing = -1;
+            _voice = new VoiceWorker(_chief.Bus, _radio);
             _voice.Enabled = Settings.VoiceEnabled;
             _voice.Start();
             ClaimVoice(true);
 
+            VoiceCache cache = _radio.Route.Cache;
+            string cacheDir = cache.CacheDir;
             int cacheFiles = 0, segFiles = 0;
             if (cacheDir != null)
             {
@@ -486,13 +490,87 @@ namespace TeamRadio56.SimHub
             FileLog.Info("내장(C#) 엔진 모드 — 분석기 9종 활성, 멘트 언어 {0}. "
                 + "오디오 캐시: {1}",
                 TeamRadio56.Core.Logic.Messages.Lang,
-                cacheDir == null ? "(없음 — Windows TTS 폴백)"
+                cacheDir == null ? "(없음 — edge 목소리)"
                                  : cacheDir + " (무전 효과본 " + cacheFiles + "개, 문장 세그먼트 "
                                    + segFiles + "개, 조립 자산 "
                                    + (cache.SegmentAssetsPresent ? "있음" : "없음") + ")");
-            if (ko)
-                FileLog.Info("한국어 멘트 — kokoro 캐시는 영어 전용이라 edge 합성 사용 ("
-                             + edgeVoice + ")");
+            if (kind == VoiceKind.Kokoro)
+                CountMissingLater(_radio);
+        }
+
+        /// <summary>팩에 없는 멘트 수 — 파일 확인 1천여 번이라 시작을 막지 않게 백그라운드로.</summary>
+        private void CountMissingLater(RadioVoice radio)
+        {
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    int whole, seg;
+                    VoicePolicy.CountMissing(radio.Route.Cache, 0, null, out whole, out seg);
+                    if (!ReferenceEquals(radio, _radio))
+                        return;          // 그새 엔진이 바뀌었다
+                    _voiceMissing = whole + seg;
+                    if (whole + seg > 0)
+                        FileLog.Warn("음성 팩에 없는 멘트 " + (whole + seg) + "개 (통문장 " + whole
+                                     + ", 문장 " + seg + ") — 해당 콜은 자막만");
+                }
+                catch (Exception ex)
+                {
+                    FileLog.Error("음성 팩 누락 멘트 확인 실패", ex);
+                }
+            });
+        }
+
+        /// <summary>
+        /// 세션 목소리 하나로 말하는 발화기를 만든다 — 엔진 시작 때 한 번 정하고
+        /// 콜마다 바꾸지 않는다. forced가 있으면 그 목소리로 (파이썬 모드 [테스트 발화]).
+        /// </summary>
+        private RadioVoice CreateRadio(VoiceKind? forced, out AudioSink player,
+                                       out VoiceKind kind, out string note)
+        {
+            string cacheDir = ResolveCacheDir(true);
+            // 파이썬 build_engine과 같은 자동 보정 — 멘트 언어와 보이스 불일치,
+            // kokoro는 영어 전용이라 ko 멘트는 edge로
+            bool ko = string.Equals(Settings.VoiceLanguage, "ko",
+                                    StringComparison.OrdinalIgnoreCase);
+            string edgeVoice = Settings.EdgeVoice ?? "en-GB-RyanNeural";
+            if (ko && !edgeVoice.StartsWith("ko"))
+                edgeVoice = "ko-KR-InJoonNeural";
+            else if (!ko && edgeVoice.StartsWith("ko"))
+                edgeVoice = "en-GB-RyanNeural";
+            note = null;
+            if (forced.HasValue)
+            {
+                kind = forced.Value;
+            }
+            else
+            {
+                var probe = new VoiceCache(cacheDir, edgeVoice, Settings.SpeechRatePercent,
+                                           "bm_george", true, "kokoro");
+                string packState = ko ? VoicePolicy.PackNone
+                                      : VoicePolicy.KokoroPackState(cacheDir, probe);
+                kind = VoicePolicy.ResolveKind(Settings.VoiceEngine, ko, packState, false, out note);
+                FileLog.Info("목소리: " + VoicePolicy.KindName(kind)
+                             + (note != null ? " — " + note : "")
+                             + (kind == VoiceKind.Edge ? " (" + edgeVoice + ")" : ""));
+            }
+            bool allow = Settings.AllowVoiceFallback;
+            VoiceRoute route = VoicePolicy.CreateRoute(cacheDir, edgeVoice, Settings.SpeechRatePercent,
+                                                       kind, Settings.RadioFx, allow);
+            player = new AudioSink(Settings.Volume);
+            return new RadioVoice(route, player,
+                                  VoicePolicy.FallbackAllowed(allow, ko) ? Speech() : null);
+        }
+
+        /// <summary>Windows 음성 — 목소리 섞임 허용(en)일 때만 처음 쓸 때 만든다.</summary>
+        private SpeechOutput Speech()
+        {
+            lock (_speechGate)
+            {
+                if (_speech == null)
+                    _speech = new SpeechOutput();
+                return _speech;
+            }
         }
 
         public void End(PluginManager pluginManager)
@@ -511,8 +589,14 @@ namespace TeamRadio56.SimHub
                 ShutdownBuiltin();
                 ClaimVoice(false);
             }
-            if (_speech != null)
-                _speech.Dispose();
+            SpeechOutput speech;
+            lock (_speechGate)
+            {
+                speech = _speech;
+                _speech = null;
+            }
+            if (speech != null)
+                speech.Dispose();
             _reader.Dispose();
         }
 
@@ -541,6 +625,7 @@ namespace TeamRadio56.SimHub
             this.AttachDelegate("InSession", () => _overlay.InSession);
             this.AttachDelegate("LastRadio", () => LastRadioText());
             this.AttachDelegate("LastRadioAgeSec", () => LastRadioAgeSec());
+            this.AttachDelegate("LastRadioDropped", () => LastRadioDropped());
             this.AttachDelegate("SpotterLeft", () => _overlay.SpotterLeft);
             this.AttachDelegate("SpotterRight", () => _overlay.SpotterRight);
             this.AttachDelegate("NearestAheadM", () => _overlay.NearestAheadM);
@@ -553,28 +638,34 @@ namespace TeamRadio56.SimHub
             this.AttachDelegate("HasFuelIssue", () => HasIssue("fuel"));
         }
 
-        private string RawLastCall()
+        private RecentCall LastCall()
         {
-            string[] calls = RecentCalls();
-            return calls != null && calls.Length > 0 ? calls[calls.Length - 1] : "";
+            RecentCall[] calls = RecentCallItems();
+            return calls != null && calls.Length > 0 ? calls[calls.Length - 1] : null;
         }
 
-        /// <summary>최근 무전 텍스트 ("HH:mm:ss  텍스트"에서 시각 제거).</summary>
+        /// <summary>최근 무전 텍스트 (시각 제외).</summary>
         private string LastRadioText()
         {
-            string raw = RawLastCall();
-            int sep = raw.IndexOf("  ", StringComparison.Ordinal);
-            return sep > 0 ? raw.Substring(sep + 2) : raw;
+            RecentCall call = LastCall();
+            return call != null ? call.Text : "";
+        }
+
+        /// <summary>최근 무전을 목소리 없이 자막으로만 냈는가 (목소리를 섞지 않으려고).</summary>
+        private bool LastRadioDropped()
+        {
+            RecentCall call = LastCall();
+            return call != null && call.Dropped;
         }
 
         /// <summary>최근 무전이 나간 뒤 경과 초 (자막 페이드아웃용). 없으면 -1.</summary>
         private double LastRadioAgeSec()
         {
-            string raw = RawLastCall();
-            if (raw.Length < 8)
+            RecentCall call = LastCall();
+            if (call == null || call.Time.Length < 8)
                 return -1;
             TimeSpan t;
-            if (!TimeSpan.TryParse(raw.Substring(0, 8), out t))
+            if (!TimeSpan.TryParse(call.Time.Substring(0, 8), out t))
                 return -1;
             double age = (DateTime.Now.TimeOfDay - t).TotalSeconds;
             if (age < 0)
@@ -601,72 +692,144 @@ namespace TeamRadio56.SimHub
                 SettingsStore.Save(Settings);
         }
 
+        /// <summary>마지막 [테스트 발화] 결과 한 줄 (설정 화면). 아직 없으면 null.</summary>
+        public string TestSpeakResult { get { return _testResult; } }
+
         public void TestSpeak()
         {
-            // 이 줄이 로그에 없으면 버튼/UI 문제, 있는데 "발화 완료"가
-            // 없으면 TTS 문제 — 무음 진단의 분기점
+            // 이 줄이 로그에 없으면 버튼/UI 문제, 있는데 결과 줄이
+            // 없으면 재생 문제 — 무음 진단의 분기점
             FileLog.Info("[테스트 발화] 버튼 눌림");
-            AudioSink sink = _sink;
-            if (!UsingPythonEngine && sink != null)
+            if (Settings == null)
+                return;
+            bool python = UsingPythonEngine;
+            RadioVoice radio = python ? null : _radio;
+            AudioSink transient = null;
+            VoiceKind kind;
+            if (radio == null)
             {
-                // builtin: 실제 발화 경로(캐시 → edge 합성 → Windows TTS)로
-                // 검증되게, 캐시에 반드시 있는 멘트 풀 문구를 쓴다
-                string text = "Radio check. Team radio online.";
+                // 파이썬 모드(또는 엔진이 아직 없음) — 엔진과 같은 목소리로 한 번만 만든다
+                if (python)
+                    TeamRadio56.Core.Logic.Messages.SetLanguage(Settings.VoiceLanguage);
+                VoiceKind? forced = null;
+                if (python && _engineStatus.IsFresh)
+                {
+                    string v = _engineStatus.Voice;
+                    if (string.Equals(v, "kokoro", StringComparison.OrdinalIgnoreCase))
+                        forced = VoiceKind.Kokoro;
+                    else if (string.Equals(v, "edge", StringComparison.OrdinalIgnoreCase))
+                        forced = VoiceKind.Edge;
+                }
+                string note;
                 try
                 {
-                    string[] lines = new TeamRadio56.Core.Logic.PhrasePool()
-                        .Lines("pit_call", "casual");
-                    if (lines.Length > 0)
-                        text = lines[0];
+                    radio = CreateRadio(forced, out transient, out kind, out note);
                 }
-                catch (Exception) { }
-                string chosen = text;
-                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                catch (Exception ex)
                 {
-                    try
-                    {
-                        sink.Speak(chosen, "casual", false);
-                        FileLog.Info("[테스트 발화] 완료: " + chosen);
-                    }
-                    catch (Exception ex)
-                    {
-                        FileLog.Error("[테스트 발화] 실패", ex);
-                    }
-                });
-                return;
+                    FileLog.Error("[테스트 발화] 준비 실패", ex);
+                    return;
+                }
             }
-            Say("Radio check. Team radio online.");
+            // 모든 팩(v015 포함)에 통문장으로 들어 있는 멘트 풀 문구 — 멘트 언어로
+            string text = "Box box, box box.";
+            try
+            {
+                string[] lines = new TeamRadio56.Core.Logic.PhrasePool()
+                    .Lines("pit_call", "casual");
+                if (lines.Length > 0)
+                    text = lines[0];
+            }
+            catch (Exception) { }
+            string chosen = text;
+            RadioVoice r = radio;
+            AudioSink owned = transient;
+            System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+            {
+                try
+                {
+                    // 명시적 사용자 동작이라 음성 출력 끔과 무관하게 말한다
+                    SpeakResult result = r.Speak(chosen, "casual", false);
+                    string kindName = VoicePolicy.KindName(r.Kind);
+                    string detail = result == SpeakResult.Played ? r.LastSource : r.LastReason;
+                    _testResult = result == SpeakResult.Dropped
+                        ? string.Format(Loc.L("test_speak_dropped"), kindName, detail ?? "?")
+                        : result == SpeakResult.Played
+                            ? string.Format(Loc.L("test_speak_played"), kindName)
+                            : null;
+                    FileLog.Info("[테스트 발화] " + result + " (" + (detail ?? "?") + "): " + chosen);
+                }
+                catch (Exception ex)
+                {
+                    FileLog.Error("[테스트 발화] 실패", ex);
+                }
+                finally
+                {
+                    if (owned != null)
+                        owned.Dispose();
+                }
+            });
         }
 
         public string[] RecentCalls()
         {
+            RecentCall[] items = RecentCallItems();
+            var lines = new string[items.Length];
+            for (int i = 0; i < items.Length; i++)
+                lines[i] = items[i].Line;
+            return lines;
+        }
+
+        /// <summary>최근 무전 (말하지 않은 콜 표시 포함) — 두 엔진 모드 공통.</summary>
+        public RecentCall[] RecentCallItems()
+        {
             if (UsingPythonEngine)
-                return _engineStatus.RecentCalls();
-            if (_voice != null)
-                return _voice.RecentCalls();
-            lock (_recentGate)
+                return _engineStatus.RecentCallItems();
+            VoiceWorker voice = _voice;
+            return voice != null ? voice.RecentCallItems() : new RecentCall[0];
+        }
+
+        /// <summary>설정 화면 상태 블록용 — 세션 목소리와 무음 건수.</summary>
+        public sealed class VoiceInfo
+        {
+            public string Kind;
+            public string Note;
+            public int Dropped;
+            public int Missing = -1;
+            public bool? LlmOn;
+            public bool? LlmVoice;
+        }
+
+        /// <summary>지금 엔진의 목소리 정보. 엔진이 없거나 아직 모르면 null.</summary>
+        public VoiceInfo CurrentVoiceInfo()
+        {
+            if (UsingPythonEngine)
             {
-                return _recent.ToArray();
+                if (!_engineStatus.IsFresh || string.IsNullOrEmpty(_engineStatus.Voice))
+                    return null;
+                return new VoiceInfo
+                {
+                    Kind = _engineStatus.Voice,
+                    Note = _engineStatus.VoiceNote,
+                    Dropped = _engineStatus.VoiceDropped,
+                    Missing = _engineStatus.VoiceMissing,
+                    LlmOn = _engineStatus.LlmOn,
+                    LlmVoice = _engineStatus.LlmVoice,
+                };
             }
+            RadioVoice radio = _radio;
+            if (radio == null)
+                return null;
+            return new VoiceInfo
+            {
+                Kind = VoicePolicy.KindName(radio.Kind),
+                Note = _voiceNote,
+                Dropped = radio.Drops.Count,
+                Missing = _voiceMissing,
+            };
         }
 
         // -- 내부 ------------------------------------------------------------
-
-        private void Say(string text)
-        {
-            if (Settings != null && !Settings.VoiceEnabled)
-            {
-                FileLog.Info("(음성 꺼짐) " + text);
-                return;
-            }
-            _speech.Say(text);
-            lock (_recentGate)
-            {
-                _recent.Enqueue(DateTime.Now.ToString("HH:mm:ss") + "  " + text);
-                while (_recent.Count > RecentCallsKept)
-                    _recent.Dequeue();
-            }
-        }
 
         /// <summary>
         /// 엔진 모드: 텔레메트리는 파이썬이 읽는다. 플러그인은 상태 파일만

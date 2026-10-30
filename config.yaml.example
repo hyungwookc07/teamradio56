@@ -27,7 +27,8 @@ tts:
                              #   kokoro: 무료·로컬·Apache 2.0 — 배포용 추천.
                              #     제작자 PC에서 pip install kokoro-onnx 후
                              #     tools/pregen_audio.py --engine kokoro 로
-                             #     사전 생성. 유저 PC는 캐시 재생만 (설치 불필요)
+                             #     사전 생성. 유저 PC는 음성 팩 재생만 (설치 불필요).
+                             #     팩에 없는 멘트는 말하지 않고 자막만 (목소리를 섞지 않음)
                              #   elevenlabs: 최상 품질, 유료 (키는 제작자만)
   edge_voice: en-GB-RyanNeural     # 영국 레이스 엔지니어 톤 (추천)
                                    # en-GB-ThomasNeural, en-US-GuyNeural,
@@ -39,6 +40,7 @@ tts:
   cache_dir: audio_cache
   radio_fx: true             # 무전기 효과 — TTS 기계음을 팀라디오 질감으로 가림
   radio_noise: 0.004         # 무전 배경 노이즈 (0 = 없음, 0.01 = 지직거림 강함)
+  allow_fallback: false   # 켜면 고른 목소리로 못 내는 멘트를 다른 목소리로 (목소리가 섞인다)
 
 # HUD 대체용 정기 무전 — HUD를 끄고 달릴 때 켠다 (기본은 꺼짐, 침묵 철학)
 reports:

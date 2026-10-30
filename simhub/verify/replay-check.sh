@@ -134,6 +134,35 @@ if ! "$RUNNER" --update-selftest; then
     fail=1
 fi
 
+# 한 목소리 정책 — 세션 목소리로 낼 수 없는 콜은 다른 목소리로 새지 않고 무음(자막만)
+echo
+echo "▶ 한 목소리 정책 셀프테스트 (C#)"
+if ! "$RUNNER" --voice-selftest; then
+    fail=1
+fi
+
+echo
+echo "▶ 한 목소리 정책 셀프테스트 (파이썬)"
+if ! python3 tools/voice_policy_selftest.py; then
+    fail=1
+fi
+
+echo
+echo "▶ 세션 목소리 결정표·팩 상태 대조"
+python3 tools/voice_policy_selftest.py --dump-table --out "$OUT/py_voice_table.tsv"
+"$RUNNER" --dump-voice-table --out "$OUT/cs_voice_table.tsv"
+if diff -q "$OUT/py_voice_table.tsv" "$OUT/cs_voice_table.tsv" > /dev/null; then
+    echo "✅ 일치 — 결정표 $(wc -l < "$OUT/py_voice_table.tsv")행 동일"
+else
+    echo "❌ 세션 목소리 결정표 불일치:"
+    diff "$OUT/py_voice_table.tsv" "$OUT/cs_voice_table.tsv" | head -10
+    fail=1
+fi
+if ! python3 tools/voice_policy_selftest.py --pack-fixtures "$OUT/packstate" \
+    || ! "$RUNNER" --pack-state-check "$OUT/packstate"; then
+    fail=1
+fi
+
 # 릴리스 도구 — 음성 팩 기술자와 매니페스트 형식을 Core 파서로 대조하고, pwsh가 있으면
 # release.ps1을 검증 모드(빌드·게시 없음)로 돌려 그 출력으로 사용자 업데이트 흐름을 재현한다.
 # TEAMRADIO56_AUDIO_DIR에 팩 zip 폴더를 주면 음성 팩 설치 흐름까지 돈다 (선택).
@@ -312,7 +341,7 @@ for replay in data/replays/*.jsonl.gz; do
     fi
 
     # 코코로 커버리지 (en) — 발화가 전부 통문장 클립이나 문장 세그먼트로 나가야 한다.
-    # 템플릿·톤이 사전 생성 도메인을 벗어나면 런타임에선 조용히 edge로 빠지므로 여기서 막는다.
+    # 템플릿·톤이 사전 생성 도메인을 벗어나면 런타임에선 말하지 않고 자막만 나가므로 여기서 막는다.
     echo
     echo "▶ 코코로 커버리지: $name (en, 통문장 + 문장 세그먼트, 기준 100%)"
     cov="$OUT/cov_$name.txt"

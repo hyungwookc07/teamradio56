@@ -3,21 +3,22 @@ using System.Collections.Generic;
 using System.Speech.Synthesis;
 using System.Threading;
 using TeamRadio56.Core.Diagnostics;
+using TeamRadio56.Core.Logic;
 
 namespace TeamRadio56.SimHub
 {
     /// <summary>
-    /// 1단계 오디오 경로 확인용 — Windows 내장 TTS.
+    /// Windows 내장 TTS(SAPI) — "목소리 섞임 허용"(AllowVoiceFallback)을 켰고 멘트
+    /// 언어가 ko가 아닐 때만 쓴다. 세션 목소리로 낼 수 없는 콜을 대신 읽는 다른
+    /// 목소리라, 기본 설정에서는 만들지도 않는다.
     ///
     /// 발화는 전용 백그라운드 스레드에서 동기 Speak()로 한다.
     /// SpeakAsync는 SimHub의 WPF/스레딩 환경에서 소리 없이 씹히는 경우가
     /// 있고, 실패해도 예외가 호출자에게 오지 않아 원인을 알 수 없다.
     /// 동기 호출이면 실패가 그 자리에서 예외로 잡히고, 전용 스레드라
     /// 발화가 끝날 때까지 막혀도 UI에는 영향이 없다.
-    ///
-    /// 2단계에서 edge-tts(사전 캐시) + 무전기 효과로 교체된다.
     /// </summary>
-    public sealed class SpeechOutput : IDisposable
+    public sealed class SpeechOutput : IFallbackSpeaker, IDisposable
     {
         private sealed class Item
         {
@@ -31,20 +32,8 @@ namespace TeamRadio56.SimHub
         private bool _stop;
 
         /// <summary>
-        /// 비동기 발화 — 큐에 넣고 즉시 돌아온다. 다른 재생과 겹칠 수 있으므로
-        /// builtin 무전 경로에서는 쓰지 말 것 (SayAndWait 사용).
-        /// </summary>
-        public void Say(string text)
-        {
-            Enqueue(text, null);
-        }
-
-        // 큐에 들어간 항목을 돌려준다 (빈 텍스트면 null)
-
-        /// <summary>
-        /// 동기 발화 — 다 말할 때까지(또는 timeoutMs) 기다린다. builtin
-        /// AudioSink의 폴백용: 비동기면 다음 콜(코코로 wav)이 이 목소리 위에
-        /// 겹쳐 재생된다.
+        /// 동기 발화 — 다 말할 때까지(또는 timeoutMs) 기다린다. RadioVoice의
+        /// 폴백용: 비동기면 다음 콜(코코로 wav)이 이 목소리 위에 겹쳐 재생된다.
         /// </summary>
         public bool SayAndWait(string text, int timeoutMs = 20000)
         {
@@ -88,6 +77,11 @@ namespace TeamRadio56.SimHub
                 }
                 return false;
             }
+        }
+
+        bool IFallbackSpeaker.SayAndWait(string text)
+        {
+            return SayAndWait(text);
         }
 
         private Item Enqueue(string text, ManualResetEventSlim done)

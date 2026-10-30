@@ -25,5 +25,13 @@ echo "▶ 플러그인 빌드 (스텁 참조)"
 dotnet build src/TeamRadio56.SimHub/TeamRadio56.SimHub.csproj -c Release -v q --nologo \
     -p:SimHubPath="$STUBOUT"
 
+# 한 목소리 정책 — Windows 음성(SAPI)은 SpeechOutput(목소리 섞임 허용 전용) 한 곳에서만
+SAPI_USERS=$(grep -rln "System.Speech" src --include=*.cs | grep -v '/SpeechOutput\.cs$' || true)
+if [ -n "$SAPI_USERS" ]; then
+    echo "❌ System.Speech는 SpeechOutput.cs에서만 쓴다 (목소리가 섞인다):"
+    echo "$SAPI_USERS"
+    exit 1
+fi
+
 echo
 echo "✅ 컴파일 검증 통과 — 실제 SimHub API 일치는 사용자 PC 빌드에서 확인"

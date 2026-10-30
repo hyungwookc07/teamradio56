@@ -44,7 +44,7 @@ from analyzers.reporter import StatusReporter
 from training import LapCoach, TrackHistory, Debriefer
 from briefing import compose_session_briefing
 from resttelemetry import RestTelemetry
-from status import StatusWriter
+from status import StatusWriter, recent_call_fields
 from voice import VoiceGenerator
 from tts import AudioPlayer, SpeechLogger, VoiceWorker, build_engine
 
@@ -113,7 +113,19 @@ class CrewChiefApp:
         self.rest = RestTelemetry(cfg)
         if not isinstance(source, ReplayTelemetry):
             self.rest.start()
-        self.voice_gen = VoiceGenerator(cfg, self.state)
+        # 세션 목소리를 먼저 정한다 — LLM 멘트는 그 목소리가 임의 문장을 말할 수
+        # 있을 때만 (음성 꺼짐이면 텍스트 전용이라 제한 없음)
+        engine = build_engine(cfg)
+        self.engine = engine
+        self.voice_gen = VoiceGenerator(
+            cfg, self.state,
+            speakable=lambda: not cfg.get("voice.enabled", True) or engine.free_text)
+        if self.voice_gen.llm.available and not engine.free_text \
+                and cfg.get("voice.enabled", True):
+            log.info("LLM 멘트: %s 목소리로 임의 문장을 말할 수 없어 호출하지 않음 — 템플릿 사용",
+                     engine.kind)
+        if engine.kind == "kokoro":
+            self._warn_thresholds_below_pack(cfg)
         speech_log_path = None
         if cfg.get("app.speech_log", True):
             speech_log_path = os.path.join(cfg.get("app.data_dir", "data"),
@@ -121,7 +133,7 @@ class CrewChiefApp:
         self.worker = VoiceWorker(
             bus=self.bus,
             voice_gen=self.voice_gen,
-            engine=build_engine(cfg),
+            engine=engine,
             player=AudioPlayer(cfg.get("voice.volume", 0.9)),
             state=self.state,
             enabled=cfg.get("voice.enabled", True),
@@ -221,9 +233,37 @@ class CrewChiefApp:
                 "fuel": (snap.player or {}).get("fuel", 0.0),
                 "speed": (snap.player or {}).get("speed_kmh", 0.0),
             })
-        for i, line in enumerate(list(self.worker.recent)[-5:], start=1):
-            fields[f"call{i}"] = line
+        fields.update(recent_call_fields(self.worker.recent))
+        fields.update({
+            "voice": self.engine.kind,
+            "voice_note": self.engine.note or "",
+            "voice_dropped": self.worker.drops.count,
+            "voice_missing": self.engine.missing,
+            "llm": self.voice_gen.llm.available,
+            "llm_voice": self.engine.free_text,
+        })
         self.status.write(fields)
+
+    # 음성 팩 문장의 하한 — 설정 임계값이 이보다 낮으면 그 아래 값은 팩에 없다
+    PACK_MIN_THRESHOLDS = (
+        ("pace_delta_sec", 0.7),
+        ("rival_pace_diff", 0.3),
+        ("tyre_temp_imbalance", 12),
+        ("brake_temp_warn", 695),
+        ("fuel_save_delta", 0.05),
+    )
+
+    @classmethod
+    def _warn_thresholds_below_pack(cls, cfg) -> None:
+        for key, minimum in cls.PACK_MIN_THRESHOLDS:
+            v = cfg.get(f"thresholds.{key}")
+            try:
+                low = v is not None and float(v) < minimum
+            except (TypeError, ValueError):
+                low = False
+            if low:
+                log.warning("설정 thresholds.%s=%s가 음성 팩 하한 %s보다 낮음 — 그 아래 값은 자막만",
+                            key, v, minimum)
 
     def _on_session_end(self, reason: str) -> None:
         """세션 종료: 디브리핑 + 히스토리 저장 + 전 분석기 상태 리셋."""

@@ -10,6 +10,7 @@ namespace TeamRadio56.Core.Logic
     /// <summary>
     /// 파이썬 tts.py의 오디오 캐시 키 규약 포팅 — 사전 생성된 오디오 파일을
     /// 텍스트+톤으로 찾는다. 합성은 하지 않는다 (합성/사전 생성은 파이썬 도구).
+    /// kokoro와 edge를 한 경로로 잇지 않는다 — 목소리 선택·순서는 VoiceRoute.
     ///
     /// 키 규약 (tts.py _cache_path와 반드시 일치):
     ///   edge   : md5("edge|{voice}|{rate}|{pitch}|{text}") .mp3
@@ -67,16 +68,6 @@ namespace TeamRadio56.Core.Logic
         public string CacheDir
         {
             get { return _cacheDir; }
-        }
-
-        /// <summary>
-        /// 캐시된 오디오 파일 경로 (통문장 → 캐시된 edge mp3 순). 무전 효과본(wav)을
-        /// 우선하고, 없으면 원본. 아무것도 없으면 null (호출부는 TTS 폴백).
-        /// 문장 세그먼트 조립은 여기 들어 있지 않다 — AudioSink가 두 단계 사이에 끼운다.
-        /// </summary>
-        public string Resolve(string text, string tone)
-        {
-            return ResolveWhole(text, tone) ?? ResolveEdgeCached(text, tone);
         }
 
         /// <summary>kokoro 통문장 (_rfx3 우선, 원본). edge 전용이면 항상 null.</summary>
