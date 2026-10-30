@@ -45,6 +45,11 @@ LLM 생성 멘트(Anthropic API로 전략/브리핑을 자유 문장 생성)는 
 설치합니다 (릴리스 zip의 DLL 두 개를 SimHub 폴더에 복사). 소스로 빌드해 쓰는
 경우는 지금처럼 `update.bat` 더블클릭 (pull + 빌드 + DLL 복사).
 
+릴리스(플러그인 zip + `teamradio56-release.txt` 매니페스트)는 버전 태그 `vX.Y.Z`를
+push하면 GitHub Actions가 실제 SimHub 어셈블리로 빌드해 게시합니다. 음성 팩은 별도
+`audio-<pack>` 프리릴리스에 있습니다. 메인테이너는 [simhub/README.md](simhub/README.md)의
+릴리스 절 참고.
+
 ```bat
 python -m venv venv
 venv\Scripts\activate

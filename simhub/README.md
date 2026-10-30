@@ -152,67 +152,106 @@ SimHub이 켜져 있으면 DLL이 잠기므로 스크립트가 종료를 기다�
 
 ## 릴리스 만들기 (메인테이너)
 
-**실제 SimHub이 설치된 Windows PC에서만** 한다. 릴리스 DLL은 반드시 실제 SimHub
-어셈블리로 빌드해야 한다 — `verify/build-check.sh`의 스텁으로 빌드한 DLL은 컴파일
-확인용이라 배포하면 안 된다 (스크립트가 `SimHubWPF.exe`가 없는 경로는 거부한다).
-
-필요한 것: .NET SDK 8, 그리고 있으면 편한 GitHub CLI
-(`winget install GitHub.cli` → `gh auth login`). gh가 없어도 된다 — 그땐 브라우저로 올린다.
+릴리스는 **GitHub Actions가 만든다** (`.github/workflows/release.yml`). PC에 SimHub이
+없어도 된다 — Windows 러너가 SimHub을 무인 설치(버전별 캐시)하고 그 실제 어셈블리로
+빌드한다. 스텁(`verify/build-check.sh`)으로 빌드한 DLL은 배포하지 않는다.
 
 1. `TeamRadio56Plugin.Version`을 올린다 (`"0.17.0-…"` — **숫자 x.y.z가 게시된
    최신보다 커야** 사용자에게 업데이트가 뜬다. 뒤 꼬리표는 화면 표시용)
-2. 커밋하고 **push**
-3. 저장소 루트의 **`release.bat` 더블클릭** (또는 터미널에서 옵션과 함께)
+2. 커밋 → **main에 병합·push** (태그 커밋은 main에 있어야 게시된다)
+3. 주석 태그를 만들어 push — 태그 메시지 첫 줄이 설정 화면 '변경 사항'이 된다:
 
-```powershell
-.\release.bat -Notes "한 줄 요약 — 설정 화면 '변경 사항'에 그대로 보인다"
-.\release.bat -SimHubPath "D:\SimHub"                 # SimHub이 다른 경로면
-.\release.bat -AudioDir "D:\packs"                    # 음성 팩 zip도 이번 릴리스에 올릴 때
-.\release.bat -NoPublish                              # 파일만 만들고 손으로 올릴 때
+```bash
+git tag -a v0.17.0 -m "한 줄 요약"
+git push origin v0.17.0
 ```
 
-스크립트가 하는 일:
+워크플로가 하는 일 (Actions 탭 → release 실행에서 단계별로 보인다):
 
-1. `TeamRadio56Plugin.cs`에서 버전을 읽어 태그 `v<x.y.z>`를 정한다. 게시된 최신
-   매니페스트보다 버전이 높지 않으면 멈춘다
-2. 실제 SimHub 경로로 `Release` 빌드 (`--no-incremental`, 새로 쓰인 DLL인지 확인)
-3. 두 DLL만 루트에 담은 `teamradio56-plugin-<x.y.z>.zip`과 sha256
-4. `voice_lines/audio_pack.txt`(음성 팩 기술자)로 매니페스트의 `audio_*` 줄을 만들어
-   `teamradio56-release.txt` 작성
-5. 결과물은 `dist\release\<x.y.z>\` (git에 안 들어간다)
-6. gh가 설치·로그인돼 있으면 `gh release create`로 바로 게시 (현재 커밋이 push됐는지,
-   같은 릴리스와 같은 태그가 GitHub에 이미 없는지(`git ls-remote`), 음성 팩 자산이
-   참조하는 릴리스에 실제로 있는지 확인. git이 PATH에 있어야 한다).
-   없으면 새 릴리스 페이지(`releases/new?tag=v<x.y.z>`)와 결과 폴더를 열고
-   올릴 파일과 순서를 출력한다 — 폴더의 파일을 **이름 그대로 전부** 첨부하고,
-   "Set as the latest release"를 켠 채 Publish
+1. **preflight** — 태그 = `v<Version 숫자부>`, 태그 커밋이 main에 있음, 게시된 최신보다
+   높은 버전, 같은 릴리스 없음. `voice_lines/audio_pack.txt`가 가리키는 `audio-<pack>`
+   릴리스가 공개돼 있고 zip 이름·크기·sha256과 **지금 코드가 찾는 멘트 집합**이 팩과 맞는지
+   (안 맞으면 게시 거부 — 아래 음성 팩)
+2. **gates** — `build-check.sh` + `replay-check.sh` (`TEAMRADIO56_STRICT=1`)
+3. **build** (Windows) — SimHub 무인 설치(`simhub/ci/install-simhub.ps1`, zip sha256 고정,
+   작업·드라이버 전부 끔) → `release.bat -Ci`로 실제 SimHub 빌드(참조 어셈블리 버전 확인) →
+   플러그인 zip + 매니페스트 + 메타 → 아티팩트 `teamradio56-release-<x.y.z>`
+4. **verify-artifact** — 게시될 바로 그 파일로 사용자 업데이트 흐름 재현
+   (플러그인 교체 + `audio-<pack>`에서 음성 팩 설치)
+5. **publish** — 같은 파일을 `gh release create --latest`로 게시하고
+   `releases/latest/download/teamradio56-release.txt`가 새 버전을 가리키는지 확인.
+   쓰기 권한은 이 잡에만 있다 (SimHub 설치 프로그램을 돌리는 Windows 잡에는 없다)
 
-게시 후 확인: `https://github.com/hyungwookc07/teamradio56/releases/latest/download/teamradio56-release.txt`
-가 새 버전을 보여주는지, 그리고 SimHub에서 [업데이트 확인].
+태그가 버전과 다르거나(예: `v0.16.0-rc1`) main에 없으면 실행이 실패한다 — 태그를 지우고
+(`git push origin :refs/tags/<태그>`) 맞게 다시 만든다.
 
-### 음성 팩 — 한 번만 올리고 이후 릴리스는 참조
+**시험 빌드 (dry run)**: Actions → release → Run workflow → `dry_run` 켠 채(기본) 실행.
+게시 없이 빌드·검증까지 하고 결과를 아티팩트로 받을 수 있다. 다른 SimHub 버전은
+`simhub_version`으로 (새 버전은 zip sha256을 경고로 찍는다 — 확인 후
+`install-simhub.ps1` 표에 더한다). `dry_run`을 끄면 main에서 태그 push 없이 게시한다
+(태그는 GitHub이 그 커밋에 만든다, `notes`가 변경 사항).
 
-음성 팩 zip(약 89 MB)은 **릴리스마다 다시 올리지 않는다.** 팩 zip은 한 릴리스에
-한 번 올리고, `voice_lines/audio_pack.txt`의 `tag`가 그 릴리스를 가리킨다. 이후
-릴리스의 매니페스트는 `audio_tag`로 그 릴리스의 자산 주소를 가리키기만 한다.
+**캐시**: SimHub 설치본과 코코로 모델은 Actions 캐시에 둔다. 캐시는 ref별이라 태그 실행이
+저장한 캐시는 다음 태그가 못 쓴다 — main에서 한 번 dry run을 돌려 데워 두면 이후 태그는
+main 캐시를 쓴다.
+
+### 음성 팩 — 전용 `audio-<pack>` 릴리스
+
+음성 팩 zip(약 89 MB)은 플러그인 릴리스에 올리지 않는다. 팩마다 한 번 **`audio-<pack>`
+프리릴리스**(latest가 되지 않는다 — `releases/latest`는 항상 플러그인 릴리스)에 올리고,
+`voice_lines/audio_pack.txt`가 그 태그와 zip 이름·sha256·크기를 가리킨다. 플러그인
+릴리스의 매니페스트는 `audio_tag`로 그 주소를 가리키기만 한다.
 
 ```
 pack=kokoro-v015
-tag=v0.16.0
+tag=audio-kokoro-v015
 asset=teamradio56_kokoro_v015_1of4.zip,<sha256>,<바이트 수>
 ...
 ```
 
-- **첫 업데이터 릴리스(v0.16.0)에서 한 번**: 이미 배포한 kokoro-v015 팩 zip 4개를
-  한 폴더에 두고 `release.bat -AudioDir "<그 폴더>"`. 스크립트가 크기·sha256과
-  zip 구조(루트에 `*.wav`만)를 기술자와 대조한 뒤 플러그인 zip·매니페스트와 함께 올린다.
-  gh 없이 올릴 때도 이 옵션을 주면 팩 zip을 결과 폴더에 같이 모아 둔다.
-- **v0.16.0 릴리스는 지우지 말 것** — 지우면 모든 사용자의 음성 팩 업데이트가 404가 된다.
-- **새 팩을 낼 때**: `pack`을 새 ID로(예: `kokoro-v020`), `tag`를 이번 릴리스 태그로,
-  `asset` 줄을 새 zip들의 이름·sha256·크기로 바꾸고(`Get-FileHash -Algorithm SHA256`)
-  `-AudioDir`로 릴리스. 팩 ID가 바뀐 사용자에게만 [음성 팩 업데이트]가 켜진다.
-  팩 zip에는 오디오 캐시에 들어갈 `*.wav`만 **zip 루트에** 넣는다 (폴더째 묶으면 아무것도
-  설치되지 않으므로 스크립트가 거부한다).
+- **멘트 집합이 바뀔 때만** 새 팩: Actions → **audio-pack** → Run workflow, `pack`에
+  **새 ID**(예: `kokoro-v020`). 렌더 전 게이트 → 코코로 모델(sha256 고정) → 통문장·세그먼트
+  렌더(약 1.5~2.5시간) → `tools/pack_audio.py`로 24 MiB 이하 zip 분할 → 렌더 후 게이트(실캐시
+  100% + 팩 설치 흐름) → `audio-<pack>` 초안 → 새 `audio_pack.txt`를 **실행한 브랜치에 커밋**
+  → 프리릴리스로 공개. `dry_run`은 렌더·zip·아티팩트까지만. 이미 있는 팩 ID는 거부한다.
+- 팩 ID가 바뀐 사용자에게만 [음성 팩 업데이트]가 켜진다. `kokoro-v015`는 손으로 배포한 팩과
+  **같은 멘트 집합**이라 그 ID를 유지한다 (`pack_audio.py`가 집합 해시로 확인 — 다른 집합에
+  배포된 ID를 쓰면 거부).
+- 멘트가 바뀌었는데 팩을 안 바꾸면 release preflight가 "멘트 집합이 팩과 다름"으로 게시를
+  막는다 (그대로 내면 빠진 멘트가 edge로 나간다).
+- **`audio-*` 릴리스는 지우거나 자산을 바꾸지 말 것** — 매니페스트가 sha256으로 고정하고
+  있어 모든 사용자의 음성 팩 업데이트가 깨진다.
+- 커밋이 막히면(보호 규칙 등) 초안을 지우고 끝난다 — 새 기술자는 아티팩트
+  `teamradio56-audio-<pack>`의 `audio_pack.txt`에 있다.
+
+### 필요한 저장소 설정
+
+- Actions 사용, 워크플로 권한은 기본(읽기)이어도 된다 — 잡마다 필요한 권한을 적어 두었다
+- audio-pack이 `github-actions[bot]`으로 실행 브랜치(보통 main)에 push한다. main에 보호
+  규칙이 있으면 github-actions 우회를 허용하거나 커밋을 손으로 옮긴다
+- (선택) Environment `release`에 Required reviewers를 걸면 게시 잡마다 승인을 받는다
+
+### 대체 경로 — `release.bat` (실제 SimHub이 있는 Windows PC)
+
+Actions를 쓸 수 없을 때. 필요한 것: .NET SDK 8, 실제 SimHub, 있으면 편한 GitHub CLI
+(`winget install GitHub.cli` → `gh auth login`). 커밋을 push한 뒤 저장소 루트의
+**`release.bat` 더블클릭** (또는 옵션과 함께):
+
+```powershell
+.\release.bat -Notes "한 줄 요약 — 설정 화면 '변경 사항'에 그대로 보인다"
+.\release.bat -SimHubPath "D:\SimHub"                 # SimHub이 다른 경로면
+.\release.bat -NoPublish                              # 파일만 만들고 손으로 올릴 때
+.\release.bat -AudioDir "D:\packs"                    # 예전 방식 기술자(tag=이번 v태그)일 때만
+```
+
+버전 읽기 → 게시된 최신보다 높은지 → 실제 SimHub으로 `Release` 빌드 → 두 DLL zip·sha256 →
+`audio_pack.txt`로 매니페스트 → `dist\release\<x.y.z>\` → gh가 로그인돼 있으면 게시
+(커밋 push 여부, 같은 릴리스·태그 없음, `audio_tag` 릴리스의 zip 이름·크기 확인), 없으면
+새 릴리스 페이지와 결과 폴더를 열고 올릴 파일을 안내한다 ("Set as the latest release" 켠 채).
+Actions는 같은 스크립트를 `-Ci`(멈춤·게시 없음, `-OutDir`·`-MetaDir`·`-ExpectTag`·`-NotesFile`)로 부른다.
+
+게시 후 확인: `https://github.com/hyungwookc07/teamradio56/releases/latest/download/teamradio56-release.txt`
+가 새 버전을 보여주는지, 그리고 SimHub에서 [업데이트 확인].
 
 ### 매니페스트 형식 (`teamradio56-release.txt`)
 
@@ -227,18 +266,24 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
 | `tag` | `v0.16.0` | 이 릴리스 태그 |
 | `plugin_asset` / `plugin_sha256` | `teamradio56-plugin-0.16.0.zip` / 소문자 hex | 두 DLL zip |
 | `audio_pack` | `kokoro-v015` | 음성 팩 ID (설치된 표식과 다르면 업데이트 제안) |
-| `audio_tag` | `v0.16.0` | 팩 zip이 올라가 있는 릴리스 태그 |
+| `audio_tag` | `audio-kokoro-v015` | 팩 zip이 올라가 있는 릴리스 태그 |
 | `audio_assets` / `audio_sha256` / `audio_size` | 콤마 구분, 같은 순서 | 팩 zip들 (`audio_size`는 선택 — 다운로드 전 크기 표시) |
 | `notes` | 한 줄 | 설정 화면 "변경 사항" (선택) |
 
 ### 잘못된 릴리스를 냈을 때
 
 - **아직 아무도 안 받았으면**: GitHub에서 그 릴리스를 지우거나 pre-release로 바꾸면
-  `latest`가 이전 릴리스로 돌아간다 (단, 음성 팩 자산이 있는 릴리스는 지우지 말 것).
+  `latest`가 이전 릴리스로 돌아간다 (`audio-*` 음성 팩 릴리스는 지우지 말 것).
   같은 버전으로 다시 내려면 **태그까지** 지운다 — 웹에서 릴리스만 지우면 태그가 남고,
   다시 만든 릴리스가 그 태그(예전 커밋)에 붙는다:
   `gh release delete v<x.y.z> --repo hyungwookc07/teamradio56 --cleanup-tag`
   (이미 릴리스만 지웠으면 `git push origin :refs/tags/v<x.y.z>`). 남아 있으면 스크립트가 멈춘다.
+  Actions로 다시 낼 때도 같다 — 태그를 지운 뒤 다시 push한다.
+- **음성 팩 릴리스가 latest가 됐으면**: `gh release edit <v태그> --latest` 로 플러그인
+  릴리스를 되돌리고 `gh release edit audio-<pack> --prerelease --latest=false`.
+- **audio-pack이 기술자는 커밋했는데 공개에 실패했으면**(초안으로 남음):
+  `gh release edit audio-<pack> --draft=false --prerelease --latest=false`. 그 전까지
+  release preflight가 게시를 거부한다.
 - **이미 받은 사용자가 있으면**: 업데이터는 내려가는 버전을 제안하지 않으므로 고친
   버전을 **더 높은 번호로** 다시 낸다. 플러그인이 아예 안 뜨는 사용자는 위
   [되돌리기 (.old)](#되돌리기-old)로 직전 버전을 살린다.
@@ -250,7 +295,18 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
 호환(파싱, 7 전용 문법, BOM)을 본 뒤 `release.ps1`을 검증 모드(`-TestDllDir`, 빌드·게시
 없음)로 돌려 그 결과 폴더를 릴리스 서버처럼 내놓고 사용자 업데이트 흐름(확인 → DLL 교체 →
 `.old` 정리)을 그대로 재현한다. `TEAMRADIO56_AUDIO_DIR`에 팩 zip 폴더를 주면 음성 팩 설치까지
-돈다. 리눅스에 pwsh가 없으면 `dotnet tool install -g PowerShell`.
+돈다(`--audio-dir`로 `audio-<pack>` 릴리스 자리에서 설치). 리눅스에 pwsh가 없으면
+`dotnet tool install -g PowerShell`.
+
+`release.ps1 -Ci` 검증 모드(메타 파일·태그 대조·한글 요약 파일, 태그 불일치가 멈춤 없이
+실패하는지)와 `tools/pack_audio.py selftest`(분할 경계·zip 이름·기술자 갱신·verify 거부)도
+돈다. CI는 환경 변수로 더 엄격하게 돌린다:
+
+| 변수 | 뜻 |
+|---|---|
+| `TEAMRADIO56_STRICT=1` | pwsh·numpy/soundfile이 없어 건너뛰던 검사를 실패로 |
+| `TEAMRADIO56_REQUIRE_CACHE=1` | `audio_cache/*_rfx3.wav`가 없으면 실패 (실캐시 Resolve 필수) |
+| `TEAMRADIO56_AUDIO_DIR=폴더` | 음성 팩 zip 폴더 — `release.ps1 -AudioDir` 대조 + 팩 설치 흐름 |
 
 ## 설치
 

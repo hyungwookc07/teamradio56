@@ -52,6 +52,11 @@ once by hand (copy the two DLLs from the release zip into the SimHub folder).
 Building from source still works with a double-click on `update.bat`
 (pull + build + copy DLLs).
 
+Releases (plugin zip + `teamradio56-release.txt` manifest) are built against
+the real SimHub assemblies and published by GitHub Actions when a version tag
+`vX.Y.Z` is pushed; the voice pack lives in its own `audio-<pack>` pre-release.
+Maintainers: see the release section of [simhub/README.md](simhub/README.md).
+
 ```bat
 python -m venv venv
 venv\Scripts\activate
