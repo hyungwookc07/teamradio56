@@ -7,6 +7,9 @@
 #   .\release.bat -Notes "한 줄 요약"                설정 화면에 보일 변경 사항
 #   .\release.bat -NoPublish                        파일만 만들고 업로드는 손으로
 #
+# 평소 릴리스는 GitHub Actions(release 워크플로)가 v* 태그 push로 만든다 — 이 스크립트를
+# -Ci 모드로 부른다 (빌드·zip·매니페스트·메타만, 게시는 워크플로가). 이 파일은 그 대체 경로.
+#
 # 하는 일: 버전 읽기(TeamRadio56Plugin.cs) → 실제 SimHub으로 Release 빌드 → 두 DLL zip
 #          → sha256 → 매니페스트(teamradio56-release.txt) → dist\release\<버전>\
 #          → gh가 있고 로그인돼 있으면 릴리스 생성, 없으면 새 릴리스 페이지와 폴더를 열고 올릴 파일 안내.
@@ -19,7 +22,16 @@ param(
     [switch]$NoPublish,
     [string]$OutDir = "",
     # 검증 게이트 전용: 빌드 대신 이 폴더의 DLL을 쓴다. 게시·네트워크·창 열기는 전부 꺼진다.
-    [string]$TestDllDir = ""
+    [string]$TestDllDir = "",
+    # GitHub Actions 전용: 멈춤·창 열기·게시 없이 -OutDir(자산)과 -MetaDir(release-info.txt,
+    # release-notes.md)만 만든다. 게시는 워크플로가 이 출력을 검증한 뒤 따로 한다.
+    [switch]$Ci,
+    [string]$ExpectTag = "",
+    # 한 줄 요약을 UTF-8 파일로 — Windows PowerShell 5는 명령줄 한글을 ANSI 코드페이지로 받는다
+    [string]$NotesFile = "",
+    [string]$MetaDir = "",
+    # 최신 릴리스보다 높지 않아도 경고만 (시험 빌드)
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,7 +45,7 @@ $TestMode = $TestDllDir -ne ""
 $SafeNamePattern = '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
 
 function Pause-IfInteractive {
-    if (-not $TestMode) { Read-Host "Enter를 누르면 닫힙니다" | Out-Null }
+    if (-not $TestMode -and -not $Ci) { Read-Host "Enter를 누르면 닫힙니다" | Out-Null }
 }
 
 function Fail($msg) {
@@ -91,6 +103,18 @@ function Test-PeImage([string]$path) {
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+if ($Ci) {
+    # 러너 로그에서 한글이 깨지지 않게
+    try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
+    if ($OutDir -eq "" -or $MetaDir -eq "") { Fail "-Ci에는 -OutDir와 -MetaDir가 필요합니다" }
+    if ($AudioDir -ne "") { Fail "-Ci에는 -AudioDir를 쓰지 않습니다 — 음성 팩은 audio-<pack> 릴리스에 따로 있습니다" }
+}
+if ($NotesFile -ne "") {
+    if ($Notes -ne "") { Fail "-Notes와 -NotesFile은 함께 쓸 수 없습니다" }
+    if (-not (Test-Path -LiteralPath $NotesFile -PathType Leaf)) { Fail "-NotesFile 파일이 없습니다: $NotesFile" }
+    $Notes = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $NotesFile).Path, [System.Text.Encoding]::UTF8)
+}
+
 # 상대 경로는 실행한 위치 기준 — 작업 폴더를 옮기기 전에 절대 경로로 바꾼다
 # (.NET 호출은 PowerShell 현재 위치가 아니라 프로세스 작업 폴더 기준이라 절대 경로가 필요하다)
 if ($AudioDir -ne "") {
@@ -102,6 +126,7 @@ if ($TestMode) {
     $TestDllDir = (Resolve-Path -LiteralPath $TestDllDir).Path
 }
 if ($OutDir -ne "") { $OutDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutDir) }
+if ($MetaDir -ne "") { $MetaDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($MetaDir) }
 Set-Location $PSScriptRoot
 
 # ── 1. 버전 ──────────────────────────────────────────────────────────────
@@ -117,6 +142,9 @@ $Version = $vm.Value
 $Tag = "v$Version"
 $PluginZipName = "teamradio56-plugin-$Version.zip"
 Write-Host "teamradio56 $FullVersion  →  태그 $Tag" -ForegroundColor Green
+if ($ExpectTag -ne "" -and $ExpectTag -ne $Tag) {
+    Fail "태그 $ExpectTag 와 플러그인 버전 태그 $Tag 가 다릅니다 (TeamRadio56Plugin.Version = $FullVersion)"
+}
 
 # ── 2. 음성 팩 기술자 ────────────────────────────────────────────────────
 $packFile = Join-Path $PSScriptRoot "voice_lines\audio_pack.txt"
@@ -156,7 +184,13 @@ foreach ($raw in (Get-Content -LiteralPath $packFile -Encoding UTF8)) {
 if (-not (Test-SafeName $PackId)) { Fail "audio_pack.txt의 pack이 비었거나 잘못됨: '$PackId'" }
 if (-not (Test-SafeName $AudioTag)) { Fail "audio_pack.txt의 tag가 비었거나 잘못됨: '$AudioTag'" }
 if ($AudioAssets.Count -eq 0) { Fail "audio_pack.txt에 asset 줄이 없습니다" }
+if ($AudioTag.StartsWith("audio-") -and $AudioTag -ne "audio-$PackId") {
+    Fail "audio_pack.txt의 tag($AudioTag)가 audio-$PackId 가 아닙니다"
+}
 $AudioHere = $AudioTag -eq $Tag
+if ($Ci -and $AudioHere) {
+    Fail "CI 릴리스는 audio-<pack> 릴리스만 참조합니다 — audio_pack.txt의 tag가 이번 태그입니다. Actions → audio-pack 을 먼저 실행하세요"
+}
 $audioTotal = [int64]0
 foreach ($a in $AudioAssets) { $audioTotal += $a.Size }
 Write-Host ("음성 팩 {0}: zip {1}개, {2:N1} MB — 자산 위치 {3}{4}" -f $PackId, $AudioAssets.Count,
@@ -183,7 +217,8 @@ if (-not $TestMode) {
         if ($lm.Success) {
             $latest = $lm.Groups[1].Value
             if ([version]$Version -le [version]$latest) {
-                Fail "이번 버전 $Version 이(가) 게시된 최신 $latest 보다 높지 않습니다 — 사용자에게 업데이트가 안 뜹니다. TeamRadio56Plugin.Version을 올리세요"
+                $msg = "이번 버전 $Version 이(가) 게시된 최신 $latest 보다 높지 않습니다 — 사용자에게 업데이트가 안 뜹니다. TeamRadio56Plugin.Version을 올리세요"
+                if ($DryRun) { Warn "$msg (-DryRun이라 계속)" } else { Fail $msg }
             }
             Write-Host "게시된 최신 버전: $latest → 이번 $Version"
         }
@@ -199,6 +234,8 @@ if (-not $TestMode) {
 }
 
 # ── 5. 빌드 ──────────────────────────────────────────────────────────────
+$simHubWpfVersion = ""
+$simHubPluginsVersion = ""
 if ($TestMode) {
     Warn "검증 모드 — 빌드하지 않고 $TestDllDir 의 DLL을 씁니다 (게시하지 않음)"
     $dllDir = $TestDllDir
@@ -206,16 +243,28 @@ if ($TestMode) {
     # 끝의 \ 는 PowerShell 5가 따옴표를 붙여 넘길 때 \" 로 바뀌어 인자가 깨진다
     $SimHubPath = $SimHubPath.TrimEnd('\', '/')
     # 스텁(simhub\verify\stubout)에는 SimHubWPF.exe가 없다 — 릴리스 DLL은 실제 SimHub으로만 빌드
-    if (-not (Test-Path -LiteralPath (Join-Path $SimHubPath "SimHub.Plugins.dll")) -or
-        -not (Test-Path -LiteralPath (Join-Path $SimHubPath "SimHubWPF.exe"))) {
-        Fail "실제 SimHub을 찾을 수 없습니다: $SimHubPath  (다른 경로면 -SimHubPath 로 지정)"
+    foreach ($n in @("SimHub.Plugins.dll", "GameReaderCommon.dll", "SimHubWPF.exe")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $SimHubPath $n))) {
+            Fail "실제 SimHub을 찾을 수 없습니다: $SimHubPath 에 $n 없음  (다른 경로면 -SimHubPath 로 지정)"
+        }
     }
+    $SimHubPath = (Resolve-Path -LiteralPath $SimHubPath).Path
+    $verifyDir = Join-Path $PSScriptRoot "simhub\verify"
+    if ($SimHubPath.StartsWith($verifyDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Fail "-SimHubPath가 검증용 스텁 폴더입니다: $SimHubPath — 릴리스는 실제 SimHub으로만 빌드합니다"
+    }
+    $simHubWpfVersion = (Get-Item -LiteralPath (Join-Path $SimHubPath "SimHubWPF.exe")).VersionInfo.ProductVersion
+    $simHubPluginsVersion = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $SimHubPath "SimHub.Plugins.dll")).Version.ToString()
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
         Fail "dotnet이 없습니다 — winget install Microsoft.DotNet.SDK.8 후 창을 새로 여세요"
     }
     if (Get-Command git -ErrorAction SilentlyContinue) {
         $gitState = Invoke-Quiet { git status --porcelain }
         if ($gitState.Code -eq 0 -and $gitState.Output.Count -gt 0) {
+            if ($Ci) {
+                foreach ($l in $gitState.Output) { Write-Host "  $l" }
+                Fail "CI 작업 폴더에 커밋하지 않은 변경이 있습니다 — 체크아웃한 커밋 그대로만 빌드합니다"
+            }
             Warn "커밋하지 않은 변경이 있습니다 — 릴리스는 지금 작업 폴더 그대로 빌드됩니다"
         }
     } else {
@@ -233,6 +282,23 @@ if ($TestMode) {
         if ((Test-Path -LiteralPath $p) -and (Get-Item -LiteralPath $p).LastWriteTime -lt $buildStart) {
             Fail "$n 이(가) 이번 빌드에서 새로 쓰이지 않았습니다 — 빌드 출력을 확인하세요"
         }
+    }
+    # 빌드가 정말 이 SimHub 어셈블리를 참조했는지 (스텁·다른 버전으로 빌드된 DLL 차단).
+    # 바이트로 읽어 로드해 파일을 잠그지 않는다. ReflectionOnly는 .NET Framework(PowerShell 5) 전용.
+    $builtDll = Join-Path $dllDir "TeamRadio56.SimHub.dll"
+    if ((Test-Path -LiteralPath $builtDll) -and $PSVersionTable.PSEdition -ne "Core") {
+        $refs = [System.Reflection.Assembly]::ReflectionOnlyLoad([System.IO.File]::ReadAllBytes($builtDll)).GetReferencedAssemblies()
+        foreach ($rn in @("SimHub.Plugins", "GameReaderCommon")) {
+            $want = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $SimHubPath "$rn.dll")).Version
+            $got = $refs | Where-Object { $_.Name -eq $rn } | Select-Object -First 1
+            if (-not $got) { Fail "TeamRadio56.SimHub.dll이 $rn 을(를) 참조하지 않습니다" }
+            if ($got.Version -ne $want) {
+                Fail "TeamRadio56.SimHub.dll이 $rn $($got.Version) 으로 빌드됨 — $SimHubPath 의 $want 와 다릅니다"
+            }
+            Write-Host "  참조 확인: $rn $want"
+        }
+    } elseif ($PSVersionTable.PSEdition -eq "Core") {
+        Warn "PowerShell 7에서는 참조 어셈블리 버전 확인을 건너뜁니다 (Windows PowerShell 5에서만)"
     }
 }
 foreach ($n in $DllNames) {
@@ -320,17 +386,53 @@ foreach ($f in $files) {
 }
 Write-Host "  plugin_sha256 = $pluginSha"
 
-if ($TestMode) {
-    Write-Host "검증 모드 — 여기서 끝냅니다"
-    exit 0
-}
-
-# ── 9. 게시 ──────────────────────────────────────────────────────────────
 $title = "teamradio56 $FullVersion"
 $bodyText = "teamradio56 $FullVersion"
 if ($noteLine -ne "") { $bodyText += "`n`n$noteLine" }
 $bodyText += "`n`n설치된 플러그인(0.16 이상)은 SimHub 설정 화면 [업데이트 확인]으로 받습니다. " +
     "처음 설치하거나 0.15 이하에서 올라올 때는 $PluginZipName 의 두 DLL을 SimHub 폴더에 복사하세요."
+
+# ── 9. 메타 (Actions가 게시할 때 쓰는 제목·본문·검증용 요약) ─────────────
+if ($Ci -or $MetaDir -ne "") {
+    if ($MetaDir -eq "") { Fail "-MetaDir가 필요합니다" }
+    if ((Test-Path -LiteralPath $MetaDir) -and (Get-ChildItem -LiteralPath $MetaDir -Force | Select-Object -First 1)) {
+        Fail "-MetaDir 폴더가 비어 있지 않습니다: $MetaDir"
+    }
+    New-Item -ItemType Directory -Force -Path $MetaDir | Out-Null
+    $commit = ""
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $head = Invoke-Quiet { git rev-parse HEAD }
+        if ($head.Code -eq 0 -and $head.Output.Count -gt 0) { $commit = $head.Output[0].Trim() }
+    }
+    $info = @(
+        "format=1",
+        "version=$Version",
+        "full_version=$FullVersion",
+        "tag=$Tag",
+        "title=$title",
+        "plugin_asset=$PluginZipName",
+        "plugin_sha256=$pluginSha",
+        "audio_pack=$PackId",
+        "audio_tag=$AudioTag",
+        "commit=$commit",
+        "simhub_wpf_version=$simHubWpfVersion",
+        "simhub_plugins_version=$simHubPluginsVersion"
+    )
+    Write-Utf8NoBom (Join-Path $MetaDir "release-info.txt") (($info -join "`n") + "`n")
+    Write-Utf8NoBom (Join-Path $MetaDir "release-notes.md") ($bodyText + "`n")
+    Write-Host "메타 ($MetaDir): release-info.txt, release-notes.md"
+}
+
+if ($TestMode) {
+    Write-Host "검증 모드 — 여기서 끝냅니다"
+    exit 0
+}
+if ($Ci) {
+    Write-Host "CI 모드 — 빌드·패키징 끝. 게시는 워크플로가 검증 후에 합니다"
+    exit 0
+}
+
+# ── 10. 게시 ─────────────────────────────────────────────────────────────
 
 $useGh = $false
 if (-not $NoPublish -and (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -343,10 +445,12 @@ if ($useGh) {
         Fail "이번 릴리스가 음성 팩 자산 위치($AudioTag)입니다 — -AudioDir <팩 zip 폴더> 를 함께 주세요"
     }
     if (-not $AudioHere) {
-        $view = Invoke-Quiet { gh release view $AudioTag --repo $Repo --json assets -q ".assets[].name" }
+        $view = Invoke-Quiet { gh release view $AudioTag --repo $Repo --json assets -q '.assets[]|[.name,(.size|tostring)]|@tsv' }
         if ($view.Code -ne 0) { Fail "음성 팩 릴리스 $AudioTag 를 찾지 못했습니다 — 지우지 않았는지 확인하세요" }
         foreach ($a in $AudioAssets) {
-            if ($view.Output -notcontains $a.Name) { Fail "$AudioTag 릴리스에 $($a.Name) 이(가) 없습니다" }
+            if ($view.Output -notcontains ("{0}`t{1}" -f $a.Name, $a.Size)) {
+                Fail "$AudioTag 릴리스에 $($a.Name) ($($a.Size) 바이트) 이(가) 없습니다 — audio_pack.txt와 다릅니다"
+            }
         }
     }
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {

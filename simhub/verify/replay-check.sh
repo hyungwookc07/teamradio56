@@ -149,7 +149,7 @@ for bat in update.bat release.bat; do
         fail=1
     fi
 done
-for ps in update.ps1 release.ps1; do
+for ps in update.ps1 release.ps1 simhub/ci/install-simhub.ps1; do
     if [ "$(head -c3 "$ps" | od -An -tx1 | tr -d ' ')" != "efbbbf" ]; then
         echo "❌ $ps 에 UTF-8 BOM이 없습니다"
         fail=1
@@ -161,7 +161,7 @@ if [ -z "$PWSH" ] && [ -x "$HOME/.dotnet/tools/pwsh" ]; then
 fi
 if [ -n "$PWSH" ]; then
     if ! "$PWSH" -NoProfile -NonInteractive -File simhub/verify/ps-check.ps1 \
-        update.ps1 release.ps1 simhub/verify/ps-check.ps1; then
+        update.ps1 release.ps1 simhub/ci/install-simhub.ps1 simhub/verify/ps-check.ps1; then
         fail=1
     fi
     mkdir -p "$OUT/rel/dlls"
@@ -188,6 +188,39 @@ if [ -n "$PWSH" ]; then
         echo "❌ release.ps1 검증 모드 실패:"
         cat "$OUT/rel/log.txt"
         fail=1
+    fi
+
+    # Actions가 쓰는 -Ci 경로 — 메타 파일, 태그 대조, 한글 요약은 UTF-8 파일로.
+    # 실패 경로는 멈춤(Read-Host) 없이 바로 끝나야 한다 (러너가 무한 대기하지 않게).
+    REL_NUM=$(sed -n 's/.*public const string Version = "\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' \
+        simhub/src/TeamRadio56.SimHub/TeamRadio56Plugin.cs)
+    printf '릴리스 도구 검증 (CI)\n둘째 줄\n' > "$OUT/rel/notes.txt"
+    if "$PWSH" -NoProfile -NonInteractive -File release.ps1 -Ci -TestDllDir "$OUT/rel/dlls" \
+        -OutDir "$OUT/rel/ci/assets" -MetaDir "$OUT/rel/ci/meta" -ExpectTag "v$REL_NUM" \
+        -NotesFile "$OUT/rel/notes.txt" > "$OUT/rel/ci.log" 2>&1 \
+        && grep -qx "tag=v$REL_NUM" "$OUT/rel/ci/meta/release-info.txt" \
+        && grep -q '^title=teamradio56 ' "$OUT/rel/ci/meta/release-info.txt" \
+        && grep -qx "plugin_sha256=$(sha256sum "$OUT/rel/ci/assets/teamradio56-plugin-$REL_NUM.zip" | cut -d' ' -f1)" \
+            "$OUT/rel/ci/meta/release-info.txt" \
+        && grep -q '^릴리스 도구 검증 (CI) 둘째 줄$' "$OUT/rel/ci/meta/release-notes.md" \
+        && grep -qx 'notes=릴리스 도구 검증 (CI) 둘째 줄' "$OUT/rel/ci/assets/teamradio56-release.txt"; then
+        echo "✅ release.ps1 -Ci 검증 모드 — 메타·태그·한글 요약 파일"
+    else
+        echo "❌ release.ps1 -Ci 검증 모드 실패:"
+        cat "$OUT/rel/ci.log"
+        fail=1
+    fi
+    if timeout 60 "$PWSH" -NoProfile -NonInteractive -File release.ps1 -Ci -TestDllDir "$OUT/rel/dlls" \
+        -OutDir "$OUT/rel/ci2/assets" -MetaDir "$OUT/rel/ci2/meta" -ExpectTag v0.0.0 \
+        > "$OUT/rel/ci2.log" 2>&1; then
+        echo "❌ release.ps1 -Ci가 다른 태그(v0.0.0)를 거부하지 않음"
+        fail=1
+    elif [ "$?" -ne 1 ]; then
+        echo "❌ release.ps1 -Ci 태그 거부가 종료 코드 1이 아님 (멈춤/시간 초과?)"
+        cat "$OUT/rel/ci2.log"
+        fail=1
+    else
+        echo "✅ release.ps1 -Ci 태그 불일치 거부 (멈춤 없음)"
     fi
 else
     skip_or_fail "release.ps1 실행 검사 건너뜀 — pwsh 없음 (dotnet tool install -g PowerShell)"
