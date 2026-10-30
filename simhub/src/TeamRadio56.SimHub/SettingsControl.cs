@@ -25,10 +25,12 @@ namespace TeamRadio56.SimHub
         private static readonly Brush Off = new SolidColorBrush(Color.FromRgb(0xE5, 0x73, 0x73));
 
         private readonly TeamRadio56Plugin _plugin;
-        private readonly TextBlock _connection = new TextBlock();
-        private readonly TextBlock _status = new TextBlock();
-        private readonly TextBlock _recent = new TextBlock();
-        private readonly TextBlock _engineState = new TextBlock();
+        // 화면을 다시 그릴 때마다 새로 만든다 — WPF는 이미 다른 패널에 붙은
+        // 요소를 새 패널에 붙이면 예외를 던져, 재조립(언어/모드 전환)이 실패한다
+        private TextBlock _connection = new TextBlock();
+        private TextBlock _status = new TextBlock();
+        private TextBlock _recent = new TextBlock();
+        private TextBlock _engineState = new TextBlock();
         private readonly DispatcherTimer _timer = new DispatcherTimer();
 
         // 업데이트 섹션 — Build마다 새로 만든다 (상태는 플러그인의 UpdateController에)
@@ -172,12 +174,17 @@ namespace TeamRadio56.SimHub
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 Content = root,
             };
+            if (IsLoaded)
+                Refresh();   // 새 상태 표시가 다음 타이머 틱까지 비어 있지 않게
         }
 
         private void BuildStatus(StackPanel root)
         {
             StackPanel box = Section(root, L("sec_status"));
 
+            _connection = new TextBlock();
+            _status = new TextBlock();
+            _recent = new TextBlock();
             _connection.Foreground = Dim;
             _connection.FontWeight = FontWeights.Bold;
             box.Children.Add(_connection);
@@ -208,6 +215,7 @@ namespace TeamRadio56.SimHub
             StackPanel box = Section(root, L("sec_engine"));
             box.Children.Add(Hint(L("engine_hint")));
 
+            _engineState = new TextBlock();
             _engineState.Foreground = Dim;
             _engineState.TextWrapping = TextWrapping.Wrap;
             _engineState.Margin = new Thickness(0, 2, 0, 6);
