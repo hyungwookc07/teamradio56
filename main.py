@@ -307,8 +307,11 @@ class CrewChiefApp:
         if snap.player_scoring() is None:
             return
         self._briefed_session = True
+        # 임의 문장을 못 말하는 목소리(kokoro 팩)면 목록에 없는 트랙 이름은 뺀다 (LLM 게이트와 같은 판단)
+        pack_only = bool(self.cfg.get("voice.enabled", True)) and not self.engine.free_text
         text = compose_session_briefing(
-            snap, self.state, self.cfg.get("thresholds.start_spotter_sec", 45))
+            snap, self.state, self.cfg.get("thresholds.start_spotter_sec", 45),
+            pack_only=pack_only)
         if text is None:
             return
         self.bus.push(Event(

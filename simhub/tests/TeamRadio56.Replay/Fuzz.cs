@@ -15,6 +15,9 @@ namespace TeamRadio56.Replay
     /// </summary>
     public static class Fuzz
     {
+        private static readonly string[] Wheels =
+            { "front left", "front right", "rear left", "rear right" };
+
         private static readonly HashSet<string> PyOnly =
             new HashSet<string> { "lap_feedback", "track_trend", "llm_gate" };
 
@@ -139,43 +142,50 @@ namespace TeamRadio56.Replay
                         return new[] { "none" };
                     return Voice(tone, PhrasePool.Format(lines[line], slots));
                 }
+                // 억제 판단은 분석기의 순수 함수가 한다 (하네스는 임계 미만 = NONE만 가른다) —
+                // 한쪽 엔진에서만 규칙이 빠지면 파이썬 ↔ C# TSV 불일치로 드러난다
                 case "gap":
                 {
-                    if (!SpeechDomain.GapCandidateOk(Dbl(a, "gap"), Dbl(a, "rate")))
+                    Dictionary<string, object> d =
+                        PaceAnalyzer.GapCandidate(Str(a, "who"), Dbl(a, "gap"), Dbl(a, "rate"));
+                    if (d == null)
                         return new[] { "suppress", "gap" };
-                    return Voice("casual", Det(EventTypes.GapComment, a));
+                    string text = Det(EventTypes.GapComment, d);
+                    if (!SpeechDomain.GapInPack((double)d["gap"]))
+                        return new[] { "drop", "casual", text, "gap-range" };
+                    return Voice("casual", text);
                 }
                 case "pace":
                 {
                     double d = Dbl(a, "delta");
                     if (Math.Abs(d) < SpeechDomain.PaceMin)
                         return new[] { "none" };
-                    if (!SpeechDomain.PaceOk(d))
+                    string direction = PaceAnalyzer.CommentDirection(d, SpeechDomain.PaceMin);
+                    if (direction == null)
                         return new[] { "suppress", "pace" };
                     var data = new Dictionary<string, object>
                     {
-                        { "delta", d }, { "direction", d > 0 ? "slower" : "faster" },
+                        { "delta", d }, { "direction", direction },
                     };
                     return Voice("casual", Det(EventTypes.PaceComment, data));
                 }
                 case "rival_pace":
                 {
-                    if (Dbl(a, "diff") < SpeechDomain.RivalDiffMin)
+                    double diff = Dbl(a, "diff");
+                    if (diff < SpeechDomain.RivalDiffMin)
                         return new[] { "none" };
-                    if (!SpeechDomain.RivalDiffOk(Dbl(a, "diff")))
+                    bool catchMode = Str(a, "mode") == "catch";
+                    Dictionary<string, object> data =
+                        RivalAnalyzer.PaceData(catchMode ? diff : -diff, Dbl(a, "gap"), catchMode);
+                    if (data == null)
                         return new[] { "suppress", "rival-diff" };
-                    return Voice("casual", Det(EventTypes.RivalPace, a));
+                    return Voice("casual", Det(EventTypes.RivalPace, data));
                 }
                 case "rival_pit":
                 {
-                    int their = Int(a, "their"), my = Int(a, "my");
-                    if (!SpeechDomain.RivalPitOk(their))
+                    Dictionary<string, object> data = RivalAnalyzer.PitData(Int(a, "their"), Int(a, "my"));
+                    if (data == null)
                         return new[] { "suppress", "rival-pit" };
-                    var data = new Dictionary<string, object>
-                    {
-                        { "their_class_place", their }, { "rel", their < my ? "앞" : "뒤" },
-                        { "undercut_risk", their > my },
-                    };
                     return Voice("casual", Det(EventTypes.RivalPit, data));
                 }
                 case "tyre_hot":
@@ -183,40 +193,35 @@ namespace TeamRadio56.Replay
                     double d = Dbl(a, "delta");
                     if (d < SpeechDomain.TyreHotMin)
                         return new[] { "none" };
-                    if (!SpeechDomain.TyreHotOk(d))
+                    int w = Array.IndexOf(Wheels, Str(a, "wheel"));
+                    Dictionary<string, object> data = TyreAnalyzer.HotEvent(
+                        w < 2 ? "front_lr" : "rear_lr", w % 2 == 1 ? d : -d, SpeechDomain.TyreHotMin);
+                    if (data == null)
                         return new[] { "suppress", "tyre-hot" };
-                    var data = new Dictionary<string, object>
-                    {
-                        { "kind", "temp_imbalance" }, { "hot_wheel", Str(a, "wheel") }, { "delta", d },
-                    };
                     return Voice("casual", Det(EventTypes.TyreWarning, data));
                 }
                 case "tyre_wear":
                 {
-                    double n = Dbl(a, "laps_left");
-                    if (!SpeechDomain.TyreWearOk(n))
-                        return new[] { "suppress", "tyre-wear" };
-                    var data = new Dictionary<string, object>
+                    var worst = new Dictionary<string, object>
                     {
-                        { "kind", "wear" }, { "wheel", Str(a, "wheel") }, { "laps_left", n },
+                        { "wheel", Str(a, "wheel") }, { "remaining", 0.3 },
+                        { "laps_left", Dbl(a, "laps_left") },
                     };
+                    Dictionary<string, object> data = TyreAnalyzer.WearEvent(worst, 0.35);
+                    if (data == null)
+                        return new[] { "suppress", "tyre-wear" };
                     return Voice("casual", Det(EventTypes.TyreWarning, data));
                 }
                 case "lap_analysis":
                 {
                     JsonElement pw = a.GetProperty("pit_window_laps");
+                    bool none = pw.ValueKind == JsonValueKind.Null;
                     var data = new Dictionary<string, object>();
-                    if (pw.ValueKind == JsonValueKind.Null)
-                    {
-                        data["pit_window_laps"] = null;
-                    }
-                    else
-                    {
-                        if (!SpeechDomain.PitWindowOk(pw.GetInt32()))
-                            return new[] { "suppress", "pit-window" };
-                        data["pit_window_laps"] = pw.GetInt32();
-                    }
-                    return Voice("casual", Det(EventTypes.LapAnalysis, data));
+                    data["pit_window_laps"] = none ? null : (object)pw.GetInt32();
+                    string text = Det(EventTypes.LapAnalysis, data);
+                    if (text != null)
+                        return Voice("casual", text);
+                    return none ? new[] { "none" } : new[] { "suppress", "pit-window" };
                 }
                 case "milestone":
                     return Voice("casual", Det(EventTypes.RaceMilestone, a));
@@ -307,7 +312,7 @@ namespace TeamRadio56.Replay
                         Fuel = Dbl(a, "fuel"),
                         StartSpotterSec = Dbl(a, "start_spotter_sec"),
                     };
-                    return Voice("casual", SessionBriefer.ComposeText(b));
+                    return Voice("casual", SessionBriefer.ComposeText(b, packOnly: true));
                 }
                 case "lap_time":
                 {
@@ -397,7 +402,17 @@ namespace TeamRadio56.Replay
 
         private static double Dbl(JsonElement a, string name)
         {
-            return a.GetProperty(name).GetDouble();
+            JsonElement v = a.GetProperty(name);
+            if (v.ValueKind != JsonValueKind.String)
+                return v.GetDouble();
+            // 비유한 값은 JSON에 없어 문자열로 싣는다 (파이썬 float("nan"/"inf"/"-inf"))
+            switch (v.GetString())
+            {
+                case "nan": return double.NaN;
+                case "inf": return double.PositiveInfinity;
+                case "-inf": return double.NegativeInfinity;
+                default: return double.Parse(v.GetString(), CultureInfo.InvariantCulture);
+            }
         }
 
         private static double? NDbl(JsonElement a, string name)

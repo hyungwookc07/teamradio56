@@ -24,6 +24,41 @@ PIT_RELEVANT_RANGE = 2       # 클래스 순위 차이가 이 이내인 경쟁�
 CATCHABLE_LAPS = 15.0        # 이 랩 수 안에 잡을 수 있어야 추격 인텔 발화
 
 
+def pit_data(their_cp: int, my_cp: int, driver: str = "") -> Optional[dict]:
+    """경쟁자 피트 콜 데이터 — 클래스 순위 ±2 밖이거나 무의미한 순위면 None.
+    퍼즈가 같은 함수를 부른다."""
+    if abs(their_cp - my_cp) > PIT_RELEVANT_RANGE or not rival_pit_ok(their_cp):
+        return None
+    return {
+        "driver": driver, "their_class_place": their_cp,
+        "rel": "앞" if their_cp < my_cp else "뒤",
+        "undercut_risk": their_cp > my_cp,      # 뒤차가 먼저 피트 → 언더컷 위협
+    }
+
+
+def pace_data(diff: float, gap: float, ahead: bool, driver: str = "") -> Optional[dict]:
+    """페이스 비교 콜 데이터. diff = 상대 평균 - 우리 평균 (+면 우리가 빠름).
+    15랩 안에 잡거나 잡힐 때만, 랩당 5초 넘는 차이(피트/스핀 랩이 섞인 평균)는 None.
+    퍼즈가 같은 함수를 부른다."""
+    if ahead and diff > 0:                     # 앞차가 더 느림 → 추격 가능
+        laps_to_catch = gap / diff
+        if laps_to_catch > CATCHABLE_LAPS:
+            return None
+        data = {"mode": "catch", "driver": driver, "diff": round(diff, 2),
+                "laps": max(int(laps_to_catch) + 1, 1), "gap": round(gap, 1)}
+    elif not ahead and diff < 0:               # 뒤차가 더 빠름 → 방어 준비
+        laps_to_caught = gap / -diff
+        if laps_to_caught > CATCHABLE_LAPS:
+            return None
+        data = {"mode": "defend", "driver": driver, "diff": round(-diff, 2),
+                "laps": max(int(laps_to_caught) + 1, 1), "gap": round(gap, 1)}
+    else:
+        return None
+    if not rival_diff_ok(data["diff"]):
+        return None
+    return data
+
+
 class RivalAnalyzer:
     def __init__(self, cfg):
         self.pace_diff_min = cfg.get("thresholds.rival_pace_diff", 0.3)
@@ -53,20 +88,16 @@ class RivalAnalyzer:
             if not (now_in and not was):
                 continue    # 피트 진입 순간만
             their_cp = state.class_place_of(snap, v)
-            if abs(their_cp - my_cp) > PIT_RELEVANT_RANGE or not rival_pit_ok(their_cp):
+            data = pit_data(their_cp, my_cp, v["driver"])
+            if data is None:
                 continue
-            rel = "앞" if their_cp < my_cp else "뒤"
-            undercut_risk = their_cp > my_cp        # 뒤차가 먼저 피트 → 언더컷 위협
             bus.push(Event(
                 type=EventType.RIVAL_PIT, priority=Priority.NORMAL,
-                data={
-                    "driver": v["driver"], "their_class_place": their_cp,
-                    "rel": rel, "undercut_risk": undercut_risk,
-                },
+                data=data,
                 dedup_key=f"rpit_{v['id']}_{v['num_pitstops']}", ttl=25.0,
             ))
             state.add_narrative(
-                f"(이벤트) 클래스 {rel} P{their_cp} {v['driver']} 피트 인")
+                f"(이벤트) 클래스 {data['rel']} P{their_cp} {v['driver']} 피트 인")
 
     # -- 랩 완료: 페이스 비교 인텔 ----------------------------------------------
 
@@ -101,22 +132,9 @@ class RivalAnalyzer:
             gap = state.laps[-1].gap_ahead if ahead else state.laps[-1].gap_behind
             if gap is None or gap < 0:
                 continue
-            if ahead and diff > 0:                     # 앞차가 더 느림 → 추격 가능
-                laps_to_catch = gap / diff
-                if laps_to_catch > CATCHABLE_LAPS:
-                    continue
-                data = {"mode": "catch", "driver": v["driver"], "diff": round(diff, 2),
-                        "laps": max(int(laps_to_catch) + 1, 1), "gap": round(gap, 1)}
-            elif not ahead and diff < 0:               # 뒤차가 더 빠름 → 방어 준비
-                laps_to_caught = gap / -diff
-                if laps_to_caught > CATCHABLE_LAPS:
-                    continue
-                data = {"mode": "defend", "driver": v["driver"], "diff": round(-diff, 2),
-                        "laps": max(int(laps_to_caught) + 1, 1), "gap": round(gap, 1)}
-            else:
+            data = pace_data(diff, gap, ahead, v["driver"])
+            if data is None:
                 continue
-            if not rival_diff_ok(data["diff"]):
-                continue    # 랩당 5초 넘는 차이는 피트/스핀 랩이 섞인 평균 — 무의미
             bus.push(Event(
                 type=EventType.RIVAL_PACE, priority=Priority.NORMAL,
                 data=data, dedup_key=f"rpace_{v['id']}_{data['mode']}",

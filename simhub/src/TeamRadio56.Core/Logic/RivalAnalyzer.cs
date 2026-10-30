@@ -29,6 +29,63 @@ namespace TeamRadio56.Core.Logic
             _lapsSeen.Clear();
         }
 
+        /// <summary>rivals.pit_data — 경쟁자 피트 콜 데이터. 클래스 순위 ±2 밖이거나
+        /// 무의미한 순위면 null. 퍼즈가 같은 함수를 부른다.</summary>
+        public static Dictionary<string, object> PitData(int theirCp, int myCp, string driver = "")
+        {
+            if (Math.Abs(theirCp - myCp) > PitRelevantRange || !SpeechDomain.RivalPitOk(theirCp))
+                return null;
+            return new Dictionary<string, object>
+            {
+                { "driver", driver },
+                { "their_class_place", theirCp },
+                { "rel", theirCp < myCp ? "앞" : "뒤" },
+                { "undercut_risk", theirCp > myCp },   // 뒤차가 먼저 피트 → 언더컷 위협
+            };
+        }
+
+        /// <summary>rivals.pace_data — 페이스 비교 콜 데이터. diff = 상대 평균 - 우리 평균
+        /// (+면 우리가 빠름). 15랩 안에 잡거나 잡힐 때만, 랩당 5초 넘는 차이(피트/스핀 랩이
+        /// 섞인 평균)는 null. 퍼즈가 같은 함수를 부른다.</summary>
+        public static Dictionary<string, object> PaceData(double diff, double gap, bool ahead,
+                                                          string driver = "")
+        {
+            Dictionary<string, object> data;
+            if (ahead && diff > 0)                        // 앞차가 더 느림 → 추격
+            {
+                double lapsToCatch = gap / diff;
+                if (lapsToCatch > CatchableLaps)
+                    return null;
+                data = new Dictionary<string, object>
+                {
+                    { "mode", "catch" },
+                    { "driver", driver },
+                    { "diff", Math.Round(diff, 2) },
+                    { "laps", Math.Max((int)lapsToCatch + 1, 1) },
+                    { "gap", Math.Round(gap, 1) },
+                };
+            }
+            else if (!ahead && diff < 0)                  // 뒤차가 더 빠름 → 방어
+            {
+                double lapsToCaught = gap / -diff;
+                if (lapsToCaught > CatchableLaps)
+                    return null;
+                data = new Dictionary<string, object>
+                {
+                    { "mode", "defend" },
+                    { "driver", driver },
+                    { "diff", Math.Round(-diff, 2) },
+                    { "laps", Math.Max((int)lapsToCaught + 1, 1) },
+                    { "gap", Math.Round(gap, 1) },
+                };
+            }
+            else
+            {
+                return null;
+            }
+            return SpeechDomain.RivalDiffOk((double)data["diff"]) ? data : null;
+        }
+
         // -- 5Hz: 경쟁자 피트 진입 --------------------------------------------
 
         public void OnTick(RaceState state, Snapshot snap, EventBus bus)
@@ -51,22 +108,18 @@ namespace TeamRadio56.Core.Logic
                 if (!(nowIn && !was))
                     continue;    // 피트 진입 순간만
                 int theirCp = RaceState.ClassPlaceOf(snap, v);
-                if (Math.Abs(theirCp - myCp) > PitRelevantRange || !SpeechDomain.RivalPitOk(theirCp))
+                Dictionary<string, object> data = PitData(theirCp, myCp, v.Driver);
+                if (data == null)
                     continue;
-                string rel = theirCp < myCp ? "앞" : "뒤";
-                bool undercutRisk = theirCp > myCp;   // 뒤차가 먼저 피트 → 언더컷 위협
-                var ev = new RadioEvent
+                string rel = (string)data["rel"];
+                bus.Push(new RadioEvent
                 {
                     Type = EventTypes.RivalPit,
                     Priority = Priority.Normal,
+                    Data = data,
                     DedupKey = "rpit_" + v.Id + "_" + v.NumPitstops,
                     Ttl = 25.0,
-                };
-                ev.Data["driver"] = v.Driver;
-                ev.Data["their_class_place"] = theirCp;
-                ev.Data["rel"] = rel;
-                ev.Data["undercut_risk"] = undercutRisk;
-                bus.Push(ev);
+                });
                 state.AddNarrative("(이벤트) 클래스 " + rel + " P" + theirCp + " "
                                    + v.Driver + " 피트 인");
             }
@@ -117,41 +170,9 @@ namespace TeamRadio56.Core.Logic
                 double gap = ahead ? lastLap.GapAhead : lastLap.GapBehind;
                 if (gap < 0)
                     continue;
-                Dictionary<string, object> data;
-                if (ahead && diff > 0)                        // 앞차가 더 느림 → 추격
-                {
-                    double lapsToCatch = gap / diff;
-                    if (lapsToCatch > CatchableLaps)
-                        continue;
-                    data = new Dictionary<string, object>
-                    {
-                        { "mode", "catch" },
-                        { "driver", v.Driver },
-                        { "diff", Math.Round(diff, 2) },
-                        { "laps", Math.Max((int)lapsToCatch + 1, 1) },
-                        { "gap", Math.Round(gap, 1) },
-                    };
-                }
-                else if (!ahead && diff < 0)                  // 뒤차가 더 빠름 → 방어
-                {
-                    double lapsToCaught = gap / -diff;
-                    if (lapsToCaught > CatchableLaps)
-                        continue;
-                    data = new Dictionary<string, object>
-                    {
-                        { "mode", "defend" },
-                        { "driver", v.Driver },
-                        { "diff", Math.Round(-diff, 2) },
-                        { "laps", Math.Max((int)lapsToCaught + 1, 1) },
-                        { "gap", Math.Round(gap, 1) },
-                    };
-                }
-                else
-                {
+                Dictionary<string, object> data = PaceData(diff, gap, ahead, v.Driver);
+                if (data == null)
                     continue;
-                }
-                if (!SpeechDomain.RivalDiffOk((double)data["diff"]))
-                    continue;    // 랩당 5초 넘는 차이는 피트/스핀 랩이 섞인 평균 — 무의미
                 bus.Push(new RadioEvent
                 {
                     Type = EventTypes.RivalPace,

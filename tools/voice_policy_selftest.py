@@ -48,7 +48,7 @@ TEXT_E = "Echo nothing here."
 
 ENGINES = ("kokoro", "edge")
 LANGS = ("en", "ko")
-PACKS = ("ok", "incomplete", "none")
+PACKS = ("ok", "partial", "incomplete", "none")
 
 
 # -- 가짜 모듈 ----------------------------------------------------------------
@@ -168,6 +168,14 @@ def write_pack_fixtures(root: str) -> list:
     case("assets_only", "ok", {n: b"RIFF" for n in radio_assemble.ASSET_NAMES})
     case("assets_partial", "none", {radio_assemble.ASSET_NAMES[0]: b"RIFF"})
     raw_probe = kokoro_raw(root, probe)
+    # 설치가 끊겨도 확인용 통문장이 남아 있으면 partial (있는 클립은 kokoro로)
+    case("marker_incomplete_probe", "partial", {marker: "pack=incomplete:kokoro-v016\n",
+                                                os.path.basename(rfx(raw_probe)): b"RIFF"})
+    case("marker_empty_raw_probe", "partial", {marker: "",
+                                               os.path.basename(raw_probe): b"RIFF"})
+    case("marker_incomplete_assets", "incomplete",
+         {marker: "pack=incomplete:kokoro-v016\n",
+          **{n: b"RIFF" for n in radio_assemble.ASSET_NAMES}})
     case("rfx_probe_only", "ok", {os.path.basename(rfx(raw_probe)): b"RIFF"})
     case("raw_probe_only", "ok", {os.path.basename(raw_probe): b"RIFF"})
     case("edge_only", "none", {os.path.basename(edge_path(root, probe)): b"ID3"})
@@ -224,10 +232,13 @@ class LogCapture(logging.Handler):
 
 def t_table(r: Runner, _root):
     rows = dump_table().splitlines()
-    r.check(len(rows) == 12, "결정표 12행")
+    r.check(len(rows) == 16, "결정표 16행")
     r.check(tts.resolve_voice_kind("kokoro", "en", "none") == ("edge", "no-kokoro"), "팩 없음 → edge")
     r.check(tts.resolve_voice_kind("kokoro", "en", "incomplete") == ("edge", "pack-incomplete"),
             "설치 끊김 → edge")
+    r.check(tts.resolve_voice_kind("kokoro", "en", "partial") == ("kokoro", "pack-partial"),
+            "설치 끊김이지만 클립 있음 → kokoro (pack-partial)")
+    r.check(tts.resolve_voice_kind("kokoro", "ko-KR", "ok") == ("edge", "ko"), "ko-KR → edge (ko)")
     r.check(tts.resolve_voice_kind("kokoro", "en", "ok") == ("kokoro", None), "팩 있음 → kokoro")
     r.check(tts.resolve_voice_kind("kokoro", "en", "none", runtime=True) == ("kokoro", None),
             "런타임 → kokoro")
@@ -352,7 +363,16 @@ def t_incomplete(r: Runner, root):
     with open(os.path.join(d, tts.PACK_MARKER), "w", encoding="utf-8") as f:
         f.write("pack=incomplete:kokoro-v016\n")
     eng = tts.build_engine(make_cfg(d, engine="kokoro", radio_fx=False))
-    r.check(eng.kind == "edge" and eng.note == "pack-incomplete", "설치 끊김 → 세션 전체 edge")
+    r.check(eng.kind == "kokoro" and eng.note == "pack-partial",
+            "설치 끊김이지만 클립 남음 → kokoro (pack-partial)")
+    r.check(eng.synth(TEXT_A, "casual") is not None and eng.synth(TEXT_E, "casual") is None,
+            "남은 클립은 kokoro로, 없는 멘트는 자막만")
+    bare = os.path.join(root, "incomplete_bare")
+    os.makedirs(bare, exist_ok=True)
+    with open(os.path.join(bare, tts.PACK_MARKER), "w", encoding="utf-8") as f:
+        f.write("pack=incomplete:kokoro-v016\n")
+    eng = tts.build_engine(make_cfg(bare, engine="kokoro", radio_fx=False))
+    r.check(eng.kind == "edge" and eng.note == "pack-incomplete", "설치 끊김·클립 없음 → 세션 전체 edge")
     empty = os.path.join(root, "empty_cache")
     os.makedirs(empty, exist_ok=True)
     eng = tts.build_engine(make_cfg(empty, engine="kokoro", radio_fx=False))

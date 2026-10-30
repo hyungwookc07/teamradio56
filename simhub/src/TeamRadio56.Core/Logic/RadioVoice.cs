@@ -45,6 +45,19 @@ namespace TeamRadio56.Core.Logic
             _player = player;
             _fallback = fallback;
             Drops = new VoiceDropLog();
+            route.HasFallbackSpeaker = fallback != null;
+        }
+
+        /// <summary>
+        /// 플러그인과 셀프테스트가 같은 규칙으로 만든다 — Windows 음성은 섞임 허용(en)일 때만
+        /// 만들어 넘긴다. RadioVoice는 받은 대체 발화기를 그대로 쓰므로 이 판단이 유일한 문이다.
+        /// </summary>
+        public static RadioVoice Create(VoiceRoute route, IRadioPlayer player, bool allowSetting,
+                                        bool ko, Func<IFallbackSpeaker> fallbackSpeaker)
+        {
+            IFallbackSpeaker fb = VoicePolicy.FallbackAllowed(allowSetting, ko) && fallbackSpeaker != null
+                ? fallbackSpeaker() : null;
+            return new RadioVoice(route, player, fb);
         }
 
         public VoiceKind Kind { get { return _route.Kind; } }

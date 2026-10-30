@@ -11,7 +11,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
-from speech_domain import gap_candidate_ok, pace_ok
+from speech_domain import gap_rate_ok, pace_ok
 from state import LapRecord, SessionState
 from telemetry import Snapshot
 
@@ -24,6 +24,25 @@ MIN_LAPS_FOR_BASELINE = 4
 # 실제 엔지니어처럼 "앞차 2초, 랩당 0.2씩 좁혀지는 중" 식의 리포트.
 BATTLE_REPORT_GAP_SEC = 10.0
 BATTLE_MIN_CHANGE_SEC = 0.3    # 지난 리포트 대비 이만큼은 변해야 다시 말함
+
+
+def comment_direction(delta: float, threshold: float) -> Optional[str]:
+    """랩타임 편차 콜 방향 ("slower"/"faster") — 임계 미만이거나 10초 이상
+    (피트/스핀/FCY 랩, 무의미한 값)이면 None. 퍼즈가 같은 함수를 부른다."""
+    if abs(delta) < threshold or not pace_ok(round(delta, 3)):
+        return None
+    return "slower" if delta > 0 else "faster"
+
+
+def gap_candidate(who: str, gap: float, rate: float) -> Optional[dict]:
+    """갭 콜 후보 (말할 값으로 반올림) — 랩당 10초 이상 변화는 피트/FCY 산물이라 None.
+    고르기(최대 변화율/최소 갭) 전에 거른다. 퍼즈가 같은 함수를 부른다."""
+    c = {
+        "who": who,                  # ahead=앞차, behind=뒷차
+        "gap": round(gap, 1),
+        "rate": round(rate, 2),      # +면 벌어짐, -면 좁혀짐
+    }
+    return c if gap_rate_ok(c["rate"]) else None
 
 
 class PaceAnalyzer:
@@ -56,9 +75,9 @@ class PaceAnalyzer:
             "place": lap.place,
         }
 
-        # 10초 이상 편차는 피트/스핀/FCY 랩 — 무의미한 값이라 말하지 않는다
-        if abs(delta) >= self.pace_delta and pace_ok(result["delta"]):
-            result["direction"] = "slower" if delta > 0 else "faster"
+        direction = comment_direction(delta, self.pace_delta)
+        if direction is not None:
+            result["direction"] = direction
             bus.push(Event(
                 type=EventType.PACE_COMMENT,
                 priority=Priority.NORMAL,
@@ -91,13 +110,8 @@ class PaceAnalyzer:
                 continue
             rate = (gaps[-1] - gaps[0]) / (len(gaps) - 1)
             if abs(rate) >= self.gap_rate:
-                c = {
-                    "who": who,                  # ahead=앞차, behind=뒷차
-                    "gap": round(gaps[-1], 1),
-                    "rate": round(rate, 2),      # +면 벌어짐, -면 좁혀짐
-                }
-                # 120초 넘는 갭·랩당 10초 이상 변화는 피트/FCY 산물 — 고르기 전에 뺀다
-                if gap_candidate_ok(c["gap"], c["rate"]):
+                c = gap_candidate(who, gaps[-1], rate)
+                if c is not None:
                     candidates.append(c)
         if not candidates:
             return None
@@ -122,12 +136,8 @@ class PaceAnalyzer:
             last = self._last_report.get(who)
             if last is not None and abs(g - last) < BATTLE_MIN_CHANGE_SEC:
                 continue    # 지난 리포트와 비슷하면 침묵
-            c = {
-                "who": who,
-                "gap": round(g, 1),
-                "rate": round(g - p, 2),   # 최근 1랩 변화 (+벌어짐 / -좁혀짐)
-            }
-            if gap_candidate_ok(c["gap"], c["rate"]):
+            c = gap_candidate(who, g, g - p)   # 최근 1랩 변화 (+벌어짐 / -좁혀짐)
+            if c is not None:
                 candidates.append(c)
         if not candidates:
             # 배틀에서 벗어난 쪽은 기억을 지워 다음 배틀 진입 때 다시 리포트

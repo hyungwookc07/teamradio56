@@ -77,6 +77,10 @@ namespace TeamRadio56.SimHub
         private AudioSink _player;
         private string _voiceNote;
         private volatile int _voiceMissing = -1;
+        private volatile bool _packOnlyVoice;
+        private bool _outdatedLogged;
+        /// <summary>파이썬 엔진이 0.17 이전 — 설정 화면이 경고색으로 보여준다.</summary>
+        public const string VoiceNoteEngineOutdated = "engine-outdated";
         // [테스트 발화] 결과 — 설정 화면 표시용
         private volatile string _testResult;
         // 오버레이 프로퍼티용 실시간 상태 — 엔진 모드와 무관하게 공유 메모리에서
@@ -468,6 +472,8 @@ namespace TeamRadio56.SimHub
             _player = player;
             _voiceNote = note;
             _voiceMissing = -1;
+            // 음성 팩만 말하는 세션 — 브리핑이 목록 밖 트랙 이름을 뺀다 (파이썬 not engine.free_text)
+            _packOnlyVoice = kind == VoiceKind.Kokoro && !Settings.AllowVoiceFallback;
             _voice = new VoiceWorker(_chief.Bus, _radio);
             _voice.Enabled = Settings.VoiceEnabled;
             _voice.Start();
@@ -534,8 +540,7 @@ namespace TeamRadio56.SimHub
             string cacheDir = ResolveCacheDir(true);
             // 파이썬 build_engine과 같은 자동 보정 — 멘트 언어와 보이스 불일치,
             // kokoro는 영어 전용이라 ko 멘트는 edge로
-            bool ko = string.Equals(Settings.VoiceLanguage, "ko",
-                                    StringComparison.OrdinalIgnoreCase);
+            bool ko = TeamRadio56.Core.Logic.Messages.IsKoLanguage(Settings.VoiceLanguage);
             string edgeVoice = Settings.EdgeVoice ?? "en-GB-RyanNeural";
             if (ko && !edgeVoice.StartsWith("ko"))
                 edgeVoice = "ko-KR-InJoonNeural";
@@ -561,8 +566,7 @@ namespace TeamRadio56.SimHub
             VoiceRoute route = VoicePolicy.CreateRoute(cacheDir, edgeVoice, Settings.SpeechRatePercent,
                                                        kind, Settings.RadioFx, allow);
             player = new AudioSink(Settings.Volume);
-            return new RadioVoice(route, player,
-                                  VoicePolicy.FallbackAllowed(allow, ko) ? Speech() : null);
+            return RadioVoice.Create(route, player, allow, ko, Speech);
         }
 
         /// <summary>Windows 음성 — 목소리 섞임 허용(en)일 때만 처음 쓸 때 만든다.</summary>
@@ -755,8 +759,12 @@ namespace TeamRadio56.SimHub
                     SpeakResult result = r.Speak(chosen, "casual", false);
                     string kindName = VoicePolicy.KindName(r.Kind);
                     string detail = result == SpeakResult.Played ? r.LastSource : r.LastReason;
+                    // 섞임 허용일 때는 Played여도 실제로 말한 소스가 세션 목소리가 아닐 수 있다
+                    bool mixed = result == SpeakResult.Played && !VoicePolicy.SourceIsKind(detail, r.Kind);
                     _testResult = result == SpeakResult.Dropped
                         ? string.Format(Loc.L("test_speak_dropped"), kindName, detail ?? "?")
+                        : mixed
+                            ? string.Format(Loc.L("test_speak_mixed"), kindName, detail ?? "?")
                         : result == SpeakResult.Played
                             ? string.Format(Loc.L("test_speak_played"), kindName)
                             : null;
@@ -808,8 +816,20 @@ namespace TeamRadio56.SimHub
         {
             if (UsingPythonEngine)
             {
-                if (!_engineStatus.IsFresh || string.IsNullOrEmpty(_engineStatus.Voice))
+                if (!_engineStatus.IsFresh)
                     return null;
+                if (string.IsNullOrEmpty(_engineStatus.Voice))
+                {
+                    // 0.17 엔진은 모든 상태 기록에 voice를 싣는다 — 없으면 옛 엔진 (DLL만 업데이트됨)
+                    if (!_outdatedLogged)
+                    {
+                        _outdatedLogged = true;
+                        FileLog.Warn("파이썬 엔진이 한 목소리 정책 이전 버전 — 상태에 voice가 없음. "
+                                     + "팩에 없는 멘트를 다른 목소리로 말하고 목소리 섞임 허용 설정도 무시한다. "
+                                     + "엔진 업데이트 필요 (update.bat 또는 새 teamradio56.exe)");
+                    }
+                    return new VoiceInfo { Kind = "?", Note = VoiceNoteEngineOutdated };
+                }
                 return new VoiceInfo
                 {
                     Kind = _engineStatus.Voice,
@@ -891,7 +911,11 @@ namespace TeamRadio56.SimHub
             if (chief == null)
                 return;
             if (voice != null && Settings != null)
+            {
                 voice.Enabled = Settings.VoiceEnabled;
+                // 음성을 끈 자막 전용이면 트랙 이름을 뺄 이유가 없다 (파이썬 voice.enabled와 같다)
+                chief.BriefingPackOnly = _packOnlyVoice && Settings.VoiceEnabled;
+            }
             chief.OnPoll(snap, _reader.Connected);
             StatusText = chief.StatusText;
         }

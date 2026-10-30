@@ -58,11 +58,15 @@ shared-memory plugin). For the SimHub plugin, see
 [GitHub Releases](https://github.com/hyungwookc07/teamradio56/releases) —
 open the teamradio56 settings in SimHub → **Updates** → *Check for updates*,
 then *Update plugin* (restart SimHub afterwards) or *Update voice pack*.
-Nothing installs without a click. Coming from 0.15 or older, install 0.16
-once by hand (copy the two DLLs from the release zip into the SimHub folder).
-0.17 uses a new voice pack (`kokoro-v016`, about 150 MB): after updating the
-plugin, run *Update voice pack* too — until then, lines that exist only in the
-new pack are shown as subtitles instead of being spoken.
+Nothing installs without a click. If your plugin has no **Updates** section
+yet (0.15 or older, or a source build), install the latest release (0.17 or
+newer) once by hand (copy the two DLLs from the release zip into the SimHub
+folder). 0.17 uses a new voice pack (`kokoro-v016`, about 175 MB): when a
+hand-installed 0.17 finds an older audio cache, it offers *Update voice pack* —
+run it; until then, lines that exist only in the new pack are shown as
+subtitles instead of being spoken. In Python engine mode the in-app update
+replaces only the plugin DLLs, so update the engine too (`update.bat` or the new
+`teamradio56.exe`); the settings screen warns while the engine is older than 0.17.
 Building from source still works with a double-click on `update.bat`
 (pull + build + copy DLLs).
 

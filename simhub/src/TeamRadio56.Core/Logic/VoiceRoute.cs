@@ -67,6 +67,10 @@ namespace TeamRadio56.Core.Logic
         public bool AllowFallback { get; private set; }
         public VoiceCache Cache { get { return _cache; } }
 
+        /// <summary>합성 실패 뒤 Windows 음성이 실제로 대신 말하는가 — RadioVoice가 정한다
+        /// (섞임 허용이어도 한국어는 Windows 음성이 없다). 실패 로그 문구에만 쓴다.</summary>
+        internal bool HasFallbackSpeaker { get; set; }
+
         /// <summary>재생 계획 (파일 확인만, 로그 없음).</summary>
         public VoicePlan Plan(string text, string tone)
         {
@@ -130,7 +134,7 @@ namespace TeamRadio56.Core.Logic
             if (Interlocked.Increment(ref _synthFailLogged) <= SynthFailLogLimit)
             {
                 FileLog.Warn("edge 합성 실패(" + (EdgeTtsClient.LastError ?? "?") + ")"
-                             + (AllowFallback
+                             + (HasFallbackSpeaker
                                  ? " — 2분간 Windows TTS로: "
                                  : " — 2분간 캐시에 있는 멘트만 (나머지는 자막만): ")
                              + text);

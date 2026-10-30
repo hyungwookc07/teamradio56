@@ -62,7 +62,7 @@ jobs:
         with:
           path: models
           key: ${{ steps.models.outputs.cache-primary-key }}
-      - name: 렌더 (통문장 → 문장 세그먼트, 약 2.5~4.5시간)
+      - name: 렌더 (통문장 → 문장 세그먼트, 약 3~5시간)
         timeout-minutes: 320
         run: |
           [ ! -e config.yaml ] || { echo "::error::config.yaml이 있으면 렌더 설정이 바뀝니다"; exit 1; }

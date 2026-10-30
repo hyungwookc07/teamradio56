@@ -158,6 +158,7 @@ namespace TeamRadio56.Replay
             var strategy = new StrategyEngine();
             var reporter = new StatusReporter();
             var briefer = new SessionBriefer();   // StartSpotterSec 기본 45 = 파이썬 DEFAULTS
+            briefer.PackOnly = coverage;          // 커버리지는 kokoro 세션 기준 (목록 밖 트랙은 무전 체크)
 
             var lines = new List<string>();
             var accepted = new List<RadioEvent>();

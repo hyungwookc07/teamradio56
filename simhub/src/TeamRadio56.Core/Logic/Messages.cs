@@ -29,8 +29,13 @@ namespace TeamRadio56.Core.Logic
 
         public static void SetLanguage(string lang)
         {
-            Lang = lang != null
-                   && lang.ToLowerInvariant().StartsWith("ko") ? "ko" : "en";
+            Lang = IsKoLanguage(lang) ? "ko" : "en";
+        }
+
+        /// <summary>멘트 언어 설정값이 한국어인가 ("ko", "ko-KR" …) — 파이썬 lang.startswith("ko").</summary>
+        public static bool IsKoLanguage(string lang)
+        {
+            return lang != null && lang.ToLowerInvariant().StartsWith("ko", StringComparison.Ordinal);
         }
 
         public static string Get(string key)

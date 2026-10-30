@@ -26,6 +26,37 @@ namespace TeamRadio56.Core.Logic
             _wearWarn = wearWarn;
         }
 
+        /// <summary>tyres.hot_event — 온도 불균형 콜 데이터 (axis front_lr/rear_lr, delta +면
+        /// 오른쪽이 뜨거움). 임계 미만이거나 80도 넘는 차이(센서 튐)면 null. 퍼즈가 같은 함수를 부른다.</summary>
+        public static Dictionary<string, object> HotEvent(string axis, double delta, double threshold)
+        {
+            if (Math.Abs(delta) < threshold || !SpeechDomain.TyreHotOk(Math.Round(Math.Abs(delta), 1)))
+                return null;
+            string hot = axis == "front_lr"
+                ? (delta > 0 ? WheelNames[1] : WheelNames[0])
+                : (delta > 0 ? WheelNames[3] : WheelNames[2]);
+            return new Dictionary<string, object>
+            {
+                { "kind", "temp_imbalance" },
+                { "hot_wheel", hot },
+                { "delta", Math.Round(Math.Abs(delta), 1) },
+            };
+        }
+
+        /// <summary>tyres.wear_event — 마모 수명 콜 데이터. 잔량이 경고선 위거나 30랩 넘게
+        /// 남았으면(무의미) null. 퍼즈가 같은 함수를 부른다.</summary>
+        public static Dictionary<string, object> WearEvent(Dictionary<string, object> worst,
+                                                           double wearWarn)
+        {
+            if (!((double)worst["remaining"] <= wearWarn)
+                || !SpeechDomain.TyreWearOk((double)worst["laps_left"]))
+                return null;
+            var ev = new Dictionary<string, object> { { "kind", "wear" } };
+            foreach (KeyValuePair<string, object> kv in worst)
+                ev[kv.Key] = kv.Value;
+            return ev;
+        }
+
         /// <summary>가공된 타이어 상태 요약. 데이터 부족이면 null.</summary>
         public Dictionary<string, object> Status(RaceState state)
         {
@@ -126,20 +157,15 @@ namespace TeamRadio56.Core.Logic
                 // 파이썬 max(): 앞이 크거나 같으면 앞 유지
                 string axis = Math.Abs(rearLr) > Math.Abs(frontLr) ? "rear_lr" : "front_lr";
                 double delta = axis == "front_lr" ? frontLr : rearLr;
-                if (Math.Abs(delta) >= _tempImbalance
-                    && SpeechDomain.TyreHotOk(Math.Round(Math.Abs(delta), 1)))
+                Dictionary<string, object> hot = HotEvent(axis, delta, _tempImbalance);
+                if (hot != null)
                 {
-                    string hot = axis == "front_lr"
-                        ? (delta > 0 ? WheelNames[1] : WheelNames[0])
-                        : (delta > 0 ? WheelNames[3] : WheelNames[2]);
                     var ev = new RadioEvent
                     {
                         Type = EventTypes.TyreWarning,
                         Priority = Priority.Normal,
+                        Data = hot,
                     };
-                    ev.Data["kind"] = "temp_imbalance";
-                    ev.Data["hot_wheel"] = hot;
-                    ev.Data["delta"] = Math.Round(Math.Abs(delta), 1);
                     foreach (KeyValuePair<string, object> kv in st)
                         ev.Data[kv.Key] = kv.Value;
                     bus.Push(ev);
@@ -150,18 +176,16 @@ namespace TeamRadio56.Core.Logic
             object worstObj;
             if (st.TryGetValue("worst", out worstObj))
             {
-                var worst = (Dictionary<string, object>)worstObj;
-                if ((double)worst["remaining"] <= _wearWarn
-                    && SpeechDomain.TyreWearOk((double)worst["laps_left"]))
+                Dictionary<string, object> wear =
+                    WearEvent((Dictionary<string, object>)worstObj, _wearWarn);
+                if (wear != null)
                 {
                     var ev = new RadioEvent
                     {
                         Type = EventTypes.TyreWarning,
                         Priority = Priority.High,
+                        Data = wear,
                     };
-                    ev.Data["kind"] = "wear";
-                    foreach (KeyValuePair<string, object> kv in worst)
-                        ev.Data[kv.Key] = kv.Value;
                     foreach (KeyValuePair<string, object> kv in st)
                         ev.Data[kv.Key] = kv.Value;
                     bus.Push(ev);

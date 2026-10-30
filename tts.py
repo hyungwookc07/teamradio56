@@ -456,11 +456,11 @@ def probe_text() -> Optional[str]:
 
 def kokoro_pack_state(cache_dir: str, voice: str = "bm_george",
                       probe: Optional[str] = None) -> str:
-    """kokoro 음성 팩 상태 "ok" | "incomplete" | "none" — C# VoicePolicy.KokoroPackState.
+    """kokoro 음성 팩 상태 "ok" | "partial" | "incomplete" | "none" — C# VoicePolicy.KokoroPackState.
     표식이 있으면 표식대로, 없으면 조립 자산 4개(옛 v015)나 확인용 통문장
-    (_rfx3 또는 원본, 개발 캐시)이 있으면 ok."""
+    (_rfx3 또는 원본, 개발 캐시)이 있으면 ok. 설치가 끊긴 표식(incomplete:)이어도
+    확인용 통문장이 남아 있으면 partial — 있는 클립은 kokoro로, 없는 멘트는 자막만."""
     import radio_assemble
-    import radiofx
     if not cache_dir or not os.path.isdir(cache_dir):
         return "none"
     marker = os.path.join(cache_dir, PACK_MARKER)
@@ -471,19 +471,24 @@ def kokoro_pack_state(cache_dir: str, voice: str = "bm_george",
         except OSError:
             pack_id = None
         if pack_id is None or pack_id.startswith(INCOMPLETE_PREFIX):
-            return "incomplete"
+            return "partial" if _probe_clip_exists(cache_dir, voice, probe) else "incomplete"
         return "ok"
     if all(os.path.isfile(os.path.join(cache_dir, n))
            for n in radio_assemble.ASSET_NAMES):
         return "ok"
+    return "ok" if _probe_clip_exists(cache_dir, voice, probe) else "none"
+
+
+def _probe_clip_exists(cache_dir: str, voice: str, probe: Optional[str]) -> bool:
+    """확인용 통문장이 캐시에 있는가 (_rfx3 또는 원본)."""
+    import radiofx
     if probe is None:
         probe = probe_text()
-    if probe:
-        raw = _cache_path(cache_dir, f"kokoro|{voice}|casual|{probe}", ext="wav")
-        rfx = os.path.splitext(raw)[0] + f"_rfx{radiofx.VERSION}.wav"
-        if os.path.isfile(rfx) or os.path.isfile(raw):
-            return "ok"
-    return "none"
+    if not probe:
+        return False
+    raw = _cache_path(cache_dir, f"kokoro|{voice}|casual|{probe}", ext="wav")
+    rfx = os.path.splitext(raw)[0] + f"_rfx{radiofx.VERSION}.wav"
+    return os.path.isfile(rfx) or os.path.isfile(raw)
 
 
 def resolve_voice_kind(engine: str, lang: str, pack_state: str,
@@ -491,7 +496,8 @@ def resolve_voice_kind(engine: str, lang: str, pack_state: str,
                        ) -> tuple[str, Optional[str]]:
     """세션 목소리 (kind, note) — C# VoicePolicy.ResolveKind와 같은 규칙.
     ko는 kokoro가 없어 edge, edge는 edge, elevenlabs는 voice_id가 있을 때만,
-    그 밖(kokoro)은 팩(또는 런타임)이 있으면 kokoro, 없으면 세션 전체를 edge로."""
+    그 밖(kokoro)은 팩(또는 런타임)이 있으면 kokoro, 설치가 끊겼어도 클립이 남아 있으면
+    kokoro(note pack-partial), 없으면 세션 전체를 edge로."""
     engine = str(engine or "").lower()
     ko = str(lang or "").lower().startswith("ko")
     if ko and engine != "elevenlabs":
@@ -504,6 +510,8 @@ def resolve_voice_kind(engine: str, lang: str, pack_state: str,
         return "edge", "no-elevenlabs-voice"
     if pack_state == "ok" or runtime:
         return "kokoro", None
+    if pack_state == "partial":
+        return "kokoro", "pack-partial"
     return "edge", ("pack-incomplete" if pack_state == "incomplete" else "no-kokoro")
 
 

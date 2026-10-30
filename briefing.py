@@ -33,18 +33,19 @@ class BriefingInputs:
     start_spotter_sec: float = 0.0
 
 
-def briefing_text(b: BriefingInputs) -> str:
+def briefing_text(b: BriefingInputs, pack_only: bool = False) -> str:
     """
     세션 종류/길이/그리드/날씨/연료 브리핑 — 순수 조립 (C# SessionBriefer.ComposeText).
     도메인 밖 숫자(100랩 넘는 세션, 그리드/순위/노면/연료 범위 밖)는 그 문장만 뺀다.
-    en은 트랙 이름 목록에 없는 트랙이면 '{track}.' 대신 무전 체크로 연다 (팩에 없는 이름).
+    pack_only(세션 목소리가 음성 팩만 말하는 kokoro)면 en은 트랙 이름 목록에 없는
+    트랙을 '{track}.' 대신 무전 체크로 연다 — edge는 어떤 이름이든 말하므로 그대로.
     """
     stype = b.session_type
     is_race = stype >= 10
     kind = (msg("kind_race") if is_race else msg("kind_warmup") if stype == 9
             else msg("kind_quali") if stype >= 5 else msg("kind_practice"))
     track = (b.track or "").strip()
-    if track and (is_ko() or known_track_en(track)):
+    if track and not (pack_only and _unspeakable_track(track)):
         parts = [msg("brief_track", track=track, kind=kind)]
     else:
         parts = [msg("brief_radio", kind=kind)]
@@ -86,14 +87,21 @@ def briefing_text(b: BriefingInputs) -> str:
     return " ".join(parts)
 
 
+def _unspeakable_track(track: str) -> bool:
+    """음성 팩이 말할 수 없는 트랙 이름 — 목록은 en 전용."""
+    return not is_ko() and not known_track_en(track)
+
+
 _unknown_logged: set = set()
 
 
-def compose_session_briefing(snap, state, start_spotter_sec) -> Optional[str]:
+def compose_session_briefing(snap, state, start_spotter_sec,
+                             pack_only: bool = False) -> Optional[str]:
     """
     세션 시작 브리핑 문장 — 스냅샷에서 재료를 뽑아 briefing_text로.
     플레이어 차량이 아직 안 잡혔으면 None (호출자가 다음 틱에 다시 시도).
     앱을 세션 중간에 켜도 현재 상황 기준으로 브리핑한다.
+    pack_only: 세션 목소리가 임의 문장을 못 말함 (kokoro, 섞임 비허용).
     """
     me = snap.player_scoring()
     if me is None:
@@ -103,7 +111,7 @@ def compose_session_briefing(snap, state, start_spotter_sec) -> Optional[str]:
     stype = ses.get("session_type", 0)
     is_race = stype >= 10
     track = (ses.get("track") or "").strip()
-    if track and not is_ko() and not known_track_en(track) \
+    if pack_only and track and _unspeakable_track(track) \
             and track not in _unknown_logged:
         _unknown_logged.add(track)
         log.info("트랙 이름 목록에 없어 브리핑에서 생략: %s "
@@ -130,4 +138,5 @@ def compose_session_briefing(snap, state, start_spotter_sec) -> Optional[str]:
         max_laps=ses.get("max_laps", 0) or 0, mid_join=mid_join,
         cls_count=cls_count, class_place=cp,
         track_temp=ses.get("track_temp", 0.0), raining=ses.get("raining", 0.0),
-        fuel=snap.player.get("fuel") or 0.0, start_spotter_sec=start_spotter_sec))
+        fuel=snap.player.get("fuel") or 0.0, start_spotter_sec=start_spotter_sec),
+        pack_only=pack_only)

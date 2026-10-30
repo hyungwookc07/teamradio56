@@ -24,8 +24,10 @@ namespace TeamRadio56.Core.Logic
         public const string NoteKo = "ko";
         public const string NoteNoKokoro = "no-kokoro";
         public const string NotePackIncomplete = "pack-incomplete";
+        public const string NotePackPartial = "pack-partial";
 
         public const string PackOk = "ok";
+        public const string PackPartial = "partial";
         public const string PackIncomplete = "incomplete";
         public const string PackNone = "none";
 
@@ -54,9 +56,11 @@ namespace TeamRadio56.Core.Logic
         }
 
         /// <summary>
-        /// kokoro 음성 팩 상태 — "ok" | "incomplete" | "none".
+        /// kokoro 음성 팩 상태 — "ok" | "partial" | "incomplete" | "none".
         /// 표식이 있으면 표식대로, 없으면 조립 자산 4개(옛 v015) 또는 확인용 통문장
-        /// (_rfx3나 원본, 개발 캐시)이 있으면 ok. probe는 kokoro 캐시 규약의 VoiceCache.
+        /// (_rfx3나 원본, 개발 캐시)이 있으면 ok. 설치가 끊긴 표식(incomplete:)이어도
+        /// 확인용 통문장이 남아 있으면 partial — 있는 클립은 kokoro로, 없는 멘트는 자막만.
+        /// probe는 kokoro 캐시 규약의 VoiceCache.
         /// </summary>
         public static string KokoroPackState(string cacheDir, VoiceCache probe)
         {
@@ -64,20 +68,27 @@ namespace TeamRadio56.Core.Logic
                 return PackNone;
             string id = AudioPack.Installed(cacheDir);
             if (id != null)
-                return id.StartsWith(AudioPack.IncompletePrefix, StringComparison.Ordinal)
-                    ? PackIncomplete : PackOk;
-            if (probe != null)
             {
-                string text = ProbeText();
-                if (text != null && probe.ResolveWhole(text, "casual") != null)
+                if (!id.StartsWith(AudioPack.IncompletePrefix, StringComparison.Ordinal))
                     return PackOk;
+                return ProbeClipExists(probe) ? PackPartial : PackIncomplete;
             }
-            return PackNone;
+            return ProbeClipExists(probe) ? PackOk : PackNone;
+        }
+
+        /// <summary>확인용 통문장이 캐시에 있는가 (_rfx3 또는 원본).</summary>
+        private static bool ProbeClipExists(VoiceCache probe)
+        {
+            if (probe == null)
+                return false;
+            string text = ProbeText();
+            return text != null && probe.ResolveWhole(text, "casual") != null;
         }
 
         /// <summary>
         /// 세션 목소리 결정. ko는 kokoro가 없어 edge, edge는 edge,
-        /// 그 밖(kokoro)은 팩이 있으면 kokoro, 없거나 설치가 끊겼으면 세션 전체를 edge로.
+        /// 그 밖(kokoro)은 팩이 있으면 kokoro, 설치가 끊겼어도 클립이 남아 있으면 kokoro(note
+        /// pack-partial), 없으면 세션 전체를 edge로.
         /// runtime은 런타임 kokoro 합성 가능 여부 (C#은 항상 false).
         /// </summary>
         public static VoiceKind ResolveKind(string engine, bool ko, string packState,
@@ -95,8 +106,23 @@ namespace TeamRadio56.Core.Logic
                 return VoiceKind.Edge;
             if (packState == PackOk || runtime)
                 return VoiceKind.Kokoro;
+            if (packState == PackPartial)
+            {
+                note = NotePackPartial;
+                return VoiceKind.Kokoro;
+            }
             note = packState == PackIncomplete ? NotePackIncomplete : NoteNoKokoro;
             return VoiceKind.Edge;
+        }
+
+        /// <summary>RadioVoice.LastSource가 세션 목소리의 소스인가 ("sapi"·다른 목소리면 false).</summary>
+        public static bool SourceIsKind(string source, VoiceKind kind)
+        {
+            if (string.IsNullOrEmpty(source))
+                return false;
+            return kind == VoiceKind.Kokoro
+                ? source.StartsWith("Kokoro", StringComparison.Ordinal)
+                : source.StartsWith("Edge", StringComparison.Ordinal);
         }
 
         /// <summary>Windows 음성(SAPI)은 설정을 켰을 때만, 한국어는 절대 아니다 (en-US 음성으로 읽는다).</summary>

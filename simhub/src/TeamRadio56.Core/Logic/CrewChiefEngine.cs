@@ -38,6 +38,13 @@ namespace TeamRadio56.Core.Logic
 
         private bool _wasInSession;
 
+        /// <summary>세션 목소리가 음성 팩만 말함 (kokoro, 섞임 비허용) — 브리핑이 목록 밖 트랙 이름을 뺀다.</summary>
+        public bool BriefingPackOnly
+        {
+            get { return _briefer.PackOnly; }
+            set { _briefer.PackOnly = value; }
+        }
+
         /// <summary>설정 화면에 보여줄 한 줄 상태.</summary>
         public string StatusText { get; private set; } = "대기 중";
 

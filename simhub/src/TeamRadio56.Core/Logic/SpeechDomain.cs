@@ -21,6 +21,9 @@ namespace TeamRadio56.Core.Logic
         /// <summary>파이썬 float(f"{x:.{d}f}") — 말하는 값.</summary>
         public static double Fixed(double x, int d)
         {
+            // PyFixed는 비유한 값을 "nan"/"inf"로 내는데 double.Parse가 못 읽는다 (net48은 nan도)
+            if (double.IsNaN(x) || double.IsInfinity(x))
+                return x;
             return double.Parse(Messages.PyFixed(x, d), CultureInfo.InvariantCulture);
         }
 
@@ -38,7 +41,7 @@ namespace TeamRadio56.Core.Logic
 
         // -- 한계 (술어 기준) ---------------------------------------------------
 
-        public const double GapMax = 120.0;
+        public const int GapSegMax = 600;           // 팩이 말하는 갭 상한 (정수 초) — 그 위는 kokoro 세션에서 자막만
         public const double RateMax = 9.9;
         public const double PaceMin = 0.7, PaceMax = 9.9;
         public const double RivalDiffMin = 0.3, RivalDiffMax = 5.0;
@@ -90,10 +93,16 @@ namespace TeamRadio56.Core.Logic
 
         // -- 술어 -----------------------------------------------------------
 
-        /// <summary>갭 120초 초과·변화율 랩당 10초 이상은 피트/FCY 산물 — 말하지 않는다.</summary>
-        public static bool GapCandidateOk(double gap, double rate)
+        /// <summary>변화율 랩당 10초 이상은 피트/FCY 산물 — 말하지 않는다.
+        /// 큰 갭 자체는 내구 레이스에서 정상이라 거르지 않는다.</summary>
+        public static bool GapRateOk(double rate)
         {
-            return GapTextValue(gap) <= GapMax && Fixed(Math.Abs(rate), 1) <= RateMax;
+            return Fixed(Math.Abs(rate), 1) <= RateMax;
+        }
+
+        public static bool GapInPack(double gap)
+        {
+            return GapTextValue(gap) <= GapSegMax;
         }
 
         public static bool PaceOk(double delta)
@@ -203,7 +212,7 @@ namespace TeamRadio56.Core.Logic
         private static double[] Gaps()
         {
             var v = new List<double>(Tenths(0, 99));
-            for (int s = 10; s <= 120; s++)
+            for (int s = 10; s <= GapSegMax; s++)
                 v.Add(s);
             return v.ToArray();
         }

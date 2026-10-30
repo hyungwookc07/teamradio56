@@ -35,7 +35,7 @@ def laps_value(n: float) -> int:
 
 # -- 한계 (술어 기준) ------------------------------------------------------------
 
-GAP_MAX = 120.0
+GAP_SEG_MAX = 600                  # 팩이 말하는 갭 상한 (정수 초) — 그 위는 kokoro 세션에서 자막만
 RATE_MAX = 9.9
 PACE_MIN, PACE_MAX = 0.7, 9.9
 RIVAL_DIFF_MIN, RIVAL_DIFF_MAX = 0.3, 5.0
@@ -68,7 +68,7 @@ MULTI_CLASSES = ("Hypercar", "LMP2", "GT3", "GTE", "faster car")
 
 # -- 문장 단위 사전 생성 도메인 (C# SpeechDomain.Seg*와 값·순서 동일) -------------
 # 도메인 밖 값은 위 술어가 거르거나(억제) kokoro 세션에서 자막만 나간다.
-SEG_GAPS = [i / 10 for i in range(100)] + [float(s) for s in range(10, 121)]
+SEG_GAPS = [i / 10 for i in range(100)] + [float(s) for s in range(10, GAP_SEG_MAX + 1)]
 SEG_RATES = [i / 10 for i in range(1, 100)]
 SEG_PACE = [i / 10 for i in range(7, 100)]
 SEG_RIVAL_DIFF = [i / 10 for i in range(3, 51)]
@@ -102,9 +102,14 @@ SEG_BRIEF_FUEL = range(BRIEF_FUEL_MIN, BRIEF_FUEL_MAX + 1)
 # -- 술어 (파이썬 snake_case ↔ C# PascalCase) -------------------------------------
 
 
-def gap_candidate_ok(gap: float, rate: float) -> bool:
-    """갭 120초 초과·변화율 랩당 10초 이상은 피트/FCY 산물 — 말하지 않는다."""
-    return gap_text_value(gap) <= GAP_MAX and fixed(abs(rate), 1) <= RATE_MAX
+def gap_rate_ok(rate: float) -> bool:
+    """변화율 랩당 10초 이상은 피트/FCY 산물 — 말하지 않는다.
+    큰 갭 자체는 내구 레이스에서 정상이라 거르지 않는다."""
+    return fixed(abs(rate), 1) <= RATE_MAX
+
+
+def gap_in_pack(gap: float) -> bool:
+    return gap_text_value(gap) <= GAP_SEG_MAX
 
 
 def pace_ok(delta: float) -> bool:

@@ -32,7 +32,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 # 의도된 무음 (kokoro 세션에서 자막만) — (kind, 정책)
-DROP_ALLOW = {("lap_time", "laptime-range"), ("track_trend", "free-text")}
+DROP_ALLOW = {("lap_time", "laptime-range"), ("gap", "gap-range"),
+              ("track_trend", "free-text")}
 # 파이썬 전용 kind — C# 대조에서 뺀다
 PY_ONLY = {"lap_feedback", "track_trend", "llm_gate"}
 
@@ -110,17 +111,21 @@ def generate(seed: int) -> list:
     # -- 갭 --
     def gap_case(g, r, who):
         g, r = _r(g, 1), _r(r, 2)
-        add("gap", "in" if sd.gap_candidate_ok(g, r) else "out", gap=g, rate=r, who=who)
+        add("gap", "in" if sd.gap_rate_ok(r) and sd.gap_in_pack(g) else "out",
+            gap=g, rate=r, who=who)
 
     for i in range(0, 2601):
         for r in (-1.0, 0.0, 1.0):
             for who in ("ahead", "behind"):
                 gap_case(i * 0.05, r, who)
+    for i in range(261, 1401):          # 130~700초 — 내구 레이스의 큰 클래스 갭
+        for who in ("ahead", "behind"):
+            gap_case(i * 0.5, -0.5, who)
     for i in range(-2400, 2401):
         for who in ("ahead", "behind"):
             gap_case(5.0, i * 0.005, who)
     for _ in range(20000):
-        gap_case(rnd.uniform(0, 140), rnd.uniform(-15, 15), rnd.choice(("ahead", "behind")))
+        gap_case(rnd.uniform(0, 700), rnd.uniform(-15, 15), rnd.choice(("ahead", "behind")))
 
     # -- 페이스 --
     for i in range(-3000, 3001):
@@ -132,10 +137,11 @@ def generate(seed: int) -> list:
     for i in range(0, 1601):
         diff = _r(i * 0.005, 2)
         for mode in ("catch", "defend"):
-            for laps in (1, 8, 16):
+            for laps in (1, 8, 15):
                 band = ("none" if diff < sd.RIVAL_DIFF_MIN
                         else "in" if sd.rival_diff_ok(diff) else "out")
-                add("rival_pace", band, mode=mode, diff=diff, laps=laps)
+                # 잡을 랩 수 = gap/diff ≈ laps-0.5 (15랩 경계 밖으로 새지 않게)
+                add("rival_pace", band, mode=mode, diff=diff, gap=_r(diff * (laps - 0.5), 3))
 
     # -- 라이벌 피트 --
     for their in range(1, 71):
@@ -311,6 +317,11 @@ def generate(seed: int) -> list:
         brief_case(**{**base, "max_laps": n})
     for m in range(0, 1500, 7):
         brief_case(**{**base, "end_et": m * 60.0 + 30.0, "cur_et": 0.0})
+    # 비유한 텔레메트리 (세션 시작 직후 연료/노면 NaN·Inf) — 그 문장만 빠진다.
+    # JSON에 NaN이 없어 문자열로 싣고 양쪽 하니스가 float로 바꾼다
+    for v in ("nan", "inf", "-inf"):
+        add("briefing", "in", **{**base, "track_temp": v})
+        add("briefing", "in", **{**base, "fuel": v})
 
     # -- HUD 랩타임 / 상황 리포트 --
     for i in range(3000, 40001):
@@ -401,47 +412,64 @@ def _evaluate_case(kind: str, a: dict, ctx: dict):
             return ("voice", a["tone"], lines[a["line"]].format(**call[1]))
         except (KeyError, IndexError):
             return ("none",)
+    # 억제 판단은 분석기의 순수 함수가 한다 (하네스는 임계 미만 = NONE만 가른다) —
+    # 한쪽 엔진에서만 규칙이 빠지면 파이썬 ↔ C# TSV 불일치로 드러난다
     if kind == "gap":
-        if not sd.gap_candidate_ok(a["gap"], a["rate"]):
+        from analyzers.pace import gap_candidate
+        d = gap_candidate(a["who"], a["gap"], a["rate"])
+        if d is None:
             return ("suppress", "gap")
-        return ("voice", "casual", render_deterministic(T.GAP_COMMENT, dict(a)))
+        text = render_deterministic(T.GAP_COMMENT, d)
+        if not sd.gap_in_pack(d["gap"]):
+            return ("drop", "gap-range", "casual", text)
+        return ("voice", "casual", text)
     if kind == "pace":
+        from analyzers.pace import comment_direction
         if abs(a["delta"]) < sd.PACE_MIN:
             return ("none",)
-        if not sd.pace_ok(a["delta"]):
+        direction = comment_direction(a["delta"], sd.PACE_MIN)
+        if direction is None:
             return ("suppress", "pace")
-        d = {"delta": a["delta"], "direction": "slower" if a["delta"] > 0 else "faster"}
+        d = {"delta": a["delta"], "direction": direction}
         return ("voice", "casual", render_deterministic(T.PACE_COMMENT, d))
     if kind == "rival_pace":
+        from analyzers.rivals import pace_data
         if a["diff"] < sd.RIVAL_DIFF_MIN:
             return ("none",)
-        if not sd.rival_diff_ok(a["diff"]):
+        catch = a["mode"] == "catch"
+        d = pace_data(a["diff"] if catch else -a["diff"], a["gap"], catch)
+        if d is None:
             return ("suppress", "rival-diff")
-        return ("voice", "casual", render_deterministic(T.RIVAL_PACE, dict(a)))
+        return ("voice", "casual", render_deterministic(T.RIVAL_PACE, d))
     if kind == "rival_pit":
-        if not sd.rival_pit_ok(a["their"]):
+        from analyzers.rivals import pit_data
+        d = pit_data(a["their"], a["my"])
+        if d is None:
             return ("suppress", "rival-pit")
-        d = {"their_class_place": a["their"], "rel": "앞" if a["their"] < a["my"] else "뒤",
-             "undercut_risk": a["their"] > a["my"]}
         return ("voice", "casual", render_deterministic(T.RIVAL_PIT, d))
     if kind == "tyre_hot":
+        from analyzers.tyres import hot_event
         if a["delta"] < sd.TYRE_HOT_MIN:
             return ("none",)
-        if not sd.tyre_hot_ok(a["delta"]):
+        i = WHEELS.index(a["wheel"])
+        d = hot_event("front_lr" if i < 2 else "rear_lr",
+                      a["delta"] if i % 2 == 1 else -a["delta"], sd.TYRE_HOT_MIN)
+        if d is None:
             return ("suppress", "tyre-hot")
-        d = {"kind": "temp_imbalance", "hot_wheel": a["wheel"], "delta": a["delta"]}
         return ("voice", "casual", render_deterministic(T.TYRE_WARNING, d))
     if kind == "tyre_wear":
-        if not sd.tyre_wear_ok(a["laps_left"]):
+        from analyzers.tyres import wear_event
+        d = wear_event({"wheel": a["wheel"], "remaining": 0.3, "laps_left": a["laps_left"]},
+                       0.35)
+        if d is None:
             return ("suppress", "tyre-wear")
-        d = {"kind": "wear", "wheel": a["wheel"], "laps_left": a["laps_left"]}
         return ("voice", "casual", render_deterministic(T.TYRE_WARNING, d))
     if kind == "lap_analysis":
         n = a["pit_window_laps"]
-        if n is not None and not sd.pit_window_ok(n):
-            return ("suppress", "pit-window")
         text = render_deterministic(T.LAP_ANALYSIS, {"pit_window_laps": n})
-        return ("voice", "casual", text) if text else ("none",)
+        if text:
+            return ("voice", "casual", text)
+        return ("none",) if n is None else ("suppress", "pit-window")
     if kind == "milestone":
         return ("voice", "casual",
                 render_deterministic(T.RACE_MILESTONE, {"remaining_min": a["remaining_min"]}))
@@ -492,7 +520,9 @@ def _evaluate_case(kind: str, a: dict, ctx: dict):
         return ("voice", "urgent", text) if text else ("none",)
     if kind == "briefing":
         from briefing import BriefingInputs, briefing_text
-        return ("voice", "casual", briefing_text(BriefingInputs(**a)))
+        a = {k: float(v) if k in ("track_temp", "fuel") and isinstance(v, str) else v
+             for k, v in a.items()}
+        return ("voice", "casual", briefing_text(BriefingInputs(**a), pack_only=True))
     if kind == "lap_time":
         from analyzers.reporter import StatusReporter
         text = StatusReporter.laptime_text(a["lap_time"], a["best"])

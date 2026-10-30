@@ -24,6 +24,24 @@ WEAR_CLIFF = 0.25          # 이 잔량 아래로는 그립 절벽으로 간주
 TREND_WINDOW = 3           # 마모율 계산에 쓰는 랩 수
 
 
+def hot_event(axis: str, delta: float, threshold: float) -> Optional[dict]:
+    """온도 불균형 콜 데이터 (axis front_lr/rear_lr, delta +면 오른쪽이 뜨거움).
+    임계 미만이거나 80도 넘는 차이(센서 튐)면 None. 퍼즈가 같은 함수를 부른다."""
+    if abs(delta) < threshold or not tyre_hot_ok(round(abs(delta), 1)):
+        return None
+    hot = {"front_lr": WHEEL_NAMES[1] if delta > 0 else WHEEL_NAMES[0],
+           "rear_lr": WHEEL_NAMES[3] if delta > 0 else WHEEL_NAMES[2]}[axis]
+    return {"kind": "temp_imbalance", "hot_wheel": hot, "delta": round(abs(delta), 1)}
+
+
+def wear_event(worst: dict, wear_warn: float) -> Optional[dict]:
+    """마모 수명 콜 데이터 — 잔량이 경고선 위거나 30랩 넘게 남았으면(무의미) None.
+    퍼즈가 같은 함수를 부른다."""
+    if not worst["remaining"] <= wear_warn or not tyre_wear_ok(worst["laps_left"]):
+        return None
+    return {"kind": "wear", **worst}
+
+
 class TyreAnalyzer:
     def __init__(self, cfg):
         self.temp_imbalance = cfg.get("thresholds.tyre_temp_imbalance", 12.0)
@@ -93,21 +111,19 @@ class TyreAnalyzer:
             axis, delta = max(
                 (("front_lr", imb["front_lr"]), ("rear_lr", imb["rear_lr"])),
                 key=lambda kv: abs(kv[1]))
-            if abs(delta) >= self.temp_imbalance and tyre_hot_ok(round(abs(delta), 1)):
-                hot = {"front_lr": WHEEL_NAMES[1] if delta > 0 else WHEEL_NAMES[0],
-                       "rear_lr": WHEEL_NAMES[3] if delta > 0 else WHEEL_NAMES[2]}[axis]
+            ev = hot_event(axis, delta, self.temp_imbalance)
+            if ev is not None:
                 bus.push(Event(
                     type=EventType.TYRE_WARNING, priority=Priority.NORMAL,
-                    data={"kind": "temp_imbalance", "hot_wheel": hot,
-                          "delta": round(abs(delta), 1), **st},
+                    data={**ev, **st},
                 ))
 
         # 예상 수명 경고
         worst = st.get("worst")
-        if worst is not None and worst["remaining"] <= self.wear_warn \
-                and tyre_wear_ok(worst["laps_left"]):
+        ev = wear_event(worst, self.wear_warn) if worst is not None else None
+        if ev is not None:
             bus.push(Event(
                 type=EventType.TYRE_WARNING, priority=Priority.HIGH,
-                data={"kind": "wear", **worst, **st},
+                data={**ev, **st},
             ))
         return st

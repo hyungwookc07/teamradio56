@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using TeamRadio56.Core.Engine;
 using TeamRadio56.Core.Logic;
+using TeamRadio56.Core.Update;
 
 namespace TeamRadio56.Replay
 {
@@ -72,7 +73,8 @@ namespace TeamRadio56.Replay
             var sb = new StringBuilder();
             foreach (string engine in new[] { "kokoro", "edge" })
                 foreach (string lang in new[] { "en", "ko" })
-                    foreach (string pack in new[] { VoicePolicy.PackOk, VoicePolicy.PackIncomplete, VoicePolicy.PackNone })
+                    foreach (string pack in new[] { VoicePolicy.PackOk, VoicePolicy.PackPartial,
+                                                    VoicePolicy.PackIncomplete, VoicePolicy.PackNone })
                     {
                         string note;
                         VoiceKind kind = VoicePolicy.ResolveKind(engine, lang == "ko", pack, false, out note);
@@ -238,14 +240,17 @@ namespace TeamRadio56.Replay
             public DateTime Now = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         }
 
+        /// <summary>플러그인 CreateRadio와 같은 조립 — Windows 음성을 넘길지는 RadioVoice.Create가
+        /// 정한다 (가짜 SAPI는 항상 건네고, 쓰였는지를 센다).</summary>
         private static RadioVoice Radio(string dir, VoiceKind kind, bool allow, FakePlayer player,
-                                        FakeEdge edge, IFallbackSpeaker sapi = null,
-                                        Clock clock = null, bool radioFx = true)
+                                        FakeEdge edge, FakeSapi sapi = null,
+                                        Clock clock = null, bool radioFx = true, bool ko = false)
         {
             Clock c = clock ?? new Clock();
             VoiceRoute route = VoicePolicy.CreateRoute(dir, EdgeVoice, Rate, kind, radioFx, allow,
                                                        edge.Synth, () => c.Now);
-            return new RadioVoice(route, player, sapi);
+            return RadioVoice.Create(route, player, allow, ko,
+                                     sapi == null ? null : (Func<IFallbackSpeaker>)(() => sapi));
         }
 
         private static bool IsKokoroFile(string dir, string path, params string[] texts)
@@ -269,7 +274,7 @@ namespace TeamRadio56.Replay
             var player = new FakePlayer();
             var edge = new FakeEdge();
             var sapi = new FakeSapi();
-            RadioVoice radio = Radio(dir, VoiceKind.Kokoro, false, player, edge);
+            RadioVoice radio = Radio(dir, VoiceKind.Kokoro, false, player, edge, sapi);
 
             Check(radio.Speak(TextA, "casual", false) == SpeakResult.Played
                   && radio.LastSource == "KokoroFx", "A → KokoroFx 재생");
@@ -290,10 +295,10 @@ namespace TeamRadio56.Replay
             Check(radio.Drops.Count == 3 && radio.Drops.Distinct == 2, "무음 3건, 서로 다른 텍스트 2종");
 
             var failing = new FakePlayer { Succeed = false };
-            RadioVoice r2 = Radio(dir, VoiceKind.Kokoro, false, failing, edge);
+            RadioVoice r2 = Radio(dir, VoiceKind.Kokoro, false, failing, edge, sapi);
             Check(r2.Speak(TextA, "casual", false) == SpeakResult.Dropped && r2.LastReason == "play-failed",
                   "재생 실패 → 무음 play-failed");
-            Check(failing.Calls == 1, "재생 실패를 다른 소스로 다시 시도하지 않는다");
+            Check(failing.Calls == 1 && sapi.Calls == 0, "재생 실패를 다른 소스로 다시 시도하지 않는다");
         }
 
         private static void KokoroIgnoresFxSetting()
@@ -314,7 +319,8 @@ namespace TeamRadio56.Replay
             var player = new FakePlayer();
             var edge = new FakeEdge();
             var clock = new Clock();
-            RadioVoice radio = Radio(dir, VoiceKind.Edge, false, player, edge, null, clock);
+            var sapi = new FakeSapi();
+            RadioVoice radio = Radio(dir, VoiceKind.Edge, false, player, edge, sapi, clock);
 
             foreach (string t in new[] { TextA, TextB, TextC })
                 Check(radio.Speak(t, "casual", false) == SpeakResult.Played && radio.LastSource == "EdgeLive",
@@ -334,6 +340,7 @@ namespace TeamRadio56.Replay
             clock.Now = clock.Now.AddSeconds(121);
             radio.Speak("Golf after block.", "casual", false);
             Check(edge.Calls == synth + 1, "121초 뒤 → 다시 합성 시도");
+            Check(sapi.Calls == 0, "edge 세션(섞임 비허용)은 SAPI 0회");
         }
 
         private static void Korean()
@@ -348,8 +355,7 @@ namespace TeamRadio56.Replay
             var sapi = new FakeSapi();
             var edge = new FakeEdge { Succeed = false };
             var player = new FakePlayer();
-            RadioVoice radio = Radio(dir, VoiceKind.Edge, true, player, edge,
-                                     VoicePolicy.FallbackAllowed(true, true) ? sapi : null);
+            RadioVoice radio = Radio(dir, VoiceKind.Edge, true, player, edge, sapi, ko: true);
             Check(radio.Speak("한국어 콜.", "casual", false) == SpeakResult.Dropped && sapi.Calls == 0,
                   "ko edge 실패 → 무음, SAPI 0회 (설정 켜짐)");
         }
@@ -361,6 +367,13 @@ namespace TeamRadio56.Replay
                   && note == VoicePolicy.NoteNoKokoro, "팩 없음 → edge (no-kokoro)");
             Check(VoicePolicy.ResolveKind("kokoro", false, VoicePolicy.PackIncomplete, false, out note) == VoiceKind.Edge
                   && note == VoicePolicy.NotePackIncomplete, "설치 끊김 → edge (pack-incomplete)");
+            Check(VoicePolicy.ResolveKind("kokoro", false, VoicePolicy.PackPartial, false, out note) == VoiceKind.Kokoro
+                  && note == VoicePolicy.NotePackPartial, "설치 끊김이지만 클립 남음 → kokoro (pack-partial)");
+            Check(Messages.IsKoLanguage("ko-KR") && Messages.IsKoLanguage("KO") && !Messages.IsKoLanguage("en")
+                  && !Messages.IsKoLanguage(null), "멘트 언어 ko 판정 = 파이썬 startswith(\"ko\")");
+            Check(VoicePolicy.ResolveKind("kokoro", Messages.IsKoLanguage("ko-KR"), VoicePolicy.PackOk, false,
+                                          out note) == VoiceKind.Edge && note == VoicePolicy.NoteKo,
+                  "ko-KR + kokoro → edge (ko)");
             Check(VoicePolicy.ResolveKind("kokoro", false, VoicePolicy.PackOk, false, out note) == VoiceKind.Kokoro
                   && note == null, "팩 있음 → kokoro");
             Check(VoicePolicy.ResolveKind("edge", false, VoicePolicy.PackOk, false, out note) == VoiceKind.Edge
@@ -371,6 +384,9 @@ namespace TeamRadio56.Replay
             string dir = NewFixture();
             var probe = new VoiceCache(dir, EdgeVoice, Rate, "bm_george", true, "kokoro");
             Check(VoicePolicy.KokoroPackState(dir, probe) == VoicePolicy.PackOk, "자산 4개 → ok (옛 v015)");
+            AudioPack.WriteMarker(dir, AudioPack.IncompletePrefix + "kokoro-v016");
+            Check(VoicePolicy.KokoroPackState(dir, probe) == VoicePolicy.PackPartial,
+                  "설치 끊김 표식 + 확인용 통문장 남음 → partial");
             Check(VoicePolicy.KokoroPackState(Path.Combine(_root, "nope"), probe) == VoicePolicy.PackNone,
                   "폴더 없음 → none");
         }

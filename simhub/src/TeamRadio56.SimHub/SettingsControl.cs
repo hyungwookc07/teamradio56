@@ -685,9 +685,17 @@ namespace TeamRadio56.SimHub
             if (info == null)
                 return "";
             var sb = new System.Text.StringBuilder();
+            if (info.Note == TeamRadio56Plugin.VoiceNoteEngineOutdated)
+            {
+                // 옛 엔진은 세션 목소리를 알리지 않는다 — 목소리 줄 대신 경고만
+                warn = true;
+                return "\n" + L("voice_note_engine_outdated");
+            }
             sb.Append("\n").Append(string.Format(L("voice_active"), info.Kind));
             if (!string.IsNullOrEmpty(info.Note))
                 sb.Append(" — ").Append(L("voice_note_" + info.Note.Replace('-', '_')));
+            if (info.Note == VoicePolicy.NotePackPartial)
+                warn = true;
             if (info.Dropped > 0)
                 sb.Append("\n").Append(string.Format(L("voice_dropped"), info.Dropped));
             if (info.Missing > 0)

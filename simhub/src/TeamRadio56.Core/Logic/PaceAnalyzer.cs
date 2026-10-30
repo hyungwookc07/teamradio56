@@ -31,6 +31,28 @@ namespace TeamRadio56.Core.Logic
             _lastReport.Clear();
         }
 
+        /// <summary>pace.comment_direction — 랩타임 편차 콜 방향 ("slower"/"faster").
+        /// 임계 미만이거나 10초 이상(피트/스핀/FCY 랩, 무의미한 값)이면 null. 퍼즈가 같은 함수를 부른다.</summary>
+        public static string CommentDirection(double delta, double threshold)
+        {
+            if (Math.Abs(delta) < threshold || !SpeechDomain.PaceOk(Math.Round(delta, 3)))
+                return null;
+            return delta > 0 ? "slower" : "faster";
+        }
+
+        /// <summary>pace.gap_candidate — 갭 콜 후보 (말할 값으로 반올림). 랩당 10초 이상 변화는
+        /// 피트/FCY 산물이라 null — 고르기 전에 거른다. 퍼즈가 같은 함수를 부른다.</summary>
+        public static Dictionary<string, object> GapCandidate(string who, double gap, double rate)
+        {
+            var c = new Dictionary<string, object>
+            {
+                { "who", who },
+                { "gap", Math.Round(gap, 1) },
+                { "rate", Math.Round(rate, 2) },
+            };
+            return SpeechDomain.GapRateOk((double)c["rate"]) ? c : null;
+        }
+
         public void OnLap(RaceState state, Snapshot snap, EventBus bus, LapRecord lap)
         {
             if (!lap.Valid)
@@ -53,8 +75,8 @@ namespace TeamRadio56.Core.Logic
             double baseline = prior[prior.Count / 2];
             double delta = lap.LapTime - baseline;
 
-            // 10초 이상 편차는 피트/스핀/FCY 랩 — 무의미한 값이라 말하지 않는다
-            if (Math.Abs(delta) >= _paceDelta && SpeechDomain.PaceOk(Math.Round(delta, 3)))
+            string direction = CommentDirection(delta, _paceDelta);
+            if (direction != null)
             {
                 var ev = new RadioEvent
                 {
@@ -67,7 +89,7 @@ namespace TeamRadio56.Core.Logic
                 ev.Data["baseline"] = Math.Round(baseline, 3);
                 ev.Data["delta"] = Math.Round(delta, 3);
                 ev.Data["place"] = lap.Place;
-                ev.Data["direction"] = delta > 0 ? "slower" : "faster";
+                ev.Data["direction"] = direction;
                 bus.Push(ev);
             }
 
@@ -103,16 +125,11 @@ namespace TeamRadio56.Core.Logic
                 if (g0 < 0 || g1 < 0 || g2 < 0)     // 갭 정보 없음
                     continue;
                 double rate = (g2 - g0) / 2.0;
-                // 120초 넘는 갭·랩당 10초 이상 변화는 피트/FCY 산물 — 고르기 전에 뺀다
-                if (Math.Abs(rate) >= _gapRate
-                    && SpeechDomain.GapCandidateOk(Math.Round(g2, 1), Math.Round(rate, 2)))
+                if (Math.Abs(rate) >= _gapRate)
                 {
-                    candidates.Add(new Dictionary<string, object>
-                    {
-                        { "who", who },
-                        { "gap", Math.Round(g2, 1) },
-                        { "rate", Math.Round(rate, 2) },
-                    });
+                    Dictionary<string, object> cand = GapCandidate(who, g2, rate);
+                    if (cand != null)
+                        candidates.Add(cand);
                 }
             }
             if (candidates.Count == 0)
@@ -147,14 +164,9 @@ namespace TeamRadio56.Core.Logic
                 {
                     continue;    // 지난 리포트와 비슷하면 침묵
                 }
-                if (!SpeechDomain.GapCandidateOk(Math.Round(g, 1), Math.Round(g - p, 2)))
-                    continue;
-                candidates.Add(new Dictionary<string, object>
-                {
-                    { "who", who },
-                    { "gap", Math.Round(g, 1) },
-                    { "rate", Math.Round(g - p, 2) },
-                });
+                Dictionary<string, object> cand = GapCandidate(who, g, g - p);   // 최근 1랩 변화
+                if (cand != null)
+                    candidates.Add(cand);
             }
             if (candidates.Count == 0)
             {

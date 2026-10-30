@@ -16,6 +16,9 @@ namespace TeamRadio56.Core.Logic
         /// <summary>스타트 스포터 모드 길이(초) — 0이면 브리핑에서 예고 생략.</summary>
         public double StartSpotterSec = 45;
 
+        /// <summary>세션 목소리가 음성 팩만 말함 (kokoro, 섞임 비허용) — en은 목록에 없는 트랙 이름을 뺀다.</summary>
+        public bool PackOnly;
+
         private bool _briefed;
 
         public void Reset()
@@ -30,7 +33,7 @@ namespace TeamRadio56.Core.Logic
             if (snap.PlayerScoring() == null)
                 return;
             _briefed = true;
-            string text = Compose(state, snap, StartSpotterSec);
+            string text = Compose(state, snap, StartSpotterSec, PackOnly);
             if (text == null)
                 return;
             bus.Push(new RadioEvent
@@ -68,7 +71,8 @@ namespace TeamRadio56.Core.Logic
         /// briefing.py compose_session_briefing 미러 — 브리핑 문장.
         /// 플레이어 차량이 아직 없으면 null. 리플레이 러너도 이걸 쓴다.
         /// </summary>
-        public static string Compose(RaceState state, Snapshot snap, double startSpotterSec)
+        public static string Compose(RaceState state, Snapshot snap, double startSpotterSec,
+                                     bool packOnly = false)
         {
             VehicleInfo me = snap.PlayerScoring();
             if (me == null)
@@ -78,7 +82,7 @@ namespace TeamRadio56.Core.Logic
             int stype = ses.SessionType;
             bool isRace = stype >= 10;
             string track = (ses.Track ?? "").Trim();
-            if (track.Length > 0 && !Messages.IsKo && !SpeechDomain.KnownTrackEn(track))
+            if (packOnly && track.Length > 0 && UnspeakableTrack(track))
             {
                 bool first;
                 lock (UnknownLogged)
@@ -120,15 +124,22 @@ namespace TeamRadio56.Core.Logic
                 Raining = ses.Raining,
                 Fuel = snap.Player != null ? snap.Player.Fuel : 0.0,
                 StartSpotterSec = startSpotterSec,
-            });
+            }, packOnly);
+        }
+
+        /// <summary>음성 팩이 말할 수 없는 트랙 이름 — 목록은 en 전용.</summary>
+        private static bool UnspeakableTrack(string track)
+        {
+            return !Messages.IsKo && !SpeechDomain.KnownTrackEn(track);
         }
 
         /// <summary>
         /// 세션 종류/길이/그리드/날씨/연료 브리핑 — 순수 조립 (briefing.briefing_text 미러).
         /// 도메인 밖 숫자(100랩 넘는 세션, 그리드/순위/노면/연료 범위 밖)는 그 문장만 뺀다.
-        /// en은 트랙 이름 목록에 없는 트랙이면 '{track}.' 대신 무전 체크로 연다 (팩에 없는 이름).
+        /// packOnly(세션 목소리가 음성 팩만 말하는 kokoro)면 en은 트랙 이름 목록에 없는
+        /// 트랙을 '{track}.' 대신 무전 체크로 연다 — edge는 어떤 이름이든 말하므로 그대로.
         /// </summary>
-        public static string ComposeText(BriefingInputs b)
+        public static string ComposeText(BriefingInputs b, bool packOnly = false)
         {
             int stype = b.SessionType;
             bool isRace = stype >= 10;
@@ -138,7 +149,7 @@ namespace TeamRadio56.Core.Logic
             string track = (b.Track ?? "").Trim();
             var parts = new List<string>
             {
-                track.Length > 0 && (Messages.IsKo || SpeechDomain.KnownTrackEn(track))
+                track.Length > 0 && !(packOnly && UnspeakableTrack(track))
                     ? Messages.Get("brief_track", "track", track, "kind", kind)
                     : Messages.Get("brief_radio", "kind", kind),
             };
