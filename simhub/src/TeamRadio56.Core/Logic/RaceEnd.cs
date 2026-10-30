@@ -95,6 +95,10 @@ namespace TeamRadio56.Core.Logic
         public bool Finished;
         public bool Out;              // 내 DNF/DQ
         public bool SeenUnfinished;
+        // 콜 래치 — 트래커와 수명을 같이 해야 재시작(ET 되감기) 뒤 새 레이스에서 다시 부른다
+        public int? FinalCalledFor;   // '마지막 랩'이 수락된 시점의 내 total_laps
+        public bool EndCalled;
+        public int Generation;        // Reset마다 증가 — 큐에 남은 콜이 이전 레이스 것인지 가린다
 
         public bool FinalLap
         {
@@ -109,6 +113,9 @@ namespace TeamRadio56.Core.Logic
             Finished = false;
             Out = false;
             SeenUnfinished = false;
+            FinalCalledFor = null;
+            EndCalled = false;
+            Generation++;
         }
 
         public void Observe(RaceState state, Snapshot snap, bool crossed)

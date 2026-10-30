@@ -68,6 +68,9 @@ class RaceEndTracker:
         self.finished = False
         self.out = False                        # 내 DNF/DQ
         self.seen_unfinished = False
+        # 콜 래치 — 트래커와 수명을 같이 해야 재시작(ET 되감기) 뒤 새 레이스에서 다시 부른다
+        self.final_called_for: Optional[int] = None   # '마지막 랩'이 수락된 시점의 내 total_laps
+        self.end_called = False
 
     @property
     def final_lap(self) -> bool:

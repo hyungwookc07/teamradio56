@@ -143,9 +143,15 @@ def main() -> int:
             racecontrol.on_tick(state, snap, bus)
             rivals.on_tick(state, snap, bus)
             health.on_tick(state, snap, bus)
-            re_before = (state.race_end.chequered_et is not None, state.race_end.finished)
+            re_obj = state.race_end
+            re_before = (re_obj.chequered_et is not None, re_obj.finished)
             lap = state.update(snap)
             re = state.race_end          # update가 reset하면 새 객체 — 다시 읽는다
+            if re is not re_obj:
+                # 세션 재시작(ET 되감기) — 라이브 워커는 이전 레이스 콜을 진작 다 꺼냈다.
+                # 대기 키가 남아 있으면 새 레이스의 같은 키 콜이 항상 거절된다
+                while bus.pop(0) is not None:
+                    pass
             if state.is_race and (lap is not None
                                   or (re.chequered_et is not None, re.finished) != re_before):
                 trace.append({"t": round(snap.t, 2),

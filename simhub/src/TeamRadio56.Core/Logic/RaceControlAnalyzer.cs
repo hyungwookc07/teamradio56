@@ -35,8 +35,6 @@ namespace TeamRadio56.Core.Logic
             new Dictionary<int, double>();
         private readonly HashSet<int> _milestonesDone = new HashSet<int>();
         private double? _initialRemaining;
-        private int? _finalLapFor;             // '마지막 랩'이 수락된 시점의 내 total_laps
-        private bool _raceEndDone;
         private int? _classPlace;
         private double _limiterWarnedT;
         private bool _blueFlag;
@@ -61,8 +59,6 @@ namespace TeamRadio56.Core.Logic
             _sectorYellowAnnounced.Clear();
             _milestonesDone.Clear();
             _initialRemaining = null;
-            _finalLapFor = null;
-            _raceEndDone = false;
             _classPlace = null;
             _limiterWarnedT = 0.0;
             _blueFlag = false;
@@ -461,12 +457,21 @@ namespace TeamRadio56.Core.Logic
                 PushRaceEnd(state, snap, me, bus);   // 피니시 플래그가 크로싱 없이 늦게 켜진 경우 등
                 return;
             }
-            if (fs != 0 || _finalLapFor == me.TotalLaps)
+            if (fs != 0 || re.FinalCalledFor == me.TotalLaps)
                 return;
             SessionInfo ses = snap.Session;
-            if (!RaceEnd.IsRacingPhase(ses.GamePhase) || !RaceEnd.FlagOut(snap))
+            if (!RaceEnd.IsRacingPhase(ses.GamePhase))
                 return;
-            // 예측이 빗나간 채 리더가 체커를 받았다 — 다음 라인 통과가 피니시.
+            if (!RaceEnd.FlagOut(snap))
+            {
+                // 내가 리더면 체커는 내 통과에서야 나온다 — 시계가 끝났으면 이번 랩이 마지막
+                if (!(0 < ses.EndEt && ses.EndEt <= ses.CurrentEt))
+                    return;
+                VehicleInfo leader = RaceEnd.RaceLeader(snap);
+                if (leader == null || leader.Id != me.Id)
+                    return;
+            }
+            // 예측이 빗나간 채 리더가 체커를 받았다(또는 내가 리더인데 시계가 끝났다) — 다음 라인 통과가 피니시.
             // 라인까지 몇 초 안 남았으면 '마지막 랩'과 체커 콜이 겹치니 생략
             double? pace = state.BaselineLapTime();
             if (!pace.HasValue || pace.Value <= 0)
@@ -483,7 +488,10 @@ namespace TeamRadio56.Core.Logic
         private void PushFinalLap(RaceState state, VehicleInfo me, EventBus bus)
         {
             int lap = me.TotalLaps;
-            // 키는 랩마다 — 예측이 빗나가 다음 랩에 다시 부를 때 앞 콜 키에 막히지 않게
+            RaceEndTracker re = state.RaceEnd;
+            int gen = re.Generation;
+            // 키는 랩마다 — 예측이 빗나가 다음 랩에 다시 부를 때 앞 콜 키에 막히지 않게.
+            // 채널이 밀려 라인을 넘은 뒤에 나가면 안 된다 (안전망 콜은 라인 몇 초 전일 수 있다)
             var ev = new RadioEvent
             {
                 Type = EventTypes.RaceMilestone,
@@ -491,19 +499,21 @@ namespace TeamRadio56.Core.Logic
                 Message = Messages.Get("final_lap"),
                 DedupKey = "final_lap_" + (lap + 1),
                 Ttl = 30.0,
+                ValidFn = () => re.Generation == gen && !re.Finished && re.Lap == lap,
             };
             ev.Data["final_lap"] = true;
             ev.Data["lap"] = lap + 1;
             if (bus.Push(ev))
             {
-                _finalLapFor = lap;              // 수락됐을 때만 — 거절되면 안전망이 다시 시도
+                re.FinalCalledFor = lap;         // 수락됐을 때만 — 거절되면 안전망이 다시 시도
                 state.AddNarrative("(이벤트) 마지막 랩");
             }
         }
 
         private void PushRaceEnd(RaceState state, Snapshot snap, VehicleInfo me, EventBus bus)
         {
-            if (_raceEndDone || !state.RaceEnd.SeenUnfinished)
+            RaceEndTracker re = state.RaceEnd;
+            if (re.EndCalled || !re.SeenUnfinished)
                 return;
             int place = RaceState.ClassPlaceOf(snap, me);
             var ev = new RadioEvent
@@ -516,7 +526,7 @@ namespace TeamRadio56.Core.Logic
             ev.Data["class_place"] = place;
             if (bus.Push(ev))
             {
-                _raceEndDone = true;
+                re.EndCalled = true;
                 state.AddNarrative("(이벤트) 체커, 클래스 P" + place);
             }
         }
@@ -537,7 +547,7 @@ namespace TeamRadio56.Core.Logic
                 PushRaceEnd(state, snap, me, bus);
                 return;                      // 피니시 라인: 순위 변동 콜 대신 체커 콜 하나
             }
-            if (re.FinalLap && _finalLapFor != me.TotalLaps)
+            if (re.FinalLap && re.FinalCalledFor != me.TotalLaps)
                 PushFinalLap(state, me, bus);
             if (!prev.HasValue || cp == prev.Value)
                 return;

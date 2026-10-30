@@ -7,6 +7,8 @@
   O2  피니시 전에 finished=true인 트레이스 줄이 없다
   O3  calls 파일마다 '마지막 랩'(race_milestone + data.final_lap)이 final_calls와 정확히 같다
   O4  calls 파일마다 race_end가 피니시 시각에 딱 하나, 클래스 순위도 같다
+  정답에 "races"가 있으면(재시작 시나리오) 레이스마다 위를 적용한다 — O2는 t0 이후 구간,
+  O3/O4는 레이스 순서대로 이어 붙인 목록과 대조.
 
 사용법: python tools/race_end_oracle.py [--truth f.truth.json] [--calls py.jsonl --calls cs.jsonl]
                                        [--trace py_trace.jsonl --trace cs_trace.jsonl] [--report-only]
@@ -64,7 +66,18 @@ def check_trace_parity(a, b):
     return probs
 
 
+def races_of(truth):
+    return truth.get("races") or [truth]
+
+
 def check_trace_truth(trace, truth):
+    probs = []
+    for race in races_of(truth):
+        probs += check_trace_race(trace, race)
+    return probs
+
+
+def check_trace_race(trace, truth):
     probs = []
     for c in truth["crossings"]:
         if c["lap"] < truth["trace_exact_from_lap"]:
@@ -79,7 +92,9 @@ def check_trace_truth(trace, truth):
             probs.append(f"t={c['t']} 랩 {c['lap']}: 남은 랩 {r.get('laps_left')}"
                          f"(finished={r.get('finished')}) — 정답 {c['laps_left']}")
     fin_t = truth["finish"]["t"]
-    early = [r for r in trace if r.get("finished") and float(r["t"]) < fin_t - T_TOL]
+    t0 = truth.get("t0", float("-inf"))
+    early = [r for r in trace if r.get("finished")
+             and t0 - T_TOL <= float(r["t"]) < fin_t - T_TOL]
     if early:
         probs.append(f"피니시({fin_t}) 전에 finished: t={early[0]['t']}")
     return probs
@@ -92,8 +107,9 @@ def final_calls_of(calls):
 
 def check_calls(calls, truth):
     probs = []
+    races = races_of(truth)
     got = final_calls_of(calls)
-    want = truth["final_calls"]
+    want = [w for r in races for w in r["final_calls"]]
     ok = len(got) == len(want) and all(
         near(g["t"], w["t"]) and (g.get("data") or {}).get("lap") == w["lap"]
         for g, w in zip(got, want))
@@ -104,13 +120,14 @@ def check_calls(calls, truth):
                      + " — 정답 "
                      + ", ".join(f"t={w['t']} 랩 {w['lap']}" for w in want))
     ends = [c for c in calls if c.get("type") == "race_end"]
-    fin = truth["finish"]
-    if not (len(ends) == 1 and near(ends[0]["t"], fin["t"])
-            and (ends[0].get("data") or {}).get("class_place") == fin["class_place"]):
+    fins = [r["finish"] for r in races]
+    if not (len(ends) == len(fins) and all(
+            near(e["t"], f["t"]) and (e.get("data") or {}).get("class_place") == f["class_place"]
+            for e, f in zip(ends, fins))):
         probs.append("체커 콜 "
                      + (", ".join(f"t={e['t']} P{(e.get('data') or {}).get('class_place')}"
                                   for e in ends) or "없음")
-                     + f" — 정답 t={fin['t']} P{fin['class_place']}")
+                     + " — 정답 " + ", ".join(f"t={f['t']} P{f['class_place']}" for f in fins))
     return probs
 
 

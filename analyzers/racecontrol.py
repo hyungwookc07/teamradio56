@@ -16,7 +16,7 @@ from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
 from messages import msg, penalty_text
-from race_end import LATE_MIN_TO_LINE_S, RACING_PHASES, flag_out, lap_frac, lap_pace
+from race_end import LATE_MIN_TO_LINE_S, RACING_PHASES, flag_out, lap_frac, lap_pace, race_leader
 from state import SessionState
 from telemetry import Snapshot
 
@@ -84,8 +84,6 @@ class RaceControlAnalyzer:
         self._sector_yellow_announced: dict[int, float] = {}
         self._milestones_done: set[int] = set()
         self._initial_remaining: Optional[float] = None
-        self._final_lap_for: Optional[int] = None   # '마지막 랩'이 수락된 시점의 내 total_laps
-        self._race_end_done = False
         self._class_place: Optional[int] = None
         self._limiter_warned_t = 0.0
         self._blue_flag = False
@@ -344,12 +342,19 @@ class RaceControlAnalyzer:
         if fs == 1 or re.finished:
             self._push_race_end(state, snap, me, bus)   # 피니시 플래그가 크로싱 없이 늦게 켜진 경우 등
             return
-        if fs != 0 or self._final_lap_for == me["total_laps"]:
+        if fs != 0 or re.final_called_for == me["total_laps"]:
             return
         ses = snap.session
-        if ses["game_phase"] not in RACING_PHASES or not flag_out(snap):
+        if ses["game_phase"] not in RACING_PHASES:
             return
-        # 예측이 빗나간 채 리더가 체커를 받았다 — 다음 라인 통과가 피니시.
+        if not flag_out(snap):
+            # 내가 리더면 체커는 내 통과에서야 나온다 — 시계가 끝났으면 이번 랩이 마지막
+            if not (0 < ses["end_et"] <= ses["current_et"]):
+                return
+            leader = race_leader(snap)
+            if leader is None or leader["id"] != me["id"]:
+                return
+        # 예측이 빗나간 채 리더가 체커를 받았다(또는 내가 리더인데 시계가 끝났다) — 다음 라인 통과가 피니시.
         # 라인까지 몇 초 안 남았으면 '마지막 랩'과 체커 콜이 겹치니 생략
         pace = state.baseline_lap_time() or lap_pace(me)
         if pace and (1.0 - lap_frac(me, ses["current_et"], ses["track_len"], pace)) * pace \
@@ -359,23 +364,27 @@ class RaceControlAnalyzer:
 
     def _push_final_lap(self, state: SessionState, me: dict, bus: EventBus) -> None:
         lap = me["total_laps"]
-        # 키는 랩마다 — 예측이 빗나가 다음 랩에 다시 부를 때 앞 콜 키에 막히지 않게
+        re = state.race_end
+        # 키는 랩마다 — 예측이 빗나가 다음 랩에 다시 부를 때 앞 콜 키에 막히지 않게.
+        # 채널이 밀려 라인을 넘은 뒤에 나가면 안 된다 (안전망 콜은 라인 몇 초 전일 수 있다)
         if bus.push(Event(
                 type=EventType.RACE_MILESTONE, priority=Priority.HIGH,
                 data={"final_lap": True, "lap": lap + 1}, message=msg("final_lap"),
-                dedup_key=f"final_lap_{lap + 1}", ttl=30.0)):
-            self._final_lap_for = lap              # 수락됐을 때만 — 거절되면 안전망이 다시 시도
+                dedup_key=f"final_lap_{lap + 1}", ttl=30.0,
+                valid_fn=lambda: state.race_end is re and not re.finished and re.lap == lap)):
+            re.final_called_for = lap              # 수락됐을 때만 — 거절되면 안전망이 다시 시도
             state.add_narrative("(이벤트) 마지막 랩")
 
     def _push_race_end(self, state: SessionState, snap: Snapshot, me: dict,
                        bus: EventBus) -> None:
-        if self._race_end_done or not state.race_end.seen_unfinished:
+        re = state.race_end
+        if re.end_called or not re.seen_unfinished:
             return
         place = state.class_place_of(snap, me)
         if bus.push(Event(
                 type=EventType.RACE_END, priority=Priority.HIGH,
                 data={"pool": "race_end", "class_place": place}, ttl=30.0)):
-            self._race_end_done = True
+            re.end_called = True
             state.add_narrative(f"(이벤트) 체커, 클래스 P{place}")
 
     # -- 랩 완료: 클래스 순위 변동 ---------------------------------------------
@@ -391,7 +400,7 @@ class RaceControlAnalyzer:
         if re.finished:
             self._push_race_end(state, snap, me, bus)
             return                       # 피니시 라인: 순위 변동 콜 대신 체커 콜 하나
-        if re.final_lap and self._final_lap_for != me["total_laps"]:
+        if re.final_lap and re.final_called_for != me["total_laps"]:
             self._push_final_lap(state, me, bus)
         if prev is None or cp == prev:
             return

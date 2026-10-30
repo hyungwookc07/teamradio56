@@ -165,8 +165,17 @@ namespace TeamRadio56.Replay
                 health.OnTick(state, snap, bus);
                 bool cheqBefore = state.RaceEnd.ChequeredEt.HasValue;
                 bool finBefore = state.RaceEnd.Finished;
+                int genBefore = state.RaceEnd.Generation;
                 LapRecord lap = state.Update(snap);
                 RaceEndTracker re = state.RaceEnd;
+                if (re.Generation != genBefore)
+                {
+                    // 세션 재시작(ET 되감기) — 라이브 워커는 이전 레이스 콜을 진작 다 꺼냈다.
+                    // 대기 키가 남아 있으면 새 레이스의 같은 키 콜이 항상 거절된다
+                    while (bus.Pop(0) != null)
+                    {
+                    }
+                }
                 if (state.IsRace && (lap != null || re.ChequeredEt.HasValue != cheqBefore
                                      || re.Finished != finBefore))
                 {

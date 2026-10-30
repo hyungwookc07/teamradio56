@@ -460,6 +460,8 @@ diff한다. 세션 시작 브리핑도 양쪽 러너가 첫 틱에 내보내 en/
 (`.truth.json`)과 마지막 랩·체커 콜, 남은 랩 트레이스(`--race-end-trace`, 모든 리플레이에서
 파이썬 ↔ C# 대조)를 tools/race_end_oracle.py가 대조한다
 (생성기 tools/make_race_end_replays.py, 게이트는 `--check`로 재생성 대조).
+`race_end_restart`는 같은 세션에서 ET만 되감아 두 번 달린다 — 러너는 상태가 리셋되면
+버스 대기열을 비운다(라이브 워커는 이전 레이스 콜을 진작 다 꺼냈다).
 분석기를 고치면 파이썬을 먼저 고치고 이 회귀로 C#을 맞춘다.
 
 **아직 파이썬 엔진에만 있는 것** (builtin에서는 침묵):

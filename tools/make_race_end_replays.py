@@ -4,6 +4,8 @@
 기존 리플레이(race_full, traffic2)는 레이스 중간에 끝나서 마지막 랩·체커 판단이 한 번도
 재생되지 않았다. 여기서는 짧은 레이스 5개를 체커 이후까지 만들고, 규칙대로 계산한 정답을
 data/replays/<이름>.truth.json에 같이 쓴다 (tools/race_end_oracle.py가 대조).
+재시작 시나리오는 같은 레이스를 ET만 되감아 한 번 더 돌린다 (스냅샷 t는 계속 증가 —
+라이브의 벽시계처럼). 정답은 레이스마다 "races" 목록에 들어간다.
 
 규칙 (rF2/LMU): 시간제는 시계 0 이후 전체 1위가 라인을 넘을 때 체커, 다른 차는 그 뒤 각자
 첫 라인 통과에서 피니시. 랩제는 1위가 max_laps를 채울 때. 2번째 통과 상한은 두지 않는다.
@@ -247,18 +249,21 @@ def snapshot(n, cars, player, E, M, flag, fin):
     }
 
 
-def me_car(cid=0):
-    return Car(cid, "나", "Porsche 911 GT3 R", GT3, 0.0, 80.0, is_player=True)
+def me_car(cid=0, overrides=None):
+    return Car(cid, "나", "Porsche 911 GT3 R", GT3, 0.0, 80.0, overrides=overrides,
+               is_player=True)
+
+
+def lead_cars():
+    return [me_car(),
+            Car(1, "리바이", "Ferrari 296 GT3", GT3, -160.0, 80.6),
+            Car(2, "헌터", "McLaren 720S GT3", GT3, -330.0, 81.2)]
 
 
 # (이름, 노트, E, M, 차량, final_calls 종류, trace_exact_from_lap)
 SCENARIOS = [
     ("race_end_lead", "내가 전체 1위 — 시계 0 이후 내 라인 통과가 체커 (단일 클래스)",
-     443.0, INT_MAX,
-     lambda: [me_car(),
-              Car(1, "리바이", "Ferrari 296 GT3", GT3, -160.0, 80.6),
-              Car(2, "헌터", "McLaren 720S GT3", GT3, -330.0, 81.2)],
-     "crossing", 1),
+     443.0, INT_MAX, lead_cars, "crossing", 1),
     ("race_end_lapped", "하이퍼카에 랩 다운 + 선두 DNF — 시계 0 직후 통과해도 리더 체커 전이면 한 랩 더",
      470.0, INT_MAX,
      lambda: [me_car(),
@@ -288,10 +293,26 @@ SCENARIOS = [
               Car(1, "토요타7", "Toyota GR010", HY, 388.2, 68.0, overrides={7: 93.0}),
               Car(2, "헌터", "McLaren 720S GT3", GT3, -200.0, 80.5)],
      "recall", 6),
+    ("race_end_slowlead", "내가 전체 1위, 예측 2랩인데 마지막 랩에서 30초 잃어 시계가 랩 중간에 끝남 — "
+     "리더 체커는 내 통과라 플래그가 없다, 시계 0 직후 랩 중간 '마지막 랩'",
+     481.5, INT_MAX,
+     # 5랩을 1초 느리게 — 그 페이스 콜의 쿨다운(120초)이 6랩의 "Lost 29.0"(코코로 세그먼트
+     # 도메인 9.9초 밖)을 막는다. 예측은 그대로 2랩 (5랩 통과 401, 시계까지 80.5초)
+     lambda: [me_car(overrides={5: 81.0, 6: 110.0}),
+              Car(1, "리바이", "Ferrari 296 GT3", GT3, -600.0, 86.0),
+              Car(2, "헌터", "McLaren 720S GT3", GT3, -900.0, 86.5)],
+     "clock", 6),
+    ("race_end_restart", "race_end_lead를 끝까지 돈 뒤 같은 세션에서 재시작(ET 되감기, 차는 그대로) — "
+     "두 번째 레이스도 '마지막 랩'·체커",
+     443.0, INT_MAX, lead_cars, "restart", 1),
 ]
+
+RESTART_GAP_S = 30.0        # 재시작 전 공백 (스냅샷 없음)
 
 
 def build(name, note, E, M, mk, kind, exact_from):
+    if kind == "restart":
+        return build_restart(name, note, E, M, mk, exact_from)
     cars = mk()
     for c in cars:
         c.build(1200.0)
@@ -312,6 +333,10 @@ def build(name, note, E, M, mk, kind, exact_from):
     if kind == "net":
         nxt = min(t for t, _ in pcross if t >= flag)
         assert nxt - flag_tick >= 12.0, f"{name}: 안전망 시점에 라인이 너무 가깝다"
+    if kind == "clock":
+        assert flag_car == player.id, f"{name}: 내가 리더여야 한다"
+        nxt = min(t for t, _ in pcross if t >= E)
+        assert nxt - tick_of(E) >= 12.0, f"{name}: 시계 0 시점에 라인이 너무 가깝다"
 
     snaps = []
     n = 0
@@ -333,6 +358,8 @@ def build(name, note, E, M, mk, kind, exact_from):
         calls_t = [tick_of(by_k[pf_k - 1])]
     elif kind == "net":
         calls_t = [flag_tick]
+    elif kind == "clock":
+        calls_t = [tick_of(E)]
     else:
         calls_t = [tick_of(by_k[pf_k - 2]), tick_of(by_k[pf_k - 1])]
     final_calls = [{"t": round(t, 2), "lap": lap_at(t) + 1} for t in calls_t]
@@ -352,6 +379,29 @@ def build(name, note, E, M, mk, kind, exact_from):
         "finish": {"t": round(pf_tick, 2), "lap": pf_k, "class_place": cp},
     }
     return snaps, sidecar
+
+
+def build_restart(name, note, E, M, mk, exact_from):
+    snaps, one = build(name, note, E, M, mk, "crossing", exact_from)
+    t0 = round(snaps[-1]["t"] + RESTART_GAP_S, 3)
+    again = []
+    for s in snaps:
+        s2 = json.loads(json.dumps(s))
+        s2["t"] = round(s["t"] + t0, 3)      # current_et는 그대로 0부터 — ET 되감기
+        again.append(s2)
+
+    def shift(race, dt):
+        r = {k: race[k] for k in ("crossings", "trace_exact_from_lap", "final_calls", "finish")}
+        r = json.loads(json.dumps(r))
+        for c in r["crossings"] + r["final_calls"] + [r["finish"]]:
+            c["t"] = round(c["t"] + dt, 2)
+        r["t0"] = round(dt, 2)
+        r["leader_flag_t"] = round(race["leader_flag_t"] + dt, 2)
+        return r
+
+    sidecar = {"scenario": name, "note": note, "end_et": E, "max_laps": M,
+               "races": [shift(one, 0.0), shift(one, t0)]}
+    return snaps + again, sidecar
 
 
 def write(out_dir, name, snaps, sidecar):

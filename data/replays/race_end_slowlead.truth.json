@@ -1,0 +1,51 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 5,
+   "t": 80.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 4,
+   "t": 160.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 3,
+   "t": 240.0
+  },
+  {
+   "lap": 4,
+   "laps_left": 2,
+   "t": 320.0
+  },
+  {
+   "lap": 5,
+   "laps_left": 1,
+   "t": 401.0
+  },
+  {
+   "lap": 6,
+   "laps_left": 0,
+   "t": 511.0
+  }
+ ],
+ "end_et": 481.5,
+ "final_calls": [
+  {
+   "lap": 6,
+   "t": 481.6
+  }
+ ],
+ "finish": {
+  "class_place": 1,
+  "lap": 6,
+  "t": 511.0
+ },
+ "leader_flag_t": 511.0,
+ "max_laps": 2147483647,
+ "note": "내가 전체 1위, 예측 2랩인데 마지막 랩에서 30초 잃어 시계가 랩 중간에 끝남 — 리더 체커는 내 통과라 플래그가 없다, 시계 0 직후 랩 중간 '마지막 랩'",
+ "scenario": "race_end_slowlead",
+ "trace_exact_from_lap": 6
+}
