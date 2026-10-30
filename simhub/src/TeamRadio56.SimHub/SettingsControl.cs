@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using TeamRadio56.Core.Config;
 using TeamRadio56.Core.Diagnostics;
+using TeamRadio56.Core.Update;
 
 namespace TeamRadio56.SimHub
 {
@@ -30,6 +31,17 @@ namespace TeamRadio56.SimHub
         private readonly TextBlock _engineState = new TextBlock();
         private readonly DispatcherTimer _timer = new DispatcherTimer();
 
+        // 업데이트 섹션 — Build마다 새로 만든다 (상태는 플러그인의 UpdateController에)
+        private TextBlock _updBanner;
+        private TextBlock _updVersions;
+        private TextBlock _updAudio;
+        private TextBlock _updStatus;
+        private Button _btnUpdCheck;
+        private Button _btnUpdPlugin;
+        private Button _btnUpdAudio;
+        private Button _btnUpdCancel;
+        private int _updRefreshQueued;
+
         public SettingsControl(TeamRadio56Plugin plugin)
         {
             _plugin = plugin;
@@ -38,10 +50,16 @@ namespace TeamRadio56.SimHub
 
             _timer.Interval = TimeSpan.FromSeconds(1);
             _timer.Tick += (s, e) => Refresh();
-            Loaded += (s, e) => { Refresh(); _timer.Start(); };
+            Loaded += (s, e) =>
+            {
+                SubscribeUpdater(true);
+                Refresh();
+                _timer.Start();
+            };
             Unloaded += (s, e) =>
             {
                 _timer.Stop();
+                SubscribeUpdater(false);
                 // 디바운스 중이던 저장이 있으면 화면을 떠날 때 마저 쓴다
                 if (_saveTimer != null && _saveTimer.IsEnabled)
                 {
@@ -128,6 +146,15 @@ namespace TeamRadio56.SimHub
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 2, 0, 4),
             });
+            _updBanner = new TextBlock
+            {
+                Foreground = Accent,
+                FontWeight = FontWeights.Bold,
+                TextWrapping = TextWrapping.Wrap,
+                Visibility = Visibility.Collapsed,
+                Margin = new Thickness(0, 2, 0, 2),
+            };
+            root.Children.Add(_updBanner);
 
             BuildStatus(root);
             BuildEngine(root);
@@ -137,6 +164,8 @@ namespace TeamRadio56.SimHub
             BuildReports(root);
             // LLM 섹션은 C# 포팅 전까지 보류 — 기능이 준비되면 BuildLlm(root) 복원
             BuildBehaviour(root);
+            BuildUpdate(root);
+            RefreshUpdate();
 
             Content = new ScrollViewer
             {
@@ -432,6 +461,101 @@ namespace TeamRadio56.SimHub
             }
         }
 
+
+        private void BuildUpdate(StackPanel root)
+        {
+            StackPanel box = Section(root, L("sec_update"));
+            box.Children.Add(Hint(L("update_hint")));
+
+            _updVersions = new TextBlock { Foreground = Fg, TextWrapping = TextWrapping.Wrap };
+            box.Children.Add(_updVersions);
+            _updAudio = new TextBlock
+            {
+                Foreground = Fg,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 0),
+            };
+            box.Children.Add(_updAudio);
+            _updStatus = new TextBlock
+            {
+                Foreground = Dim,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 4, 0, 0),
+            };
+            box.Children.Add(_updStatus);
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(0, 8, 0, 4),
+            };
+            _btnUpdCheck = (Button)MakeButton(L("btn_upd_check"), () =>
+            {
+                UpdateController u = _plugin.Updater;
+                if (u != null)
+                    u.StartCheck();
+                RefreshUpdate();
+            });
+            _btnUpdPlugin = (Button)MakeButton(L("btn_upd_plugin"), ConfirmInstallPlugin);
+            _btnUpdAudio = (Button)MakeButton(L("btn_upd_audio"), ConfirmInstallAudio);
+            _btnUpdCancel = (Button)MakeButton(L("btn_upd_cancel"), () =>
+            {
+                UpdateController u = _plugin.Updater;
+                if (u != null)
+                    u.Cancel();
+            });
+            buttons.Children.Add(_btnUpdCheck);
+            buttons.Children.Add(_btnUpdPlugin);
+            buttons.Children.Add(_btnUpdAudio);
+            buttons.Children.Add(_btnUpdCancel);
+            buttons.Children.Add(MakeButton(L("btn_upd_releases"),
+                () => OpenFile(UpdateService.DefaultReleasesUrl)));
+            box.Children.Add(buttons);
+
+            Row(box, L("row_check_updates"), MakeCheck(S.CheckUpdates, v =>
+            {
+                S.CheckUpdates = v;
+            }), L("hint_check_updates"));
+        }
+
+        private void ConfirmInstallPlugin()
+        {
+            UpdateController u = _plugin.Updater;
+            UpdateState st = u != null ? u.State : null;
+            if (st == null || !st.CanInstallPlugin)
+                return;
+            string text = string.Format(L("upd_confirm_plugin"),
+                TeamRadio56Plugin.Version, st.Check.Latest.Version);
+            if (Confirm(text))
+                u.StartInstallPlugin();
+            RefreshUpdate();
+        }
+
+        private void ConfirmInstallAudio()
+        {
+            UpdateController u = _plugin.Updater;
+            UpdateState st = u != null ? u.State : null;
+            if (st == null || !st.CanInstallAudio)
+                return;
+            long size = st.Check.Latest.AudioTotalSize;
+            string text = string.Format(L("upd_confirm_audio"), st.Check.Latest.AudioPack,
+                size > 0 ? string.Format(L("upd_confirm_size"), FormatBytes(size)) : "");
+            if (Confirm(text))
+                u.StartInstallAudio();
+            RefreshUpdate();
+        }
+
+        private bool Confirm(string text)
+        {
+            Window owner = Window.GetWindow(this);
+            MessageBoxResult r = owner != null
+                ? MessageBox.Show(owner, text, L("upd_confirm_title"),
+                                  MessageBoxButton.YesNo, MessageBoxImage.Question)
+                : MessageBox.Show(text, L("upd_confirm_title"),
+                                  MessageBoxButton.YesNo, MessageBoxImage.Question);
+            return r == MessageBoxResult.Yes;
+        }
+
         // -- 상태 갱신 -------------------------------------------------------
 
         /// <summary>
@@ -509,6 +633,8 @@ namespace TeamRadio56.SimHub
                         _plugin.BuiltinCacheCount > 0 ? Dim : Off);
                 }
 
+                RefreshUpdate();
+
                 string[] calls = _plugin.RecentCalls();
                 SetText(_recent, calls.Length == 0
                     ? L("no_recent")
@@ -518,6 +644,211 @@ namespace TeamRadio56.SimHub
             {
                 // 설정 화면 때문에 SimHub이 흔들리지 않게
             }
+        }
+
+        /// <summary>업데이트 작업 스레드의 알림 — 여러 번 와도 UI 갱신은 한 번만 예약.</summary>
+        private void OnUpdaterChanged()
+        {
+            if (System.Threading.Interlocked.Exchange(ref _updRefreshQueued, 1) == 1)
+                return;
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    System.Threading.Interlocked.Exchange(ref _updRefreshQueued, 0);
+                    RefreshUpdate();
+                }));
+            }
+            catch (Exception)
+            {
+                System.Threading.Interlocked.Exchange(ref _updRefreshQueued, 0);
+            }
+        }
+
+        private void SubscribeUpdater(bool on)
+        {
+            UpdateController u = _plugin.Updater;
+            if (u == null)
+                return;
+            u.Changed -= OnUpdaterChanged;      // Loaded가 여러 번 와도 중복 구독 없게
+            if (on)
+                u.Changed += OnUpdaterChanged;
+        }
+
+        private void RefreshUpdate()
+        {
+            try
+            {
+                RefreshUpdateCore();
+            }
+            catch (Exception ex)
+            {
+                FileLog.Error("업데이트 화면 갱신 실패", ex);
+            }
+        }
+
+        private void RefreshUpdateCore()
+        {
+            if (_updStatus == null)
+                return;
+            UpdateController u = _plugin.Updater;
+            UpdateState st = u != null ? u.State : null;
+            if (st == null)
+            {
+                SetText(_updVersions, string.Format(L("upd_versions_unknown"), TeamRadio56Plugin.Version), Fg);
+                SetText(_updAudio, "", Dim);
+                SetText(_updStatus, L("upd_unavailable"), Off);
+                _btnUpdCheck.IsEnabled = _btnUpdPlugin.IsEnabled = _btnUpdAudio.IsEnabled = false;
+                _btnUpdCancel.Visibility = Visibility.Collapsed;
+                _updBanner.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            UpdateCheck check = st.Check;
+            string cur = TeamRadio56Plugin.Version;
+            string versions;
+            if (check == null)
+                versions = string.Format(L("upd_versions_unknown"), cur);
+            else
+            {
+                versions = string.Format(check.PluginUpdateAvailable
+                    ? L("upd_versions_new") : L("upd_versions_same"), cur, check.Latest.Version);
+                if (!string.IsNullOrEmpty(check.Latest.Notes))
+                    versions += "\n" + string.Format(L("upd_notes"), check.Latest.Notes);
+            }
+            string last = FormatLastCheck(S != null ? S.LastUpdateCheck : null);
+            if (last != null)
+                versions += "\n" + string.Format(L("upd_last_check"), last);
+            SetText(_updVersions, versions,
+                    check != null && check.PluginUpdateAvailable && !st.RestartPending ? Accent : Fg);
+
+            string audio;
+            if (check == null)
+                audio = L("upd_audio_unknown");
+            else if (!check.Latest.HasAudioPack)
+                audio = string.Format(L("upd_audio_none_in_release"), PackName(check.InstalledAudioPack));
+            else if (check.AudioUpdateAvailable)
+            {
+                long size = check.Latest.AudioTotalSize;
+                audio = string.Format(L("upd_audio_new"), PackName(check.InstalledAudioPack),
+                    check.Latest.AudioPack,
+                    size > 0 ? string.Format(L("upd_audio_size"), FormatBytes(size)) : "");
+            }
+            else
+                audio = string.Format(L("upd_audio_same"), check.Latest.AudioPack);
+            SetText(_updAudio, audio, check != null && check.AudioUpdateAvailable ? Accent : Fg);
+
+            // 상태 줄: 진행 중 > 실패 > 완료 안내
+            string status = "";
+            Brush brush = Dim;
+            if (st.Busy)
+            {
+                status = ProgressText(st);
+                brush = Fg;
+            }
+            else if (st.ErrorKind.HasValue)
+            {
+                status = L("upd_failed_" + st.FailedActivity) + L("upd_err_" + st.ErrorKind.Value);
+                if (st.ErrorKind.Value != UpdateErrorKind.Cancelled && !string.IsNullOrEmpty(st.ErrorDetail))
+                    status += "\n(" + Truncate(st.ErrorDetail, 300) + ")";
+                brush = st.ErrorKind.Value == UpdateErrorKind.Cancelled ? Dim : Off;
+            }
+            if (!st.Busy)
+            {
+                var notes = new System.Collections.Generic.List<string>();
+                if (status.Length > 0)
+                    notes.Add(status);
+                if (st.RestartPending)
+                    notes.Add(string.Format(L("upd_restart"), st.RestartPendingVersion));
+                if (st.AudioInstalledPack != null)
+                    notes.Add(string.Format(L("upd_audio_done"), st.AudioInstalledPack));
+                if (status.Length == 0 && notes.Count > 0)
+                    brush = Ok;
+                status = string.Join("\n", notes);
+            }
+            SetText(_updStatus, status, brush);
+            _updStatus.Visibility = status.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            _btnUpdCheck.IsEnabled = !st.Busy;
+            _btnUpdPlugin.IsEnabled = st.CanInstallPlugin;
+            _btnUpdAudio.IsEnabled = st.CanInstallAudio;
+            _btnUpdCancel.Visibility = st.Busy ? Visibility.Visible : Visibility.Collapsed;
+
+            // 상단 배너 — 업데이트 섹션이 화면 맨 아래라 놓치지 않게
+            string banner = null;
+            Brush bannerBrush = Accent;
+            if (st.RestartPending)
+            {
+                banner = string.Format(L("upd_banner_restart"), st.RestartPendingVersion);
+                bannerBrush = Ok;
+            }
+            else if (check != null && check.PluginUpdateAvailable)
+                banner = string.Format(L("upd_banner_new"), check.Latest.Version);
+            else if (check != null && check.AudioUpdateAvailable)
+                banner = L("upd_banner_audio");
+            SetText(_updBanner, banner ?? "", bannerBrush);
+            _updBanner.Visibility = banner != null ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private static string ProgressText(UpdateState st)
+        {
+            UpdateProgress p = st.Progress;
+            if (p == null)
+                return st.Activity == UpdateActivity.Checking ? L("upd_checking") : L("upd_preparing");
+            switch (p.Stage)
+            {
+                case UpdateStage.Downloading:
+                    if (p.Total > 0)
+                        return string.Format(L("upd_downloading"), p.Item, p.ItemCount, p.Name,
+                            FormatBytes(p.Done), FormatBytes(p.Total),
+                            (int)Math.Min(100, p.Done * 100 / p.Total));
+                    return string.Format(L("upd_downloading_nototal"), p.Item, p.ItemCount, p.Name,
+                        FormatBytes(p.Done));
+                case UpdateStage.Verifying:
+                    return string.Format(L("upd_verifying"), p.Item, p.ItemCount, p.Name);
+                case UpdateStage.Extracting:
+                    if (p.Total > 0)
+                        return string.Format(L("upd_extracting_files"), p.Item, p.ItemCount, p.Name,
+                            p.Done, p.Total);
+                    return string.Format(L("upd_extracting"), p.Item, p.ItemCount, p.Name);
+                case UpdateStage.Installing:
+                    return L("upd_installing");
+                default:
+                    return L("upd_finishing");
+            }
+        }
+
+        private static string PackName(string pack)
+        {
+            if (string.IsNullOrEmpty(pack))
+                return L("upd_pack_none");
+            if (pack.StartsWith(AudioPack.IncompletePrefix, StringComparison.Ordinal))
+                return L("upd_pack_incomplete");
+            return pack;
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            double mb = bytes / (1024.0 * 1024.0);
+            return mb >= 10 ? mb.ToString("0") + " MB" : mb.ToString("0.0") + " MB";
+        }
+
+        /// <summary>저장된 UTC 왕복 시각 → 로컬 "yyyy-MM-dd HH:mm". 없거나 깨졌으면 null.</summary>
+        private static string FormatLastCheck(string stored)
+        {
+            if (string.IsNullOrEmpty(stored))
+                return null;
+            DateTime t;
+            if (!DateTime.TryParse(stored, System.Globalization.CultureInfo.InvariantCulture,
+                                   System.Globalization.DateTimeStyles.RoundtripKind, out t))
+                return null;
+            return t.ToLocalTime().ToString("yyyy-MM-dd HH:mm",
+                                            System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private static string Truncate(string text, int max)
+        {
+            return text.Length <= max ? text : text.Substring(0, max) + "...";
         }
 
         // -- 위젯 헬퍼 -------------------------------------------------------

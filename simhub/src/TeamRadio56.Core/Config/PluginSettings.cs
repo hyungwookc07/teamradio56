@@ -73,6 +73,12 @@ namespace TeamRadio56.Core.Config
         public bool RequireRealtime { get; set; } = true;     // 모니터/메뉴에선 침묵
         public bool SpeechLog { get; set; } = true;
 
+        // -- 업데이트 ----------------------------------------------------
+        /// <summary>시작 시 하루 한 번 새 버전 확인 (설치는 항상 사용자가 버튼으로).</summary>
+        public bool CheckUpdates { get; set; } = true;
+        /// <summary>마지막 확인 시각 (UTC 왕복 형식) — 확인 주기 계산용, 화면에서 편집하지 않는다.</summary>
+        public string LastUpdateCheck { get; set; } = "";
+
         /// <summary>수다스러움 프리셋 → 쿨다운 배율 (클수록 조용).</summary>
         public double CooldownScale
         {

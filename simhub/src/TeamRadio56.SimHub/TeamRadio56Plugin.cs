@@ -20,6 +20,9 @@ using EngineSettings = TeamRadio56.Core.Logic.EngineSettings;
 using VoiceWorker = TeamRadio56.Core.Logic.VoiceWorker;
 using VoiceCache = TeamRadio56.Core.Logic.VoiceCache;
 using OverlayState = TeamRadio56.Core.Logic.OverlayState;
+using HttpDownloader = TeamRadio56.Core.Update.HttpDownloader;
+using UpdateController = TeamRadio56.Core.Update.UpdateController;
+using UpdateService = TeamRadio56.Core.Update.UpdateService;
 
 namespace TeamRadio56.SimHub
 {
@@ -39,7 +42,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.15.0-kokoro";
+        public const string Version = "0.16.0-update";
 
         /// <summary>
         /// 플러그인이 무전 엔진(builtin 또는 자식 파이썬)을 실제로 돌리는 동안만
@@ -74,6 +77,13 @@ namespace TeamRadio56.SimHub
         private string _loggedGameName;
 
         public PluginManager PluginManager { get; set; }
+
+        // 시작 직후엔 SimHub·엔진 기동과 겹치지 않게 잠깐 미뤘다가 확인
+        private static readonly TimeSpan StartupCheckDelay = TimeSpan.FromSeconds(15);
+        private UpdateController _updater;
+
+        /// <summary>업데이트 확인·설치 (설정 화면이 쓴다). 초기화 실패 시 null.</summary>
+        public UpdateController Updater { get { return _updater; } }
 
         /// <summary>설정 — SimHub 좌측 메뉴에서 편집, DLL 옆 파일에 저장.</summary>
         public PluginSettings Settings { get; private set; }
@@ -228,7 +238,9 @@ namespace TeamRadio56.SimHub
             FileLog.Banner(Version);
             Settings = SettingsStore.Load();
             _activeMode = Settings.EngineMode;
-
+            CleanupUpdateLeftovers();
+            // 엔진 초기화보다 먼저 — 이후 단계가 실패해도 설정 화면에서 업데이트는 할 수 있게
+            InitUpdater();
 
             string layoutError = Rf2SharedMemoryReader.VerifyLayout();
             _layoutOk = layoutError == null;
@@ -258,6 +270,121 @@ namespace TeamRadio56.SimHub
                 InitBuiltin();
             }
             FileLog.Info("초기화 완료. 로그: {0} / 설정: {1}", FileLog.Path, SettingsStore.Path);
+        }
+
+        /// <summary>플러그인 DLL이 있는 폴더 (SimHub 설치 폴더). 알 수 없으면 null.</summary>
+        public static string PluginDirectory()
+        {
+            try
+            {
+                string location = typeof(TeamRadio56Plugin).Assembly.Location;
+                return string.IsNullOrEmpty(location)
+                    ? null : System.IO.Path.GetDirectoryName(location);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>지난 업데이트가 남긴 .old DLL·작업 폴더 정리 — 실패는 무시 (다음 시작에 다시).</summary>
+        private static void CleanupUpdateLeftovers()
+        {
+            try
+            {
+                string dir = PluginDirectory();
+                if (dir != null)
+                {
+                    int removed = UpdateService.CleanupOnStartup(dir);
+                    if (removed > 0)
+                        FileLog.Info("이전 업데이트의 .old DLL {0}개 정리", removed);
+                }
+                string temp = UpdateController.TempWorkDir();
+                if (System.IO.Directory.Exists(temp))
+                    System.IO.Directory.Delete(temp, true);
+            }
+            catch (Exception ex)
+            {
+                FileLog.Warn("업데이트 잔여 파일 정리 실패 (무시): " + ex.Message);
+            }
+        }
+
+        private void InitUpdater()
+        {
+            try
+            {
+                string dir = PluginDirectory();
+                if (dir == null)
+                {
+                    FileLog.Warn("플러그인 폴더를 알 수 없어 업데이트 기능을 끕니다");
+                    return;
+                }
+                var service = new UpdateService(new HttpDownloader { UserAgent = "teamradio56/" + Version });
+                _updater = new UpdateController(service, Version, dir, UpdateCacheDir);
+                _updater.CheckAttempted += at =>
+                {
+                    PluginSettings s = Settings;
+                    if (s == null)
+                        return;
+                    s.LastUpdateCheck = UpdateService.FormatCheckTime(at);
+                    SaveSettings();
+                };
+                if (Settings.CheckUpdates
+                    && UpdateService.IsCheckDue(Settings.LastUpdateCheck, DateTime.UtcNow))
+                    _updater.StartCheck(StartupCheckDelay);
+            }
+            catch (Exception ex)
+            {
+                _updater = null;
+                FileLog.Error("업데이트 기능 초기화 실패 (플러그인은 그대로 동작)", ex);
+            }
+        }
+
+        /// <summary>음성 팩 설치 대상 — 엔진이 다음 시작 때 쓸 캐시 폴더와 같은 규칙.</summary>
+        public string UpdateCacheDir()
+        {
+            return ResolveCacheDir(false);
+        }
+
+        /// <summary>
+        /// 오디오 캐시 폴더 결정. 명시 설정이 최우선, 비어 있으면 자동 탐색 (파이썬
+        /// 설정 잔여값은 마지막 폴백일 뿐 — builtin은 원칙적으로 여기에 기대지 않는다),
+        /// 그래도 없으면 DLL 옆 audio_cache (forEngine이면 만든다).
+        /// </summary>
+        private string ResolveCacheDir(bool forEngine)
+        {
+            PluginSettings settings = Settings;
+            string cacheDir = null;
+            if (settings != null && !string.IsNullOrEmpty(settings.AudioCacheDir))
+            {
+                if (System.IO.Directory.Exists(settings.AudioCacheDir))
+                    cacheDir = settings.AudioCacheDir;
+                else if (forEngine)
+                    FileLog.Warn("설정된 오디오 캐시 폴더가 없습니다: "
+                                 + settings.AudioCacheDir + " — 자동 탐색으로 폴백");
+            }
+            if (cacheDir == null)
+            {
+                cacheDir = AudioSink.FindCacheDir(EngineExePath(),
+                    settings != null ? settings.EngineArgs : null);
+            }
+            if (cacheDir == null)
+            {
+                // 동봉 캐시가 없어도 런타임 edge 합성 결과를 모아둘 곳은 필요하다
+                try
+                {
+                    string dllDir = System.IO.Path.GetDirectoryName(
+                        System.Reflection.Assembly.GetExecutingAssembly().Location);
+                    if (dllDir != null)
+                    {
+                        cacheDir = System.IO.Path.Combine(dllDir, "audio_cache");
+                        if (forEngine)
+                            System.IO.Directory.CreateDirectory(cacheDir);
+                    }
+                }
+                catch (Exception) { cacheDir = null; }
+            }
+            return cacheDir;
         }
 
         public void DataUpdate(PluginManager pluginManager, ref GameData data)
@@ -322,37 +449,7 @@ namespace TeamRadio56.SimHub
             _chief = new CrewChiefEngine(cfg,
                 Settings.LapTimeEveryLap, Settings.StatusEveryLaps);
 
-            // 명시 설정이 최우선, 비어 있으면 자동 탐색 (파이썬 설정 잔여값은
-            // 마지막 폴백일 뿐 — builtin은 원칙적으로 여기에 기대지 않는다)
-            string cacheDir = null;
-            if (Settings != null && !string.IsNullOrEmpty(Settings.AudioCacheDir))
-            {
-                if (System.IO.Directory.Exists(Settings.AudioCacheDir))
-                    cacheDir = Settings.AudioCacheDir;
-                else
-                    FileLog.Warn("설정된 오디오 캐시 폴더가 없습니다: "
-                                 + Settings.AudioCacheDir + " — 자동 탐색으로 폴백");
-            }
-            if (cacheDir == null)
-            {
-                cacheDir = AudioSink.FindCacheDir(EngineExePath(),
-                    Settings != null ? Settings.EngineArgs : null);
-            }
-            if (cacheDir == null)
-            {
-                // 동봉 캐시가 없어도 런타임 edge 합성 결과를 모아둘 곳은 필요하다
-                try
-                {
-                    string dllDir = System.IO.Path.GetDirectoryName(
-                        System.Reflection.Assembly.GetExecutingAssembly().Location);
-                    if (dllDir != null)
-                    {
-                        cacheDir = System.IO.Path.Combine(dllDir, "audio_cache");
-                        System.IO.Directory.CreateDirectory(cacheDir);
-                    }
-                }
-                catch (Exception) { cacheDir = null; }
-            }
+            string cacheDir = ResolveCacheDir(true);
             // 파이썬 build_engine과 같은 자동 보정 — 멘트 언어와 보이스 불일치,
             // kokoro는 영어 전용이라 ko 멘트는 edge로
             bool ko = string.Equals(Settings.VoiceLanguage, "ko",
@@ -401,6 +498,10 @@ namespace TeamRadio56.SimHub
         public void End(PluginManager pluginManager)
         {
             FileLog.Info("종료 — 정리 중");
+            // 진행 중인 다운로드는 취소 — DLL 교체 단계는 짧아 끝날 때까지 잠깐 기다린다
+            UpdateController updater = _updater;
+            if (updater != null)
+                updater.Shutdown(TimeSpan.FromSeconds(3));
             // 백그라운드 모드 전환과 겹치면 End 뒤에 엔진이 새로 떠 고아가 된다
             lock (_restartGate)
             {

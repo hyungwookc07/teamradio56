@@ -42,6 +42,7 @@ namespace TeamRadio56.Replay
                 Section("음성 팩 표식·휴리스틱", Markers);
                 Section("음성 팩 설치", AudioInstall);
                 Section("확인 주기", Schedule);
+                Section("업데이트 컨트롤러 (백그라운드 흐름)", Controller);
                 Section("HTTP 다운로더 (로컬 서버)", Http);
             }
             finally
@@ -670,6 +671,125 @@ namespace TeamRadio56.Replay
             Check(UpdateService.IsCheckDue(UpdateService.FormatCheckTime(now.AddHours(2)), now), "미래 시각(시계 변경) → 확인");
         }
 
+        // -- 컨트롤러 ----------------------------------------------------------
+
+        private static void Controller()
+        {
+            TimeSpan wait = TimeSpan.FromSeconds(10);
+            byte[] plugin = ZipBytes((CoreDll, B("MZ new core")), (SimHubDll, B("MZ new simhub")));
+            byte[] pack = ZipBytes(("x1.wav", B("X1")));
+            string manifest = "format=1\nversion=0.16.0\ntag=v0.16.0\n"
+                + "plugin_asset=teamradio56-plugin-0.16.0.zip\nplugin_sha256=" + Sha256Util.OfBytes(plugin) + "\n"
+                + "audio_pack=kokoro-v016\naudio_tag=v0.16.0\naudio_assets=pk.zip\n"
+                + "audio_sha256=" + Sha256Util.OfBytes(pack) + "\naudio_size=" + pack.Length + "\n";
+            string latestUrl = Base + "/latest/download/teamradio56-release.txt";
+
+            string dir = PluginDir();
+            string cache = NewDir("ctl-cache");
+            MakeSegments(cache);
+            var dl = new FakeDownloader();
+            dl.Files[latestUrl] = B(manifest);
+            dl.Files[PluginUrl] = plugin;
+            dl.Files[Base + "/download/v0.16.0/pk.zip"] = pack;
+            var ctl = new UpdateController(new UpdateService(dl, Base), "0.15.0-kokoro", dir, () => cache);
+            var attempts = new List<DateTime>();
+            int changed = 0;
+            ctl.CheckAttempted += t => { lock (attempts) attempts.Add(t); };
+            ctl.Changed += () => Interlocked.Increment(ref changed);
+
+            Check(!ctl.State.Busy && ctl.State.Check == null, "처음: 대기, 확인 결과 없음");
+            Check(!ctl.StartInstallPlugin() && !ctl.StartInstallAudio(), "확인 전엔 설치 거부");
+
+            // 확인 중엔 다른 작업 거부, 취소하면 기록하지 않음
+            dl.Gate = new ManualResetEventSlim(false);
+            Check(ctl.StartCheck(), "확인 시작");
+            Check(ctl.State.Busy && ctl.State.Activity == UpdateActivity.Checking, "확인 중 상태 (동기 반영)");
+            Check(!ctl.StartCheck() && !ctl.StartInstallPlugin(), "작업 중 중복 시작 거부");
+            ctl.Cancel();
+            Check(ctl.Wait(wait), "취소 후 종료");
+            Check(!ctl.State.Busy && ctl.State.ErrorKind == UpdateErrorKind.Cancelled
+                  && ctl.State.FailedActivity == UpdateActivity.Checking, "취소 → Cancelled");
+            Check(attempts.Count == 0, "취소한 확인은 마지막 확인 시각에 안 남김");
+            dl.Gate = null;
+
+            // 시작 지연 중 취소 → 즉시 끝남
+            Check(ctl.StartCheck(TimeSpan.FromMinutes(5)), "지연 확인 시작");
+            ctl.Cancel();
+            Check(ctl.Wait(TimeSpan.FromSeconds(3)) && ctl.State.ErrorKind == UpdateErrorKind.Cancelled,
+                  "지연 중 취소 즉시 반영");
+            Check(!dl.Requests.Contains(latestUrl), "지연 중 취소 → 요청 안 함");
+
+            // 정상 확인
+            Check(ctl.StartCheck() && ctl.Wait(wait), "확인 완료");
+            UpdateState st = ctl.State;
+            Check(st.ErrorKind == null && st.Check != null && st.CheckedAtUtc.HasValue, "확인 결과 저장, 오류 지움");
+            Check(st.Check.PluginUpdateAvailable && st.CanInstallPlugin, "플러그인 업데이트 가능");
+            Check(st.Check.InstalledAudioPack == AudioPack.LegacyPackId && st.CanInstallAudio,
+                  "수동 설치 팩 감지 → 음성 팩 업데이트 가능");
+            Check(attempts.Count == 1, "확인 시각 기록 1회");
+            Check(Volatile.Read(ref changed) > 0, "상태 변경 알림");
+
+            // 플러그인 설치 → 재시작 대기, 다시 설치 불가
+            Check(ctl.StartInstallPlugin() && ctl.Wait(wait), "플러그인 설치 실행");
+            st = ctl.State;
+            Check(st.ErrorKind == null && st.RestartPendingVersion == "0.16.0" && !st.CanInstallPlugin,
+                  "설치 후 재시작 대기, 재설치 버튼 꺼짐");
+            Check(Text(Path.Combine(dir, CoreDll)) == "MZ new core" && File.Exists(Path.Combine(dir, CoreDll + ".old")),
+                  "컨트롤러 경유 DLL 교체");
+            Check(st.Progress == null, "끝나면 진행률 비움");
+
+            // 음성 팩 설치 → 확인 결과 갱신
+            Check(ctl.StartInstallAudio() && ctl.Wait(wait), "음성 팩 설치 실행");
+            st = ctl.State;
+            Check(st.ErrorKind == null && st.AudioInstalledPack == "kokoro-v016"
+                  && !st.Check.AudioUpdateAvailable && !st.CanInstallAudio, "음성 팩 설치 후 업데이트 없음");
+            Check(Text(Path.Combine(cache, "x1.wav")) == "X1" && AudioPack.Installed(cache) == "kokoro-v016",
+                  "컨트롤러 경유 팩 설치");
+            Check(st.RestartPending, "재시작 대기 표시 유지");
+
+            // 실패는 상태로만 — 예외가 밖으로 나오지 않음, 플러그인 그대로
+            string dir2 = PluginDir();
+            var dl2 = new FakeDownloader();
+            dl2.Files[latestUrl] = B(manifest);
+            dl2.Files[PluginUrl] = ZipBytes((CoreDll, B("MZ tampered")), (SimHubDll, B("MZ x")));
+            var ctl2 = new UpdateController(new UpdateService(dl2, Base), "0.15.0", dir2, () => null);
+            Check(ctl2.StartCheck() && ctl2.Wait(wait) && ctl2.State.Check.AudioUpdateAvailable,
+                  "캐시 폴더 없음 → 팩 업데이트 권유");
+            Check(ctl2.StartInstallPlugin() && ctl2.Wait(wait), "변조 zip 설치 시도");
+            Check(ctl2.State.ErrorKind == UpdateErrorKind.Integrity
+                  && ctl2.State.FailedActivity == UpdateActivity.InstallingPlugin
+                  && !ctl2.State.RestartPending && ctl2.State.CanInstallPlugin, "sha 불일치 → 상태에 기록, 재시도 가능");
+            Check(Untouched(dir2), "컨트롤러 실패: 플러그인 그대로");
+            Check(ctl2.StartInstallAudio() && ctl2.Wait(wait) && ctl2.State.ErrorKind == UpdateErrorKind.Io,
+                  "캐시 폴더를 못 정하면 Io 오류");
+
+            // 오프라인 확인 실패도 시도로 기록 (하루 한 번 원칙)
+            dl2.FailAll = true;
+            var attempts2 = 0;
+            ctl2.CheckAttempted += _ => Interlocked.Increment(ref attempts2);
+            Check(ctl2.StartCheck() && ctl2.Wait(wait), "오프라인 확인");
+            Check(ctl2.State.ErrorKind == UpdateErrorKind.Network && ctl2.State.Check != null,
+                  "오프라인 → Network, 이전 확인 결과 유지");
+            Check(attempts2 == 1, "실패한 확인도 시도로 기록");
+
+            // 작업 폴더: 플러그인 폴더에 못 만들면 %TEMP%
+            Check(ctl.WorkDir() == UpdateService.DefaultWorkDir(dir), "작업 폴더 기본: 플러그인 폴더 아래");
+            string notADir = Path.Combine(NewDir("ctl-file"), "plugin.bin");
+            File.WriteAllText(notADir, "x");
+            var ctl3 = new UpdateController(new UpdateService(dl, Base), "0.15.0", notADir, () => cache);
+            Check(ctl3.WorkDir() == UpdateController.TempWorkDir(), "작업 폴더를 못 만들면 TEMP로");
+
+            // 종료 후엔 새 작업 거부
+            ctl.Shutdown(TimeSpan.FromSeconds(1));
+            Check(!ctl.StartCheck(), "종료 후 새 작업 거부");
+
+            // 알림 처리기가 던져도 작업은 끝까지
+            var ctl4 = new UpdateController(new UpdateService(dl, Base), "0.15.0", PluginDir(), () => cache);
+            ctl4.Changed += () => throw new InvalidOperationException("UI 오류 흉내");
+            Check(ctl4.StartCheck() && ctl4.Wait(wait) && ctl4.State.Check != null && !ctl4.State.Busy,
+                  "알림 처리기 예외 무시");
+        }
+
         // -- HTTP ----------------------------------------------------------
 
         private static void Http()
@@ -808,10 +928,13 @@ namespace TeamRadio56.Replay
             public readonly Dictionary<string, byte[]> Files = new Dictionary<string, byte[]>();
             public readonly List<string> Requests = new List<string>();
             public bool FailAll;
+            /// <summary>설정하면 요청이 이 신호를 기다린다 — 작업 중 상태를 붙잡아 두는 용도.</summary>
+            public ManualResetEventSlim Gate;
 
             private byte[] Get(string url, CancellationToken ct)
             {
                 ct.ThrowIfCancellationRequested();
+                Gate?.Wait(ct);
                 Requests.Add(url);
                 if (FailAll)
                     throw new UpdateException(UpdateErrorKind.Network, "오프라인 (가짜)");
