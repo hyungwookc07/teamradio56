@@ -11,11 +11,16 @@ kokoro는 build_pregen_engine으로 항상 kokoro 렌더 (팩/edge로 건너뛰�
 
 --ab: 한 멘트를 통문장 렌더와 세그먼트 조립본으로 각각 만들어 귀로 비교.
 
+--shard K/N: 대상 목록(정렬된 통문장 / 단계별 세그먼트)을 N등분해 K번째만 렌더
+(i % N == K-1). CI가 N개 잡으로 나눠 렌더하고 캐시를 합친다 — 합집합은 샤드 없는
+실행과 같다 (replay-check가 --dry-run으로 대조). 조립 자산은 결정적이라 샤드마다 같다.
+
 설정(config.yaml)의 tts 엔진/보이스를 그대로 사용한다. 보이스나 말 속도를
 바꾸면 다시 실행할 것. 이미 캐시된 파일은 건너뛴다.
 
 사용법: python tools/pregen_audio.py [--config config.yaml] [--engine kokoro]
         python tools/pregen_audio.py --segments [--tiers 1,2,3] [--tracks voice_lines/track_names_en.txt]
+        python tools/pregen_audio.py --engine kokoro [--segments ...] --shard 2/6
         python tools/pregen_audio.py --ab "Gap behind 6.3 seconds. Closing 1.3 a lap." --tone casual --ab-out ab
 """
 
@@ -46,13 +51,34 @@ from voice import (PhrasePool, iter_pregen_sentences,         # noqa: E402
                    iter_pregen_texts, lines_file, load_track_names)
 
 
-def _whole_pass(cfg, dry_run: bool) -> int:
+def _parse_shard(spec):
+    """'K/N' → (K, N). 1 <= K <= N."""
+    try:
+        k, n = (int(v) for v in spec.split("/"))
+    except ValueError:
+        raise SystemExit(f"--shard 형식은 K/N (예: 2/6): {spec}")
+    if not 1 <= k <= n:
+        raise SystemExit(f"--shard는 1 <= K <= N: {spec}")
+    return k, n
+
+
+def _take_shard(items: list, shard) -> list:
+    if shard is None:
+        return items
+    k, n = shard
+    return items[k - 1::n]
+
+
+def _whole_pass(cfg, dry_run: bool, shard=None) -> int:
     # 멘트 언어에 맞는 슬롯/풀로 열거 (en/ko)
     from messages import set_language
     set_language(cfg.get("voice.language", "en"))
     pool = PhrasePool(lines_file(cfg.get("voice.language", "en")))
     texts = sorted(set(iter_pregen_texts(pool)))
     print(f"사전 캐시 대상: {len(texts)}개 멘트 (톤별)")
+    if shard is not None:
+        texts = _take_shard(texts, shard)
+        print(f"샤드 {shard[0]}/{shard[1]}: {len(texts)}개")
 
     if dry_run:
         for tone, t in texts:
@@ -117,7 +143,8 @@ def _db(x: float) -> float:
     return 20.0 * math.log10(max(x, 1e-9))
 
 
-def _segment_pass(cfg, tiers: tuple, tracks: tuple, dry_run: bool) -> int:
+def _segment_pass(cfg, tiers: tuple, tracks: tuple, dry_run: bool,
+                  shard=None) -> int:
     import radiofx
     from radio_assemble import segment_file_name
 
@@ -134,8 +161,12 @@ def _segment_pass(cfg, tiers: tuple, tracks: tuple, dry_run: bool) -> int:
     for tier in sorted(tiers):
         items = sorted(set(iter_pregen_sentences((tier,), tracks)) - seen)
         seen.update(items)
-        per_tier.append((tier, items))
         print(f"{tier}단계 문장: {len(items)}개")
+        # 단계 중복 제거는 전체 목록으로 한 뒤 나눈다 — 샤드 합집합 = 전체
+        if shard is not None:
+            items = _take_shard(items, shard)
+            print(f"{tier}단계 샤드 {shard[0]}/{shard[1]}: {len(items)}개")
+        per_tier.append((tier, items))
     if dry_run:
         for tier, items in per_tier:
             for tone, s in items:
@@ -259,7 +290,10 @@ def main() -> int:
     parser.add_argument("--tone", default="casual", choices=("casual", "urgent"),
                         help="--ab 톤")
     parser.add_argument("--ab-out", default="ab_out", help="--ab 출력 폴더")
+    parser.add_argument("--shard", metavar="K/N", default=None,
+                        help="대상 목록을 N등분해 K번째만 (CI 병렬 렌더)")
     args = parser.parse_args()
+    shard = _parse_shard(args.shard) if args.shard else None
 
     cfg = load_config(args.config)
     if args.engine:
@@ -275,8 +309,8 @@ def main() -> int:
             tracks = tuple(load_track_names(args.tracks))
         elif args.tracks:
             print(f"⚠️  트랙 목록 없음: {args.tracks} — 트랙 이름 문장 없이 진행")
-        return _segment_pass(cfg, tiers, tracks, args.dry_run)
-    return _whole_pass(cfg, args.dry_run)
+        return _segment_pass(cfg, tiers, tracks, args.dry_run, shard)
+    return _whole_pass(cfg, args.dry_run, shard)
 
 
 if __name__ == "__main__":

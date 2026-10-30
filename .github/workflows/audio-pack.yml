@@ -1,5 +1,5 @@
 name: audio-pack
-# 코코로 음성 팩 — CI에서 전체 렌더 → zip 분할 → audio-<pack> 릴리스(프리릴리스, latest 아님)
+# 코코로 음성 팩 — CI에서 샤드 병렬 렌더 → 합치기 → zip 분할 → audio-<pack> 릴리스(프리릴리스, latest 아님)
 # → voice_lines/audio_pack.txt를 실행한 브랜치에 커밋. 팩 릴리스는 한 번 게시하면 바꾸지 않는다.
 on:
   workflow_dispatch:
@@ -24,9 +24,10 @@ defaults:
   run:
     shell: bash
 jobs:
-  render:
+  # 입력·트리 검사와 모델 캐시는 한 번만 — 렌더 샤드는 캐시에서 모델을 받는다
+  prepare:
     runs-on: ubuntu-24.04
-    timeout-minutes: 355
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -46,7 +47,7 @@ jobs:
       - uses: ./.github/actions/setup-gates
         with:
           requirements: tools/requirements-pack.txt
-      - name: 렌더 전 게이트 (2시간 렌더 전에 트리가 멀쩡한지)
+      - name: 렌더 전 게이트 (긴 렌더 전에 트리가 멀쩡한지 — 샤드 분할 검사 포함)
         run: bash simhub/verify/build-check.sh && bash simhub/verify/replay-check.sh
         env:
           TEAMRADIO56_STRICT: '1'
@@ -62,16 +63,82 @@ jobs:
         with:
           path: models
           key: ${{ steps.models.outputs.cache-primary-key }}
-      - name: 렌더 (통문장 → 문장 세그먼트, 약 3~5시간)
-        timeout-minutes: 320
+
+  # 통문장·세그먼트 목록을 샤드 수로 나눠 병렬 렌더 (pregen_audio.py --shard K/N).
+  # 한 샤드가 실패해도 나머지는 끝까지 — 'Re-run failed jobs'로 실패한 샤드만 다시 돌린다
+  render:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-gates
+        with:
+          requirements: tools/requirements-pack.txt
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: models
+          key: kokoro-model-files-v1.0-7d5df8ec-bca610b8
+          fail-on-cache-miss: true
+      - name: 코코로 모델 sha256 확인
+        run: bash .github/scripts/kokoro-models.sh models
+      - name: 렌더 (샤드 ${{ matrix.shard }}/${{ strategy.job-total }} — 통문장 → 문장 세그먼트)
+        timeout-minutes: 220
+        env:
+          SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
         run: |
           [ ! -e config.yaml ] || { echo "::error::config.yaml이 있으면 렌더 설정이 바뀝니다"; exit 1; }
           mkdir -p "$RUNNER_TEMP/logs"
-          python tools/pregen_audio.py --engine kokoro 2>&1 | tee "$RUNNER_TEMP/logs/whole.log"
+          python tools/pregen_audio.py --engine kokoro --shard "$SHARD" 2>&1 \
+            | tee "$RUNNER_TEMP/logs/whole.log"
           python tools/pregen_audio.py --engine kokoro --segments --tiers 1,2,3 \
-            --tracks voice_lines/track_names_en.txt 2>&1 | tee "$RUNNER_TEMP/logs/segments.log"
+            --tracks voice_lines/track_names_en.txt --shard "$SHARD" 2>&1 \
+            | tee "$RUNNER_TEMP/logs/segments.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: render-shard-${{ matrix.shard }}
+          path: audio_cache/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: render-logs-${{ matrix.shard }}
+          path: ${{ runner.temp }}/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # 샤드 캐시 합치기 → zip 분할 + 기술자 → 실캐시 게이트 (빠진 클립이 하나라도 있으면 실패)
+  pack:
+    needs: render
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-gates
+        with:
+          requirements: tools/requirements-pack.txt
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: render-shard-*
+          path: audio_cache
+          merge-multiple: true
       - name: zip 분할 + 기술자 갱신
         run: |
+          echo "합친 캐시: $(find audio_cache -maxdepth 1 -type f | wc -l)개 파일"
           python tools/pack_audio.py build --cache audio_cache --pack "$PACK" \
             --out "dist/audio/$PACK" --descriptor voice_lines/audio_pack.txt --tag "audio-$PACK"
           cp voice_lines/audio_pack.txt "dist/audio/audio_pack.txt"
@@ -89,16 +156,9 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
-      - if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: render-logs
-          path: ${{ runner.temp }}/logs/
-          if-no-files-found: ignore
-          retention-days: 14
 
   publish:
-    needs: render
+    needs: pack
     if: ${{ !inputs.dry_run && github.repository == 'hyungwookc07/teamradio56' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30

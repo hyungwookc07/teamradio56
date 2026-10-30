@@ -5,7 +5,7 @@
 # 보인다) 손으로 마무리하는 방법을 출력한다 — 지우면 기술자가 없는 릴리스를 가리키게 된다.
 # publish 잡만 다시 실행해도 된다: 남은 초안은 지우고 아티팩트에서 다시 올린다.
 #
-# env: PACK SHA BRANCH RUN_URL GH_TOKEN REPO   — 작업 폴더에 dist/audio (render 아티팩트)
+# env: PACK SHA BRANCH RUN_URL GH_TOKEN REPO   — 작업 폴더에 dist/audio (pack 잡 아티팩트)
 set -euo pipefail
 
 # commit뿐 아니라 push 거부 뒤 rebase도 커미터가 필요하다 (러너엔 전역 git 설정이 없다)

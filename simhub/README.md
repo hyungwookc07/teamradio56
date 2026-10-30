@@ -164,9 +164,10 @@ preflight가 "CI 릴리스는 audio-<pack> 릴리스만 참조"로 멈춘다. �
 
 1. 로컬 커밋을 main에 push한다
 2. Actions → **audio-pack** → Run workflow, branch `main`, `pack`=**`kokoro-v016`**(기본값),
-   `dry_run` 끔. 통문장 1223 + 세그먼트 6214 = 약 7400개 렌더라 **약 3~5시간** 걸린다
-   (렌더 단계 제한 320분, 잡 355분 — GitHub 최대 360분. 러너가 클립당 약 2.5초보다 느려
-   시간을 넘기면 렌더를 병렬 잡으로 나눠야 한다)
+   `dry_run` 끔. 통문장 1223 + 세그먼트 6214 = 약 7400개를 렌더 잡 6개가 나눠
+   (`pregen_audio.py --shard K/6`) 병렬로 렌더한다 — 렌더 잡 하나에 약 1시간, 전체 약
+   1.5~2시간. 샤드 하나가 실패하면 실행 화면의 **Re-run failed jobs**로 그 샤드와 뒤 단계만
+   다시 돌린다
 3. 실행이 끝나 main에 `음성 팩 기술자 갱신: kokoro-v016 (audio-kokoro-v016)` 커밋이 생긴 것을
    확인한다
 4. **그 커밋 위에서** 주석 태그를 만들어 push한다:
@@ -239,8 +240,9 @@ asset=teamradio56_kokoro_v016_1of7.zip,<sha256>,<바이트 수>
 ```
 
 - **멘트 집합이 바뀔 때만** 새 팩: Actions → **audio-pack** → Run workflow, `pack`에
-  **새 ID**(예: `kokoro-v020`). 렌더 전 게이트 → 코코로 모델(sha256 고정) → 통문장·세그먼트
-  렌더(약 3~5시간) → `tools/pack_audio.py`로 24 MiB 이하 zip 분할 → 렌더 후 게이트(실캐시
+  **새 ID**(예: `kokoro-v020`). 렌더 전 게이트(샤드 분할 검사 포함) → 코코로 모델(sha256
+  고정) → 통문장·세그먼트를 샤드 6개로 병렬 렌더(약 1.5~2시간) → 샤드 캐시 합치기 →
+  `tools/pack_audio.py`로 24 MiB 이하 zip 분할 → 렌더 후 게이트(실캐시
   100% + 팩 설치 흐름) → `audio-<pack>` 초안 → 새 `audio_pack.txt`를 **실행한 브랜치에 커밋**
   → 프리릴리스로 공개. `dry_run`은 렌더·zip·아티팩트까지만. 이미 있는 팩 ID는 거부한다.
 - 팩 ID가 바뀐 사용자에게만 [음성 팩 업데이트]가 켜진다. 배포된 ID는 그 멘트 집합에 묶인다

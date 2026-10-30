@@ -99,6 +99,33 @@ else
     fail=1
 fi
 
+# CI 음성 팩 렌더는 N개 잡이 --shard K/N로 나눠 렌더하고 합친다 — 빠지거나 겹치면
+# 팩에 구멍이 나거나(렌더 후 게이트에서야 발견) 시간이 낭비된다
+echo
+echo "▶ 음성 팩 렌더 샤드 분할 (--shard K/3 합집합 = 전체, 겹침 없음)"
+shard_ok=1
+for pass in whole segments; do
+    SHARD_ARGS=(--config __defaults_only__ --engine kokoro --dry-run)
+    if [ "$pass" = segments ]; then
+        SHARD_ARGS+=(--segments --tiers 1,2,3 ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"})
+    fi
+    python3 tools/pregen_audio.py "${SHARD_ARGS[@]}" | grep '^  ' | sort > "$OUT/shard_all_$pass.txt"
+    : > "$OUT/shard_union_$pass.txt"
+    for k in 1 2 3; do
+        python3 tools/pregen_audio.py "${SHARD_ARGS[@]}" --shard "$k/3" | grep '^  ' \
+            >> "$OUT/shard_union_$pass.txt"
+    done
+    sort "$OUT/shard_union_$pass.txt" -o "$OUT/shard_union_$pass.txt"
+    if [ -s "$OUT/shard_all_$pass.txt" ] && cmp -s "$OUT/shard_all_$pass.txt" "$OUT/shard_union_$pass.txt"; then
+        echo "✅ $pass: $(wc -l < "$OUT/shard_all_$pass.txt")개 = 샤드 3개 합집합"
+    else
+        echo "❌ $pass: 샤드 합집합이 전체와 다름 (빠짐 '<' / 겹침·추가 '>'):"
+        diff "$OUT/shard_all_$pass.txt" "$OUT/shard_union_$pass.txt" | head -10
+        shard_ok=0
+    fi
+done
+[ "$shard_ok" = 1 ] || fail=1
+
 # 내장 트랙 목록 — en 브리핑이 트랙 이름을 말할지 양 엔진이 같은 목록으로 판정해야 한다
 echo
 echo "▶ 내장 트랙 이름 목록 대조 (PhraseLines.TrackNamesEn ↔ voice_lines/track_names_en.txt)"
