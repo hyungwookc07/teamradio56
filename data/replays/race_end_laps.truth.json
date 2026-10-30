@@ -1,0 +1,51 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 5,
+   "t": 80.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 4,
+   "t": 160.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 3,
+   "t": 240.0
+  },
+  {
+   "lap": 4,
+   "laps_left": 2,
+   "t": 320.0
+  },
+  {
+   "lap": 5,
+   "laps_left": 1,
+   "t": 400.0
+  },
+  {
+   "lap": 6,
+   "laps_left": 0,
+   "t": 480.0
+  }
+ ],
+ "end_et": 0.0,
+ "final_calls": [
+  {
+   "lap": 6,
+   "t": 400.0
+  }
+ ],
+ "finish": {
+  "class_place": 1,
+  "lap": 6,
+  "t": 480.0
+ },
+ "leader_flag_t": 450.6,
+ "max_laps": 7,
+ "note": "랩제 7랩 — 리더가 7랩을 채우면 체커, 랩 다운인 나는 6랩에서 끝",
+ "scenario": "race_end_laps",
+ "trace_exact_from_lap": 1
+}

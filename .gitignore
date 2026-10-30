@@ -9,6 +9,7 @@ data/*
 !data/replays/
 data/replays/*
 !data/replays/*.jsonl.gz
+!data/replays/*.truth.json
 audio_cache/
 dist/
 build/

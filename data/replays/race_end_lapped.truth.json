@@ -1,0 +1,56 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 6,
+   "t": 80.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 5,
+   "t": 160.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 4,
+   "t": 240.0
+  },
+  {
+   "lap": 4,
+   "laps_left": 3,
+   "t": 320.0
+  },
+  {
+   "lap": 5,
+   "laps_left": 2,
+   "t": 400.0
+  },
+  {
+   "lap": 6,
+   "laps_left": 1,
+   "t": 480.0
+  },
+  {
+   "lap": 7,
+   "laps_left": 0,
+   "t": 560.0
+  }
+ ],
+ "end_et": 470.0,
+ "final_calls": [
+  {
+   "lap": 7,
+   "t": 480.0
+  }
+ ],
+ "finish": {
+  "class_place": 2,
+  "lap": 7,
+  "t": 560.0
+ },
+ "leader_flag_t": 500.0,
+ "max_laps": 2147483647,
+ "note": "하이퍼카에 랩 다운 + 선두 DNF — 시계 0 직후 통과해도 리더 체커 전이면 한 랩 더",
+ "scenario": "race_end_lapped",
+ "trace_exact_from_lap": 1
+}

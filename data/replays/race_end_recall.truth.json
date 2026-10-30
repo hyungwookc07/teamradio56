@@ -1,0 +1,60 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 6,
+   "t": 80.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 5,
+   "t": 160.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 4,
+   "t": 240.0
+  },
+  {
+   "lap": 4,
+   "laps_left": 3,
+   "t": 320.0
+  },
+  {
+   "lap": 5,
+   "laps_left": 2,
+   "t": 400.0
+  },
+  {
+   "lap": 6,
+   "laps_left": 1,
+   "t": 480.0
+  },
+  {
+   "lap": 7,
+   "laps_left": 0,
+   "t": 560.0
+  }
+ ],
+ "end_et": 455.0,
+ "final_calls": [
+  {
+   "lap": 6,
+   "t": 400.0
+  },
+  {
+   "lap": 7,
+   "t": 480.0
+  }
+ ],
+ "finish": {
+  "class_place": 1,
+  "lap": 7,
+  "t": 560.0
+ },
+ "leader_flag_t": 490.2,
+ "max_laps": 2147483647,
+ "note": "예측(1랩) 빗나감 — 리더가 마지막 랩에 25초 잃어 체커가 늦음, 다음 통과에서 '마지막 랩' 다시",
+ "scenario": "race_end_recall",
+ "trace_exact_from_lap": 6
+}

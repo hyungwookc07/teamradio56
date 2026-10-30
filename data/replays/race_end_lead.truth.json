@@ -1,0 +1,51 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 5,
+   "t": 80.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 4,
+   "t": 160.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 3,
+   "t": 240.0
+  },
+  {
+   "lap": 4,
+   "laps_left": 2,
+   "t": 320.0
+  },
+  {
+   "lap": 5,
+   "laps_left": 1,
+   "t": 400.0
+  },
+  {
+   "lap": 6,
+   "laps_left": 0,
+   "t": 480.0
+  }
+ ],
+ "end_et": 443.0,
+ "final_calls": [
+  {
+   "lap": 6,
+   "t": 400.0
+  }
+ ],
+ "finish": {
+  "class_place": 1,
+  "lap": 6,
+  "t": 480.0
+ },
+ "leader_flag_t": 480.0,
+ "max_laps": 2147483647,
+ "note": "내가 전체 1위 — 시계 0 이후 내 라인 통과가 체커 (단일 클래스)",
+ "scenario": "race_end_lead",
+ "trace_exact_from_lap": 1
+}

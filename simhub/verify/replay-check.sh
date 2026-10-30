@@ -5,6 +5,8 @@
 #   1) 파이썬 기준값 생성 (tools/replay_calls.py)
 #   2) C# 러너 실행 (tests/TeamRadio56.Replay)
 #   3) 수락 이벤트 시퀀스 비교 (순서·타이밍·데이터·결정적 멘트 'say' 완전 일치 요구)
+#   4) 레이스 종료 오라클 — race_end_* 리플레이는 체커까지 가고 정답(.truth.json)이 있다
+#      (tools/make_race_end_replays.py가 만들고 --check로 재생성 대조)
 #
 # 사용법:  bash simhub/verify/replay-check.sh
 set -euo pipefail
@@ -205,8 +207,13 @@ else
     fail=1
 fi
 
+echo
+echo "▶ 레이스 종료 리플레이 재생성 대조"
+python3 tools/make_race_end_replays.py --check || fail=1
+
 for replay in data/replays/*.jsonl.gz; do
     name=$(basename "$replay" .jsonl.gz)
+    truth="data/replays/$name.truth.json"
     for lang in en ko; do
         echo
         echo "▶ 리플레이: $name ($lang)"
@@ -218,6 +225,17 @@ for replay in data/replays/*.jsonl.gz; do
             fail=1
         fi
     done
+
+    # 마지막 랩·체커 콜이 정답과 맞는지 (정답 없는 리플레이는 대조할 것 없음)
+    echo
+    echo "▶ 레이스 종료 오라클: $name"
+    ORACLE_ARGS=(--calls "$OUT/py_${name}_en.jsonl" --calls "$OUT/cs_${name}_en.jsonl")
+    if [ -f "$truth" ]; then
+        ORACLE_ARGS+=(--truth "$truth")
+    fi
+    if ! python3 tools/race_end_oracle.py "${ORACLE_ARGS[@]}" --report-only; then
+        fail=1
+    fi
 
     # 코코로 커버리지 (en) — 발화가 전부 통문장 클립이나 문장 세그먼트로 나가야 한다.
     # 템플릿·톤이 사전 생성 도메인을 벗어나면 런타임에선 조용히 edge로 빠지므로 여기서 막는다.
