@@ -53,8 +53,11 @@ namespace TeamRadio56.Core.Logic
         /// <summary>같은 규칙 — 미스면 처음 없는 문장을 firstMissing으로 알려준다 (미스 로그용).</summary>
         public static List<string> SegmentPaths(string cacheDir, string voice,
                                                 string tone, string text,
-                                                out string firstMissing)
+                                                out string firstMissing,
+                                                Func<string, bool> exists = null)
         {
+            if (exists == null)
+                exists = File.Exists;
             firstMissing = null;
             if (string.IsNullOrEmpty(cacheDir) || text == null)
                 return null;
@@ -65,7 +68,7 @@ namespace TeamRadio56.Core.Logic
             foreach (string s in sents)
             {
                 string p = Path.Combine(cacheDir, VoiceCache.SegmentFileName(s, tone, voice));
-                if (!File.Exists(p))
+                if (!exists(p))
                 {
                     firstMissing = s;
                     return null;

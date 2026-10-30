@@ -51,7 +51,7 @@ namespace TeamRadio56.Core.Logic
                 if (!(nowIn && !was))
                     continue;    // 피트 진입 순간만
                 int theirCp = RaceState.ClassPlaceOf(snap, v);
-                if (Math.Abs(theirCp - myCp) > PitRelevantRange)
+                if (Math.Abs(theirCp - myCp) > PitRelevantRange || !SpeechDomain.RivalPitOk(theirCp))
                     continue;
                 string rel = theirCp < myCp ? "앞" : "뒤";
                 bool undercutRisk = theirCp > myCp;   // 뒤차가 먼저 피트 → 언더컷 위협
@@ -150,6 +150,8 @@ namespace TeamRadio56.Core.Logic
                 {
                     continue;
                 }
+                if (!SpeechDomain.RivalDiffOk((double)data["diff"]))
+                    continue;    // 랩당 5초 넘는 차이는 피트/스핀 랩이 섞인 평균 — 무의미
                 bus.Push(new RadioEvent
                 {
                     Type = EventTypes.RivalPace,

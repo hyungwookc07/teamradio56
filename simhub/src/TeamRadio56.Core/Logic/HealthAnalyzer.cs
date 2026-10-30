@@ -288,27 +288,92 @@ namespace TeamRadio56.Core.Logic
             _preImpactPace = state.BaselineLapTime();
         }
 
+        /// <summary>
+        /// 충격 뒤 점검 리포트 문장 — 바퀴별 플래그(4)와 덴트 심각도(8)만 보는 순수 함수
+        /// (공기압 비교 같은 상태는 호출자가 losing으로). health.damage_report_message 미러.
+        /// </summary>
+        public static string DamageReportMessage(bool[] detached, bool[] flat, bool[] losing,
+                                                 byte[] dents, out bool needBox,
+                                                 out List<string> problems)
+        {
+            problems = new List<string>();
+            var det = new List<string>();
+            var flats = new List<string>();
+            for (int i = 0; i < Math.Min(detached.Length, 4); i++)
+            {
+                if (detached[i])
+                    det.Add(Messages.WheelName(i));
+                else if (i < flat.Length && flat[i])
+                    flats.Add(Messages.WheelName(i));
+            }
+            if (det.Count > 0)
+                problems.Add(Messages.Get("item_wheel_damage", "names", Messages.AndList(det)));
+            if (flats.Count > 0)
+                problems.Add(Messages.Get("item_puncture", "names", Messages.AndList(flats)));
+            for (int i = 0; i < Math.Min(losing.Length, 4); i++)
+            {
+                if (losing[i])
+                    problems.Add(Messages.Get("item_losing_pressure", "name", Messages.WheelName(i)));
+            }
+            var heavyZones = new List<string>();
+            bool light = false;
+            for (int i = 0; i < Math.Min(dents.Length, 8); i++)
+            {
+                if (dents[i] >= 2)
+                    heavyZones.Add(Messages.ZoneDisplay(DentZones[i]));
+                if (dents[i] == 1)
+                    light = true;
+            }
+            if (heavyZones.Count > 0)
+                problems.Add(Messages.Get("item_heavy_body", "zones", Messages.AndList(heavyZones)));
+
+            needBox = det.Count > 0 || flats.Count > 0;
+            if (problems.Count > 0)
+            {
+                string advice = Messages.Get(needBox ? "report_advice_box" : "report_advice_keep");
+                return Messages.Get("report_problems",
+                    "problems", Messages.JoinProblems(problems), "advice", advice);
+            }
+            return Messages.Get(light ? "report_marks" : "report_clean");
+        }
+
+        /// <summary>프론트 윙 하락 콜 — 100mm 넘는 하락은 센서 튐이라 null.</summary>
+        public static string WingMessage(double dropM)
+        {
+            if (!SpeechDomain.WingOk(dropM))
+                return null;
+            return Messages.Get("wing_down", "mm", dropM * 1000);
+        }
+
+        /// <summary>브레이크 평균 온도 콜 — 10도 단위 반올림, 1500도 넘으면 null.</summary>
+        public static string BrakeMessage(double avg)
+        {
+            // 10도 단위 반올림 — 파이썬 int(math.floor(x / 10.0 + 0.5)) * 10과 동일
+            int t = (int)Math.Floor(avg / 10.0 + 0.5) * 10;
+            if (!SpeechDomain.BrakeOk(t))
+                return null;
+            return Messages.Get("brake_warn", "t", t);
+        }
+
+        /// <summary>데미지 페이스 손실 → 수리 권고.</summary>
+        public static string RepairMessage(double delta)
+        {
+            return Messages.Get("repair_cost", "delta", delta);
+        }
+
         private void DamageReport(PlayerInfo p, RaceState state, EventBus bus)
         {
             WheelInfo[] wheels = p.Wheels ?? new WheelInfo[0];
             int nw = Math.Min(wheels.Length, 4);
-            var problems = new List<string>();
 
-            var detached = new List<string>();
-            var flats = new List<string>();
+            var detached = new bool[nw];
+            var flat = new bool[nw];
+            var losing = new bool[nw];
             for (int i = 0; i < nw; i++)
             {
-                if (wheels[i].Detached)
-                    detached.Add(Messages.WheelName(i));
-                else if (wheels[i].Flat)
-                    flats.Add(Messages.WheelName(i));
+                detached[i] = wheels[i].Detached;
+                flat[i] = wheels[i].Flat;
             }
-            if (detached.Count > 0)
-                problems.Add(Messages.Get("item_wheel_damage",
-                    "names", Messages.AndList(detached)));
-            if (flats.Count > 0)
-                problems.Add(Messages.Get("item_puncture",
-                    "names", Messages.AndList(flats)));
 
             // 충격 전후 공기압 비교 — 서서히 새는 누출 조기 발견
             if (_prePressures != null)
@@ -321,45 +386,18 @@ namespace TeamRadio56.Core.Logic
                         && _prePressures[i] - wheels[i].Pressure >= ImpactPressureDropKpa)
                     {
                         _punctureWarned.Add(i);
-                        problems.Add(Messages.Get("item_losing_pressure",
-                            "name", Messages.WheelName(i)));
+                        losing[i] = true;
                     }
                 }
             }
             _prePressures = null;
 
-            byte[] dents = p.DentSeverity ?? new byte[0];
-            var heavyZones = new List<string>();
-            bool light = false;
-            for (int i = 0; i < Math.Min(dents.Length, 8); i++)
-            {
-                if (dents[i] >= 2)
-                    heavyZones.Add(Messages.ZoneDisplay(DentZones[i]));
-                if (dents[i] == 1)
-                    light = true;
-            }
-            if (heavyZones.Count > 0)
-                problems.Add(Messages.Get("item_heavy_body",
-                    "zones", Messages.AndList(heavyZones)));
-
-            string message;
+            bool needBox;
+            List<string> problems;
+            string message = DamageReportMessage(detached, flat, losing,
+                p.DentSeverity ?? new byte[0], out needBox, out problems);
             if (problems.Count > 0)
-            {
-                bool needBox = detached.Count > 0 || flats.Count > 0;
-                string advice = Messages.Get(needBox
-                    ? "report_advice_box" : "report_advice_keep");
-                message = Messages.Get("report_problems",
-                    "problems", Messages.JoinProblems(problems), "advice", advice);
                 state.SetIssue("damage", "점검 결과: " + string.Join(", ", problems));
-            }
-            else if (light)
-            {
-                message = Messages.Get("report_marks");
-            }
-            else
-            {
-                message = Messages.Get("report_clean");
-            }
             bus.Push(new RadioEvent
             {
                 Type = EventTypes.DamageReport,
@@ -389,18 +427,23 @@ namespace TeamRadio56.Core.Logic
             double drop = _preImpactWing.Value - _wingEma.Value;
             if (drop >= WingDropM)
             {
-                // push가 쿨다운으로 거절되면 다음 틱에 재시도
-                bool accepted = bus.Push(new RadioEvent
+                string text = WingMessage(drop);
+                // 100mm 넘는 하락은 말하지 않지만 이슈·서사는 남기고 한 번만 판정한다
+                if (text != null)
                 {
-                    Type = EventTypes.DamageReport,
-                    Priority = Priority.High,
-                    Message = Messages.Get("wing_down", "mm", drop * 1000),
-                    DedupKey = "wing_damage",
-                    Ttl = 20.0,
-                    Tone = "casual",
-                });
-                if (!accepted)
-                    return;
+                    // push가 쿨다운으로 거절되면 다음 틱에 재시도
+                    bool accepted = bus.Push(new RadioEvent
+                    {
+                        Type = EventTypes.DamageReport,
+                        Priority = Priority.High,
+                        Message = text,
+                        DedupKey = "wing_damage",
+                        Ttl = 20.0,
+                        Tone = "casual",
+                    });
+                    if (!accepted)
+                        return;
+                }
                 _wingWarned = true;
                 state.SetIssue("damage", "프론트 윙 손상 (높이 -"
                     + (drop * 1000).ToString("F0", CultureInfo.InvariantCulture) + "mm)");
@@ -616,15 +659,14 @@ namespace TeamRadio56.Core.Logic
             {
                 double avgBrake = (wheels[0].BrakeTemp + wheels[1].BrakeTemp
                                    + wheels[2].BrakeTemp + wheels[3].BrakeTemp) / 4;
-                if (avgBrake >= _brakeWarn)
+                string text = avgBrake >= _brakeWarn ? BrakeMessage(avgBrake) : null;
+                if (text != null)
                 {
-                    // 10도 단위 반올림 — 파이썬 int(math.floor(x / 10.0 + 0.5)) * 10과 동일
-                    int t = (int)Math.Floor(avgBrake / 10.0 + 0.5) * 10;
                     var ev = new RadioEvent
                     {
                         Type = EventTypes.BrakeWarning,
                         Priority = Priority.Normal,
-                        Message = Messages.Get("brake_warn", "t", t),
+                        Message = text,
                         Ttl = 30.0,
                     };
                     ev.Data["avg_brake"] = (int)Math.Round(avgBrake, MidpointRounding.ToEven);
@@ -666,7 +708,7 @@ namespace TeamRadio56.Core.Logic
                 {
                     Type = EventTypes.LapAnalysis,
                     Priority = Priority.Normal,
-                    Message = Messages.Get("repair_cost", "delta", delta),
+                    Message = RepairMessage(delta),
                     DedupKey = "repair_" + _impactLap.Value,
                 };
                 ev.Data["triggers"] = new[]

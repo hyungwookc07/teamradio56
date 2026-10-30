@@ -17,6 +17,8 @@ import time
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
+from messages import msg as _msg
+from speech_domain import coach_ok
 from state import SessionState
 
 log = logging.getLogger("training")
@@ -27,6 +29,17 @@ SECTOR_DELTA_MIN = 0.15    # 이 이상 차이날 때만 언급 (침묵 기본�
 class LapCoach:
     """랩 완료 직후 섹터 델타 피드백. 직전 랩/세션 베스트와만 비교한다."""
 
+    @staticmethod
+    def feedback_text(sector: int, delta: float, is_pb: bool) -> Optional[str]:
+        """섹터 델타 문장 — 0.15초 미만이거나 3초 이상(피트/스핀 랩)이면 None.
+        문장은 en 전용 키 (ko도 en으로 폴백 — 기존과 같은 영어 문장)."""
+        if abs(delta) < SECTOR_DELTA_MIN or not coach_ok(delta):
+            return None
+        if delta < 0:
+            return _msg("coach_quicker_best" if is_pb else "coach_quicker",
+                        n=sector, d=abs(delta))
+        return _msg("coach_losing", n=sector, d=delta)
+
     def on_lap(self, state: SessionState, bus: EventBus) -> None:
         valid = [l for l in state.laps if l.valid and l.s1 > 0 and l.s2 > 0 and l.s3 > 0]
         if len(valid) < 3 or valid[-1] is not state.laps[-1]:
@@ -36,18 +49,13 @@ class LapCoach:
         deltas = [(i + 1, getattr(last, f"s{i+1}") - getattr(prev, f"s{i+1}"))
                   for i in range(3)]
         sector, delta = max(deltas, key=lambda d: abs(d[1]))
-        if abs(delta) < SECTOR_DELTA_MIN:
-            return   # 유의미한 변화 없음 → 침묵
-
         # 세션 베스트 섹터 대비도 참고 정보로
         best_s = min(getattr(l, f"s{sector}") for l in valid[:-1])
         is_personal_best = getattr(last, f"s{sector}") < best_s
 
-        if delta < 0:
-            msg = f"Sector {sector}, {abs(delta):.1f} quicker"
-            msg += ", session best. Keep that feel." if is_personal_best else ". Keep that feel."
-        else:
-            msg = f"Losing {delta:.1f} in sector {sector}. Get it back next lap."
+        msg = self.feedback_text(sector, delta, is_personal_best)
+        if msg is None:
+            return   # 유의미한 변화 없음(또는 3초 넘는 무의미한 값) → 침묵
 
         bus.push(Event(
             type=EventType.LAP_FEEDBACK, priority=Priority.NORMAL,

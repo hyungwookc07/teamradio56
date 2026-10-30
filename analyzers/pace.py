@@ -11,6 +11,7 @@ import logging
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
+from speech_domain import gap_candidate_ok, pace_ok
 from state import LapRecord, SessionState
 from telemetry import Snapshot
 
@@ -55,7 +56,8 @@ class PaceAnalyzer:
             "place": lap.place,
         }
 
-        if abs(delta) >= self.pace_delta:
+        # 10초 이상 편차는 피트/스핀/FCY 랩 — 무의미한 값이라 말하지 않는다
+        if abs(delta) >= self.pace_delta and pace_ok(result["delta"]):
             result["direction"] = "slower" if delta > 0 else "faster"
             bus.push(Event(
                 type=EventType.PACE_COMMENT,
@@ -89,11 +91,14 @@ class PaceAnalyzer:
                 continue
             rate = (gaps[-1] - gaps[0]) / (len(gaps) - 1)
             if abs(rate) >= self.gap_rate:
-                candidates.append({
+                c = {
                     "who": who,                  # ahead=앞차, behind=뒷차
                     "gap": round(gaps[-1], 1),
                     "rate": round(rate, 2),      # +면 벌어짐, -면 좁혀짐
-                })
+                }
+                # 120초 넘는 갭·랩당 10초 이상 변화는 피트/FCY 산물 — 고르기 전에 뺀다
+                if gap_candidate_ok(c["gap"], c["rate"]):
+                    candidates.append(c)
         if not candidates:
             return None
         return max(candidates, key=lambda c: abs(c["rate"]))
@@ -117,11 +122,13 @@ class PaceAnalyzer:
             last = self._last_report.get(who)
             if last is not None and abs(g - last) < BATTLE_MIN_CHANGE_SEC:
                 continue    # 지난 리포트와 비슷하면 침묵
-            candidates.append({
+            c = {
                 "who": who,
                 "gap": round(g, 1),
                 "rate": round(g - p, 2),   # 최근 1랩 변화 (+벌어짐 / -좁혀짐)
-            })
+            }
+            if gap_candidate_ok(c["gap"], c["rate"]):
+                candidates.append(c)
         if not candidates:
             # 배틀에서 벗어난 쪽은 기억을 지워 다음 배틀 진입 때 다시 리포트
             for attr, who in (("gap_ahead", "ahead"), ("gap_behind", "behind")):

@@ -856,5 +856,39 @@ namespace TeamRadio56.Core.Logic
             },
         };
 
+        /// <summary>voice_lines/track_names_en.txt — en 브리핑이 말할 수 있는 트랙 이름.</summary>
+        public static readonly string[] TrackNamesEn =
+        {
+            "Circuit de la Sarthe",
+            "Circuit de la Sarthe Mulsanne",
+            "Sebring International Raceway",
+            "Sebring School Circuit",
+            "Autodromo Internacional do Algarve",
+            "Algarve International Circuit",
+            "Portimao",
+            "Circuit de Spa-Francorchamps",
+            "Spa-Francorchamps",
+            "Autodromo Nazionale Monza",
+            "Monza",
+            "Monza Curva Grande",
+            "Fuji Speedway",
+            "Fuji Speedway Classic",
+            "Bahrain International Circuit",
+            "Bahrain International Circuit Endurance",
+            "Bahrain International Circuit Outer",
+            "Bahrain International Circuit Paddock",
+            "Lusail International Circuit",
+            "Losail International Circuit",
+            "Autodromo Enzo e Dino Ferrari",
+            "Imola",
+            "Autodromo Jose Carlos Pace",
+            "Interlagos",
+            "Circuit of the Americas",
+            "Circuit of the Americas National",
+            "Silverstone Circuit",
+            "Silverstone",
+            "Circuit de Barcelona-Catalunya",
+            "Circuit Paul Ricard",
+        };
     }
 }

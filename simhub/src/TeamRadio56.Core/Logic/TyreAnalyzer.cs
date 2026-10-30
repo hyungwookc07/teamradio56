@@ -126,7 +126,8 @@ namespace TeamRadio56.Core.Logic
                 // 파이썬 max(): 앞이 크거나 같으면 앞 유지
                 string axis = Math.Abs(rearLr) > Math.Abs(frontLr) ? "rear_lr" : "front_lr";
                 double delta = axis == "front_lr" ? frontLr : rearLr;
-                if (Math.Abs(delta) >= _tempImbalance)
+                if (Math.Abs(delta) >= _tempImbalance
+                    && SpeechDomain.TyreHotOk(Math.Round(Math.Abs(delta), 1)))
                 {
                     string hot = axis == "front_lr"
                         ? (delta > 0 ? WheelNames[1] : WheelNames[0])
@@ -150,7 +151,8 @@ namespace TeamRadio56.Core.Logic
             if (st.TryGetValue("worst", out worstObj))
             {
                 var worst = (Dictionary<string, object>)worstObj;
-                if ((double)worst["remaining"] <= _wearWarn)
+                if ((double)worst["remaining"] <= _wearWarn
+                    && SpeechDomain.TyreWearOk((double)worst["laps_left"]))
                 {
                     var ev = new RadioEvent
                     {

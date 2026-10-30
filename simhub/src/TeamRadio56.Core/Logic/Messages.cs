@@ -327,25 +327,38 @@ namespace TeamRadio56.Core.Logic
             return v == "1" ? "1 second" : v + " seconds";
         }
 
-        /// <summary>messages.py fmt_laptime — "2 oh 1.8" / "2분 1.8초".</summary>
+        /// <summary>
+        /// messages.py fmt_laptime — "2 oh 1.8" / "2분 1.8초". 0.1초로 먼저 반올림한 뒤
+        /// 분/초로 나눈다 (59.96초가 "1 60.0"이 되지 않게).
+        /// </summary>
         public static string FmtLaptime(double sec)
         {
-            double m = Math.Floor(sec / 60.0);
-            double s = sec - m * 60.0;
-            string sTxt = PyFixed(s, 1);
+            int t10 = LaptimeT10(sec);
+            int m = FloorDiv(t10, 600);
+            int r = t10 - m * 600;
+            string sTxt = (r / 10).ToString(CultureInfo.InvariantCulture) + "."
+                          + (r % 10).ToString(CultureInfo.InvariantCulture);
+            string mTxt = m.ToString(CultureInfo.InvariantCulture);
             if (IsKo)
-            {
-                return m >= 1
-                    ? ((long)m).ToString(CultureInfo.InvariantCulture) + "분 " + sTxt + "초"
-                    : sTxt + "초";
-            }
+                return m >= 1 ? mTxt + "분 " + sTxt + "초" : sTxt + "초";
             if (m >= 1)
             {
                 // "2 01.8"은 TTS가 201.8로 읽는다 — 엔지니어식 "two oh one point eight"
-                return ((long)m).ToString(CultureInfo.InvariantCulture)
-                       + " " + (s < 10 ? "oh " : "") + sTxt;
+                return mTxt + " " + (r < 100 ? "oh " : "") + sTxt;
             }
             return sTxt;
+        }
+
+        /// <summary>랩타임을 0.1초 정수로 — 파이썬 int(f"{sec:.1f}".replace(".", "")).</summary>
+        public static int LaptimeT10(double sec)
+        {
+            return int.Parse(PyFixed(sec, 1).Replace(".", ""), CultureInfo.InvariantCulture);
+        }
+
+        private static int FloorDiv(int a, int b)
+        {
+            int q = a / b;
+            return (a % b != 0 && ((a < 0) != (b < 0))) ? q - 1 : q;
         }
 
         // -- 문장 조립 헬퍼 (messages.py 1:1 미러) ----------------------------
@@ -572,6 +585,10 @@ namespace TeamRadio56.Core.Logic
             { "gap_ahead_closing", "Gap ahead {gap}. Closing {rate:.1f} a lap. We can get him." },
             { "gap_ahead_opening", "Gap ahead {gap}. Opening up. Don't overdo it." },
             { "gap_ahead_holding", "Gap ahead {gap}. Holding steady. Keep the rhythm." },
+            // 트레이닝 섹터 피드백 (파이썬 training.LapCoach 전용) — en 전용, 문장 집합 대조용 미러
+            { "coach_quicker_best", "Sector {n}, {d:.1f} quicker, session best. Keep that feel." },
+            { "coach_quicker", "Sector {n}, {d:.1f} quicker. Keep that feel." },
+            { "coach_losing", "Losing {d:.1f} in sector {n}. Get it back next lap." },
         };
 
         private static readonly Dictionary<string, string> Ko =

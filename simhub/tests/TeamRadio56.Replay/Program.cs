@@ -37,6 +37,8 @@ namespace TeamRadio56.Replay
             string tracksPath = null;
             string assembleDir = null;
             double minPct = 0;
+            string fuzzCases = null;
+            string checkTracks = null;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
@@ -85,6 +87,10 @@ namespace TeamRadio56.Replay
                     tracksPath = args[++i];
                 else if (args[i] == "--assemble-check" && i + 1 < args.Length)
                     assembleDir = args[++i];
+                else if (args[i] == "--fuzz-eval" && i + 1 < args.Length)
+                    fuzzCases = args[++i];
+                else if (args[i] == "--check-tracks" && i + 1 < args.Length)
+                    checkTracks = args[++i];
                 else if (args[i] == "--min" && i + 1 < args.Length)
                     minPct = double.Parse(args[++i], CultureInfo.InvariantCulture);
             }
@@ -110,6 +116,10 @@ namespace TeamRadio56.Replay
                 return DumpCacheNames(outPath);
             List<string> tracks = tracksPath != null
                 ? PregenSentences.LoadTracks(tracksPath) : new List<string>();
+            if (fuzzCases != null)
+                return Fuzz.Eval(fuzzCases, outPath ?? "fuzz_cs.tsv", tracks);
+            if (checkTracks != null)
+                return CheckTracks(checkTracks);
             if (dumpSentences || dumpSegNames)
                 return DumpSentences(outPath, maxTier, tracks, dumpSegNames);
             if (checkCacheDir != null)
@@ -126,6 +136,8 @@ namespace TeamRadio56.Replay
                     + " | --replay <f> --coverage [--tier N] [--tracks f] [--min 퍼센트]"
                     + " | --check-cache <오디오캐시폴더> [--tier N] [--tracks f]"
                     + " | --assemble-check <폴더>"
+                    + " | --fuzz-eval <cases.jsonl> [--lang en|ko] [--tracks f] [--out f]"
+                    + " | --check-tracks <track_names_en.txt>"
                     + " | --update-selftest | --voice-selftest"
                     + " | --dump-voice-table [--out f] | --pack-state-check <폴더>"
                     + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f [--audio-dir d]]"
@@ -245,9 +257,8 @@ namespace TeamRadio56.Replay
         /// <summary>
         /// 리플레이에서 실제로 나갈 발화 문장을 렌더링해 코코로로 나갈 수 있는
         /// 비율을 잰다 — 통문장 클립(KOKORO), 문장이 전부 세그먼트 목록에 있음
-        /// (KOKORO-SEG), 아니면 miss(빠진 문장 출력). 세션 브리핑의 첫 문장
-        /// '{track}.'만 빠진 건 "트랙 이름 추가"로 따로 보고하고 점수에서 뺀다
-        /// (리플레이 트랙명은 목록에 없는 'Circuit de Test'). --min 미만이면 1.
+        /// (KOKORO-SEG), 아니면 miss(빠진 문장 출력). 목록에 없는 트랙은 브리핑이
+        /// 무전 체크로 열리므로 트랙 이름 미스는 없다. --min 미만이면 1.
         /// </summary>
         private static int Coverage(List<RadioEvent> accepted, int maxTier,
                                     List<string> tracks, double minPct)
@@ -260,13 +271,9 @@ namespace TeamRadio56.Replay
             foreach (KeyValuePair<string, string> item
                      in PregenSentences.Enumerate(maxTier, tracks))
                 sentences.Add(item.Key + "\t" + item.Value);
-            // 트랙명이 없을 때의 브리핑 첫 문장 — 고정 문장이라 트랙 미스로 빼지 않는다
-            string radioFirst = Messages.SplitSentences(
-                Messages.Get("brief_radio", "kind", "x"))[0];
 
             var renderer = new VoiceRenderer(new PhrasePool(new Random(7)));
             int spoken = 0, whole = 0, seg = 0;
-            var trackMisses = new List<string>();
             var byType = new SortedDictionary<string, int[]>(StringComparer.Ordinal);
             foreach (RadioEvent ev in accepted)
             {
@@ -282,28 +289,16 @@ namespace TeamRadio56.Replay
                 }
                 else
                 {
-                    List<string> sents = Messages.SplitSentences(text);
-                    string trackMiss = null;
-                    for (int i = 0; i < sents.Count; i++)
+                    foreach (string sent in Messages.SplitSentences(text))
                     {
-                        if (sentences.Contains(tone + "\t" + sents[i]))
-                            continue;
-                        if (i == 0 && ev.Type == EventTypes.SessionBriefing
-                            && sents[0] != radioFirst)
-                            trackMiss = sents[0];
-                        else
-                            missing.Add(sents[i]);
+                        if (!sentences.Contains(tone + "\t" + sent))
+                            missing.Add(sent);
                     }
-                    if (trackMiss != null && !trackMisses.Contains(trackMiss))
-                        trackMisses.Add(trackMiss);
-                    kind = missing.Count > 0 ? "miss"
-                        : trackMiss != null ? "TRACK" : "KOKORO-SEG";
+                    kind = missing.Count > 0 ? "miss" : "KOKORO-SEG";
                 }
                 Console.WriteLine("  " + kind.PadRight(11) + " " + ev.Type + " | " + text);
                 foreach (string m in missing)
                     Console.WriteLine("      빠진 문장 [" + tone + "] " + m);
-                if (kind == "TRACK")
-                    continue;   // 트랙 이름만 빠짐 — 점수 제외
                 spoken++;
                 bool ok = kind != "miss";
                 if (kind == "KOKORO") whole++;
@@ -318,8 +313,6 @@ namespace TeamRadio56.Replay
                 + $"통문장 {whole}, 문장 조립 {seg}, 미스(무음) {spoken - hit}");
             foreach (var kv in byType)
                 Console.WriteLine($"  {kv.Key}: {kv.Value[1]}/{kv.Value[0]}");
-            foreach (string t in trackMisses)
-                Console.WriteLine("트랙 이름 추가 (점수 제외): " + t);
             // 나눗셈 없이 비교 — 100% 기준이 부동소수 오차로 떨어지지 않게
             if (hit * 100.0 < minPct * spoken)
             {
@@ -533,6 +526,24 @@ namespace TeamRadio56.Replay
                 }
             }
             return ok ? 0 : 1;
+        }
+
+        /// <summary>
+        /// 내장 트랙 목록(PhraseLines.TrackNamesEn)이 파일과 같은지 — 다르면
+        /// tools/gen_csharp_phrases.py를 다시 돌려야 한다 (en 브리핑 트랙 판정이 갈린다).
+        /// </summary>
+        private static int CheckTracks(string path)
+        {
+            List<string> file = PregenSentences.LoadTracks(path);
+            var embedded = new List<string>(PhraseLines.TrackNamesEn);
+            if (string.Join("\n", file) == string.Join("\n", embedded))
+            {
+                Console.WriteLine($"✅ 내장 트랙 목록 일치 — {file.Count}개");
+                return 0;
+            }
+            Console.WriteLine($"❌ 내장 트랙 목록({embedded.Count}개)이 {path}({file.Count}개)와 다름"
+                              + " — python tools/gen_csharp_phrases.py 재실행");
+            return 1;
         }
 
         private static string FindOut(string[] args) => ArgValue(args, "--out");

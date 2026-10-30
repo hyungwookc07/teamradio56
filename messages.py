@@ -158,13 +158,17 @@ def seconds_text(sec: float) -> str:
 
 
 def fmt_laptime(sec: float) -> str:
-    m, s = divmod(sec, 60.0)
+    """랩타임 표기 — 0.1초로 먼저 반올림한 뒤 분/초로 나눈다 (59.96초가
+    "1 60.0"이 되지 않게). C# Messages.FmtLaptime 미러."""
+    t10 = int(f"{sec:.1f}".replace(".", ""))
+    m, r = divmod(t10, 600)
+    s = f"{r // 10}.{r % 10}"
     if LANG == "ko":
-        return f"{int(m)}분 {s:.1f}초" if m >= 1 else f"{s:.1f}초"
+        return f"{m}분 {s}초" if m >= 1 else f"{s}초"
     if m >= 1:
         # "2 01.8"은 TTS가 201.8로 읽는다 — 엔지니어식 "two oh one point eight"
-        return f"{int(m)} {'oh ' if s < 10 else ''}{s:.1f}"
-    return f"{s:.1f}"
+        return f"{m} {'oh ' if r < 100 else ''}{s}"
+    return s
 
 
 # -- 문장 조립 헬퍼 (Messages.cs와 1:1 미러) ---------------------------------
@@ -367,6 +371,10 @@ _T = {
         "gap_ahead_closing": "Gap ahead {gap}. Closing {rate:.1f} a lap. We can get him.",
         "gap_ahead_opening": "Gap ahead {gap}. Opening up. Don't overdo it.",
         "gap_ahead_holding": "Gap ahead {gap}. Holding steady. Keep the rhythm.",
+        # 트레이닝 섹터 피드백 (training.LapCoach) — en 전용, ko도 이 문장으로 폴백
+        "coach_quicker_best": "Sector {n}, {d:.1f} quicker, session best. Keep that feel.",
+        "coach_quicker": "Sector {n}, {d:.1f} quicker. Keep that feel.",
+        "coach_losing": "Losing {d:.1f} in sector {n}. Get it back next lap.",
     },
     "ko": {
         "stopped_hazard": "전방 정지 차량. 라인 미리 바꿔.",

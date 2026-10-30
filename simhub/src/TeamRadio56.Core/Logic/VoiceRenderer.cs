@@ -62,84 +62,12 @@ namespace TeamRadio56.Core.Logic
         {
             Dictionary<string, object> d = ev.Data;
             string tone = ev.Tone ?? "casual";
+            string poolKey;
+            Dictionary<string, string> slots;
+            if (PoolCall(ev, out poolKey, out slots))
+                return _pool.Pick(poolKey, slots, tone);
             switch (ev.Type)
             {
-                case EventTypes.TrafficApproach:
-                {
-                    int g = Clamp(GetInt(d, "gap_sec", 4), 1, 6);
-                    return _pool.Pick("traffic_approach", new Dictionary<string, string>
-                    {
-                        { "cls", Messages.ClassDisplay(GetStr(d, "cls")) },
-                        { "gap", Messages.GapSlot(g) },
-                    }, tone);
-                }
-                case EventTypes.TrafficClose:
-                case EventTypes.TrafficUpdate:
-                {
-                    string pool = GetStr(d, "pool");
-                    if (pool.Length == 0)
-                        return null;
-                    return _pool.Pick(pool, new Dictionary<string, string>
-                    {
-                        { "cls", Messages.ClassDisplay(GetStr(d, "cls")) },
-                    }, tone);
-                }
-                case EventTypes.FuelCritical:
-                case EventTypes.FuelWarning:
-                {
-                    // 파이썬 int()는 절사 — 반올림하면 슬롯이 어긋난다.
-                    // 슬롯 값이 단위를 품는다 ("1 lap"/"3 laps") — 복수형 실수 방지
-                    int laps = (int)Math.Min(Math.Max(GetDouble(d, "fuel_laps", 2), 1), 4);
-                    return _pool.Pick(ev.Type, new Dictionary<string, string>
-                    {
-                        { "fuel_laps", Messages.FuelSlot(laps) },
-                    }, tone);
-                }
-                case EventTypes.PitCall:
-                case EventTypes.Damage:
-                case EventTypes.Penalty:
-                    return _pool.Pick(ev.Type, new Dictionary<string, string>(), tone);
-                case EventTypes.RaceStart:
-                case EventTypes.Fcy:
-                case EventTypes.FcyPitOpen:
-                case EventTypes.GreenFlag:
-                case EventTypes.PitLimiter:
-                case EventTypes.BlueFlag:
-                {
-                    string pool = GetStr(d, "pool");
-                    if (pool.Length == 0)
-                        return null;
-                    return _pool.Pick(pool, new Dictionary<string, string>(), tone);
-                }
-                case EventTypes.Spotter:
-                {
-                    string pool = GetStr(d, "pool");
-                    if (pool.Length == 0)
-                        return null;
-                    return _pool.Pick(pool, new Dictionary<string, string>
-                    {
-                        { "side", Messages.SideSlot(GetStr(d, "side")) },
-                    }, tone);
-                }
-                case EventTypes.RaceEnd:
-                {
-                    int place = Clamp(GetInt(d, "class_place", 1), 1, 8);
-                    return _pool.Pick("race_end", new Dictionary<string, string>
-                    {
-                        { "place", place.ToString(CultureInfo.InvariantCulture) },
-                    }, tone);
-                }
-                case EventTypes.PositionChange:
-                {
-                    string pool = GetStr(d, "pool");
-                    if (pool.Length == 0)
-                        return null;
-                    int place = Clamp(GetInt(d, "class_place", 1), 1, 8);
-                    return _pool.Pick(pool, new Dictionary<string, string>
-                    {
-                        { "place", place.ToString(CultureInfo.InvariantCulture) },
-                    }, tone);
-                }
                 case EventTypes.RaceMilestone:
                 {
                     object rm;
@@ -159,7 +87,9 @@ namespace TeamRadio56.Core.Logic
                     // 연료 상태를 통째로 실어 피트 불필요면 키가 있고 값이 null —
                     // 파이썬 d.get(...) is not None과 같게 null도 침묵
                     object pw;
-                    if (d != null && d.TryGetValue("pit_window_laps", out pw) && pw != null)
+                    // 100랩 이상 창은 무의미한 값 — 침묵
+                    if (d != null && d.TryGetValue("pit_window_laps", out pw) && pw != null
+                        && SpeechDomain.PitWindowOk(GetInt(d, "pit_window_laps", 0)))
                     {
                         return Messages.Get("pit_window",
                             "n", Messages.LapsText(GetInt(d, "pit_window_laps", 0)));
@@ -241,6 +171,88 @@ namespace TeamRadio56.Core.Logic
                 }
                 default:
                     return null;    // 렌더러 없는 이벤트 (LLM 전용 등) — 침묵
+            }
+        }
+
+        /// <summary>
+        /// 변형 풀 콜의 (풀 키, 슬롯) — 클램프·이산화까지. 풀 콜이 아니거나 풀 지정이
+        /// 없으면 false. 렌더러와 커버리지 퍼즈가 같이 쓴다 (voice.py VoiceGenerator.pool_call).
+        /// </summary>
+        public static bool PoolCall(RadioEvent ev, out string key,
+                                    out Dictionary<string, string> slots)
+        {
+            Dictionary<string, object> d = ev.Data;
+            key = null;
+            slots = null;
+            switch (ev.Type)
+            {
+                case EventTypes.TrafficApproach:
+                {
+                    int g = Clamp(GetInt(d, "gap_sec", 4), 1, 6);
+                    key = "traffic_approach";
+                    slots = new Dictionary<string, string>
+                    {
+                        { "cls", Messages.ClassDisplay(GetStr(d, "cls")) },
+                        { "gap", Messages.GapSlot(g) },
+                    };
+                    return true;
+                }
+                case EventTypes.TrafficClose:
+                case EventTypes.TrafficUpdate:
+                    key = GetStr(d, "pool");
+                    slots = new Dictionary<string, string>
+                    {
+                        { "cls", Messages.ClassDisplay(GetStr(d, "cls")) },
+                    };
+                    return key.Length > 0;
+                case EventTypes.FuelCritical:
+                case EventTypes.FuelWarning:
+                {
+                    // 파이썬 int()는 절사 — 반올림하면 슬롯이 어긋난다.
+                    // 슬롯 값이 단위를 품는다 ("1 lap"/"3 laps") — 복수형 실수 방지
+                    int laps = (int)Math.Min(Math.Max(GetDouble(d, "fuel_laps", 2), 1), 4);
+                    key = ev.Type;
+                    slots = new Dictionary<string, string>
+                    {
+                        { "fuel_laps", Messages.FuelSlot(laps) },
+                    };
+                    return true;
+                }
+                case EventTypes.PitCall:
+                case EventTypes.Damage:
+                case EventTypes.Penalty:
+                    key = ev.Type;
+                    slots = new Dictionary<string, string>();
+                    return true;
+                case EventTypes.RaceStart:
+                case EventTypes.Fcy:
+                case EventTypes.FcyPitOpen:
+                case EventTypes.GreenFlag:
+                case EventTypes.PitLimiter:
+                case EventTypes.BlueFlag:
+                    key = GetStr(d, "pool");
+                    slots = new Dictionary<string, string>();
+                    return key.Length > 0;
+                case EventTypes.Spotter:
+                    key = GetStr(d, "pool");
+                    slots = new Dictionary<string, string>
+                    {
+                        { "side", Messages.SideSlot(GetStr(d, "side")) },
+                    };
+                    return key.Length > 0;
+                case EventTypes.RaceEnd:
+                case EventTypes.PositionChange:
+                {
+                    key = ev.Type == EventTypes.RaceEnd ? "race_end" : GetStr(d, "pool");
+                    int place = Clamp(GetInt(d, "class_place", 1), 1, 8);
+                    slots = new Dictionary<string, string>
+                    {
+                        { "place", place.ToString(CultureInfo.InvariantCulture) },
+                    };
+                    return key.Length > 0;
+                }
+                default:
+                    return false;
             }
         }
 
@@ -552,35 +564,39 @@ namespace TeamRadio56.Core.Logic
     /// </summary>
     public static class PregenSentences
     {
-        public static readonly double[] SegGaps = Gaps();
-        public static readonly double[] SegRates = Tenths(1, 99);
-        public static readonly double[] SegPace = Tenths(7, 99);
-        public static readonly double[] SegRivalDiff = Tenths(3, 50);
-        public const int SegRivalLapsMin = 1, SegRivalLapsMax = 16;
-        public const int SegTyreHotMin = 12, SegTyreHotMax = 40;
-        public const int SegTyreLapsMin = 0, SegTyreLapsMax = 30;
-        public static readonly string[] SegMultiClasses =
-            { "Hypercar", "LMP2", "GT3", "GTE", "faster car" };
-        public const int SegMultiMaxCars = 3;
-        public const int SegDentMaxZones = 3;
+        // 도메인 상수는 SpeechDomain이 단일 출처 — 옛 이름은 별칭
+        public static readonly double[] SegGaps = SpeechDomain.SegGaps;
+        public static readonly double[] SegRates = SpeechDomain.SegRates;
+        public static readonly double[] SegPace = SpeechDomain.SegPace;
+        public static readonly double[] SegRivalDiff = SpeechDomain.SegRivalDiff;
+        public const int SegRivalLapsMin = SpeechDomain.RivalLapsMin, SegRivalLapsMax = SpeechDomain.RivalLapsMax;
+        public const int SegTyreHotMin = SpeechDomain.SegTyreHotMin, SegTyreHotMax = SpeechDomain.SegTyreHotMax;
+        public const int SegTyreLapsMin = SpeechDomain.SegTyreLapsMin, SegTyreLapsMax = SpeechDomain.SegTyreLapsMax;
+        public static readonly string[] SegMultiClasses = SpeechDomain.MultiClasses;
+        public const int SegMultiMaxCars = SpeechDomain.MultiMaxCars;
+        public const int SegDentMaxZones = SpeechDomain.DentMaxZones;
         // 2단계 — 차량 상태/연료 세이브/세션 브리핑
-        public const int SegWingMmMin = 10, SegWingMmMax = 60;
-        public const int SegBrakeTMin = 700, SegBrakeTMax = 1200, SegBrakeTStep = 10;
-        public static readonly double[] SegRepair = Tenths(5, 50);
-        public static readonly double[] SegFuelTarget = Tenths(10, 120);
-        public static readonly double[] SegFuelSave = Tenths(1, 30);
-        public const int SegBriefMinutesMax = 1440;   // BriefLengthText가 126개 값으로 묶는다
-        public const int SegBriefLapsMax = 100;
-        public const int SegBriefCarsMin = 2, SegBriefCarsMax = 40;
-        public const int SegBriefPosMax = 40;
-        public const int SegBriefTempMax = 60;
-        public const int SegBriefFuelMax = 130;
+        public const int SegWingMmMin = SpeechDomain.SegWingMmMin, SegWingMmMax = SpeechDomain.SegWingMmMax;
+        public const int SegBrakeTMin = SpeechDomain.SegBrakeTMin, SegBrakeTMax = SpeechDomain.SegBrakeTMax,
+                         SegBrakeTStep = SpeechDomain.SegBrakeTStep;
+        public static readonly double[] SegRepair = SpeechDomain.SegRepair;
+        public static readonly double[] SegFuelTarget = SpeechDomain.SegFuelTarget;
+        public static readonly double[] SegFuelSave = SpeechDomain.SegFuelSave;
+        public const int SegBriefMinutesMax = SpeechDomain.BriefMinutesMax;   // BriefLengthText가 126개 값으로 묶는다
+        public const int SegBriefLapsMax = SpeechDomain.BriefLapsMax;
+        public const int SegBriefCarsMin = SpeechDomain.BriefCarsMin, SegBriefCarsMax = SpeechDomain.BriefCarsMax;
+        public const int SegBriefPosMax = SpeechDomain.BriefPosMax;
+        public const int SegBriefTempMax = SpeechDomain.BriefTempMax;
+        public const int SegBriefFuelMax = SpeechDomain.BriefFuelMax;
+
+        /// <summary>음성 팩에 들어가는 문장 단계 (voice.PACK_TIERS) — 덤프·CountMissing 기본값.</summary>
+        public const int PackMaxTier = 2;
 
         /// <summary>
         /// maxTier 이하 단계의 (톤, 문장). tracks는 2단계(세션 브리핑)용.
         /// </summary>
         public static IEnumerable<KeyValuePair<string, string>> Enumerate(
-            int maxTier = 2, IEnumerable<string> tracks = null)
+            int maxTier = PackMaxTier, IEnumerable<string> tracks = null)
         {
             if (Messages.IsKo)
                 yield break;
@@ -780,22 +796,6 @@ namespace TeamRadio56.Core.Logic
         private static KeyValuePair<string, string> U(string text)
         {
             return new KeyValuePair<string, string>("urgent", text);
-        }
-
-        private static double[] Tenths(int lo, int hi)
-        {
-            var v = new double[hi - lo + 1];
-            for (int i = lo; i <= hi; i++)
-                v[i - lo] = i / 10.0;
-            return v;
-        }
-
-        private static double[] Gaps()
-        {
-            var v = new List<double>(Tenths(0, 99));
-            for (int s = 10; s <= 120; s++)
-                v.Add(s);
-            return v.ToArray();
         }
 
         /// <summary>itertools.combinations — 인덱스 순서 유지.</summary>

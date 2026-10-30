@@ -22,7 +22,7 @@ namespace TeamRadio56.Core.Logic
     /// </summary>
     public sealed class VoiceCache
     {
-        private const int RadioFxVersion = 3;   // radiofx.py VERSION과 일치
+        public const int RadioFxVersion = 3;    // radiofx.py VERSION과 일치
 
         /// <summary>
         /// 문장 세그먼트 접미사 "_seg{버전}.wav" — 세그먼트 렌더 규약(속도/효과)이
@@ -45,11 +45,16 @@ namespace TeamRadio56.Core.Logic
         private readonly bool _radioFx;
         private readonly bool _edgeOnly;
         private volatile int _assetsState;   // 0 미확인, 1 있음, 2 없음
+        private readonly Func<string, bool> _exists;
+        private readonly bool _virtual;
 
         public VoiceCache(string cacheDir, string edgeVoice, int edgeBaseRatePercent,
                           string kokoroVoice = "bm_george", bool radioFx = true,
-                          string enginePref = "kokoro")
+                          string enginePref = "kokoro", Func<string, bool> fileExists = null)
         {
+            // fileExists: 가상 팩 대조 (커버리지 퍼즈) — 주면 폴더 없이도 Available
+            _exists = fileExists ?? File.Exists;
+            _virtual = fileExists != null;
             _cacheDir = cacheDir;
             _edgeVoice = edgeVoice;
             _edgeBaseRate = edgeBaseRatePercent;
@@ -62,7 +67,7 @@ namespace TeamRadio56.Core.Logic
 
         public bool Available
         {
-            get { return !string.IsNullOrEmpty(_cacheDir) && Directory.Exists(_cacheDir); }
+            get { return _virtual || (!string.IsNullOrEmpty(_cacheDir) && Directory.Exists(_cacheDir)); }
         }
 
         public string CacheDir
@@ -90,7 +95,7 @@ namespace TeamRadio56.Core.Logic
             if (_edgeOnly || !Available || string.IsNullOrEmpty(text))
                 return null;
             string rfx = RfxPath(KokoroBase(text, tone ?? "casual"));
-            return File.Exists(rfx) ? rfx : null;
+            return _exists(rfx) ? rfx : null;
         }
 
         /// <summary>
@@ -116,7 +121,7 @@ namespace TeamRadio56.Core.Logic
                 || !SegmentAssetsPresent)
                 return null;
             List<string> paths = RadioAssembler.SegmentPaths(
-                _cacheDir, _kokoroVoice, tone ?? "casual", text, out firstMissing);
+                _cacheDir, _kokoroVoice, tone ?? "casual", text, out firstMissing, _exists);
             return paths != null ? paths.ToArray() : null;
         }
 
@@ -133,7 +138,7 @@ namespace TeamRadio56.Core.Logic
                     {
                         foreach (string name in RadioAssembler.AssetNames)
                         {
-                            if (!File.Exists(Path.Combine(_cacheDir, name)))
+                            if (!_exists(Path.Combine(_cacheDir, name)))
                             {
                                 all = false;
                                 break;
@@ -152,10 +157,10 @@ namespace TeamRadio56.Core.Logic
             if (_radioFx)
             {
                 string rfx = RfxPath(basePath);
-                if (File.Exists(rfx))
+                if (_exists(rfx))
                     return rfx;
             }
-            return File.Exists(basePath) ? basePath : null;
+            return _exists(basePath) ? basePath : null;
         }
 
         private static string RfxPath(string basePath)

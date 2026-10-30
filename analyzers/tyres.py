@@ -13,6 +13,7 @@ from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
 from messages import msg, wheel_name
+from speech_domain import tyre_hot_ok, tyre_wear_ok
 from state import SessionState
 from telemetry import Snapshot
 
@@ -92,7 +93,7 @@ class TyreAnalyzer:
             axis, delta = max(
                 (("front_lr", imb["front_lr"]), ("rear_lr", imb["rear_lr"])),
                 key=lambda kv: abs(kv[1]))
-            if abs(delta) >= self.temp_imbalance:
+            if abs(delta) >= self.temp_imbalance and tyre_hot_ok(round(abs(delta), 1)):
                 hot = {"front_lr": WHEEL_NAMES[1] if delta > 0 else WHEEL_NAMES[0],
                        "rear_lr": WHEEL_NAMES[3] if delta > 0 else WHEEL_NAMES[2]}[axis]
                 bus.push(Event(
@@ -103,7 +104,8 @@ class TyreAnalyzer:
 
         # 예상 수명 경고
         worst = st.get("worst")
-        if worst is not None and worst["remaining"] <= self.wear_warn:
+        if worst is not None and worst["remaining"] <= self.wear_warn \
+                and tyre_wear_ok(worst["laps_left"]):
             bus.push(Event(
                 type=EventType.TYRE_WARNING, priority=Priority.HIGH,
                 data={"kind": "wear", **worst, **st},

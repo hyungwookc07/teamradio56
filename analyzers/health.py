@@ -22,7 +22,8 @@ import math
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
-from messages import and_list, join_problems, msg, wheel_name
+from messages import and_list, join_problems, msg, wheel_name, zone_display
+from speech_domain import brake_ok, wing_ok
 from state import SessionState
 from telemetry import Snapshot
 
@@ -79,6 +80,61 @@ INSTAB_YAW_RAD_S = 0.55      # |요레이트| 동반 조건 (직선 휠스핀 �
 INSTAB_LAT_SLIP_MS = 4.0     # |횡속도| 이 이상 = 실제 슬라이드
 INSTAB_MIN_COUNT = 3         # 손상 후 최소 이 횟수 (실수 1~2회는 통과)
 INSTAB_GAP_SEC = 3.0         # 같은 슬라이드를 중복 카운트하지 않는 간격
+
+
+def damage_report_message(detached: list, flat: list, losing: list,
+                          dents: list) -> tuple[Optional[str], bool, list]:
+    """
+    충격 뒤 점검 리포트 문장 — (문장, 박스 필요, 문제 목록). 바퀴별 플래그(4)와
+    덴트 심각도(8)만 보는 순수 함수 (공기압 비교 같은 상태는 호출자가 losing으로).
+    C# HealthAnalyzer.DamageReportMessage.
+    """
+    problems: list[str] = []
+    det = [wheel_name(i) for i in range(min(len(detached), 4)) if detached[i]]
+    flats = [wheel_name(i) for i in range(min(len(flat), 4))
+             if flat[i] and not detached[i]]
+    if det:
+        problems.append(msg("item_wheel_damage", names=and_list(det)))
+    if flats:
+        problems.append(msg("item_puncture", names=and_list(flats)))
+    for i in range(min(len(losing), 4)):
+        if losing[i]:
+            problems.append(msg("item_losing_pressure", name=wheel_name(i)))
+    dents = list(dents or [])[:8]
+    heavy_zones = [zone_display(DENT_ZONES[i]) for i, s in enumerate(dents) if s >= 2]
+    light = any(s == 1 for s in dents)
+    if heavy_zones:
+        problems.append(msg("item_heavy_body", zones=and_list(heavy_zones)))
+
+    need_box = bool(det or flats)
+    if problems:
+        advice = msg("report_advice_box") if need_box else msg("report_advice_keep")
+        return (msg("report_problems", problems=join_problems(problems), advice=advice),
+                need_box, problems)
+    if light:
+        return msg("report_marks"), need_box, problems
+    return msg("report_clean"), need_box, problems
+
+
+def wing_message(drop_m: float) -> Optional[str]:
+    """프론트 윙 하락 콜 — 100mm 넘는 하락은 센서 튐이라 None. C# WingMessage."""
+    if not wing_ok(drop_m):
+        return None
+    return msg("wing_down", mm=drop_m * 1000)
+
+
+def brake_message(avg: float) -> Optional[str]:
+    """브레이크 평균 온도 콜 — 10도 단위 반올림, 1500도 넘으면 None. C# BrakeMessage."""
+    # 10도 단위 반올림 — 명시적 floor(x+0.5)라 C#과 결과가 같다
+    t = int(math.floor(avg / 10.0 + 0.5)) * 10
+    if not brake_ok(t):
+        return None
+    return msg("brake_warn", t=t)
+
+
+def repair_message(delta: float) -> str:
+    """데미지 페이스 손실 → 수리 권고. C# RepairMessage."""
+    return msg("repair_cost", delta=delta)
 
 
 class HealthAnalyzer:
@@ -229,16 +285,10 @@ class HealthAnalyzer:
 
     def _damage_report(self, p: dict, state: SessionState, bus: EventBus) -> None:
         """충격 몇 초 뒤 데이터를 훑어 결과를 불러준다 — 점검은 툴의 일."""
-        wheels = p.get("wheels") or []
-        problems: list[str] = []
-
-        detached = [wheel_name(i) for i, w in enumerate(wheels[:4]) if w.get("detached")]
-        flats = [wheel_name(i) for i, w in enumerate(wheels[:4])
-                 if w.get("flat") and not w.get("detached")]
-        if detached:
-            problems.append(msg("item_wheel_damage", names=and_list(detached)))
-        if flats:
-            problems.append(msg("item_puncture", names=and_list(flats)))
+        wheels = (p.get("wheels") or [])[:4]
+        detached = [bool(w.get("detached")) for w in wheels]
+        flat = [bool(w.get("flat")) for w in wheels]
+        losing = [False] * len(wheels)
 
         # 충격 전후 공기압 비교 — 서서히 새는 누출 조기 발견
         if self._pre_pressures:
@@ -249,26 +299,13 @@ class HealthAnalyzer:
                         and self._pre_pressures[i] - w.get("pressure", 0.0) \
                         >= IMPACT_PRESSURE_DROP_KPA:
                     self._puncture_warned.add(i)
-                    problems.append(msg("item_losing_pressure", name=wheel_name(i)))
+                    losing[i] = True
         self._pre_pressures = None
 
-        from messages import zone_display
-        dents = list(p.get("dent_severity") or [])[:8]
-        heavy_zones = [zone_display(DENT_ZONES[i]) for i, s in enumerate(dents) if s >= 2]
-        light = any(s == 1 for s in dents)
-        if heavy_zones:
-            problems.append(msg("item_heavy_body", zones=and_list(heavy_zones)))
-
+        message, _need_box, problems = damage_report_message(
+            detached, flat, losing, list(p.get("dent_severity") or []))
         if problems:
-            need_box = bool(detached or flats)
-            advice = msg("report_advice_box") if need_box else msg("report_advice_keep")
-            message = msg("report_problems", problems=join_problems(problems),
-                          advice=advice)
             state.set_issue("damage", "점검 결과: " + ", ".join(problems))
-        elif light:
-            message = msg("report_marks")
-        else:
-            message = msg("report_clean")
         bus.push(Event(
             type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
             message=message, dedup_key=f"dmg_report_{self._last_impact_et}",
@@ -296,14 +333,17 @@ class HealthAnalyzer:
             return
         drop = self._pre_impact_wing - self._wing_ema
         if drop >= WING_DROP_M:
-            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
-            accepted = bus.push(Event(
-                type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
-                message=msg("wing_down", mm=drop * 1000),
-                dedup_key="wing_damage", ttl=20.0, tone="casual",
-            ))
-            if not accepted:
-                return
+            text = wing_message(drop)
+            # 100mm 넘는 하락은 말하지 않지만 이슈·서사는 남기고 한 번만 판정한다
+            if text is not None:
+                # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+                accepted = bus.push(Event(
+                    type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
+                    message=text,
+                    dedup_key="wing_damage", ttl=20.0, tone="casual",
+                ))
+                if not accepted:
+                    return
             self._wing_warned = True
             state.set_issue("damage", f"프론트 윙 손상 (높이 -{drop * 1000:.0f}mm)")
             state.add_narrative("(점검) 프론트 윙 손상 감지")
@@ -474,12 +514,11 @@ class HealthAnalyzer:
         wheels = p.get("wheels") or []
         if len(wheels) == 4:
             avg_brake = sum(w.get("brake_temp", 0.0) for w in wheels) / 4
-            if avg_brake >= self.brake_warn:
-                # 10도 단위 반올림 — 명시적 floor(x+0.5)라 C#과 결과가 같다
-                t = int(math.floor(avg_brake / 10.0 + 0.5)) * 10
+            text = brake_message(avg_brake) if avg_brake >= self.brake_warn else None
+            if text is not None:
                 bus.push(Event(
                     type=EventType.BRAKE_WARNING, priority=Priority.NORMAL,
-                    message=msg("brake_warn", t=t),
+                    message=text,
                     data={"avg_brake": round(avg_brake)}, ttl=30.0,
                 ))
 
@@ -506,7 +545,7 @@ class HealthAnalyzer:
                     f"접촉 데미지 이후 랩당 {delta:.1f}초 느려졌다. "
                     "피트에서 수리할지, 그냥 달릴지 판단해라 (수리는 시간 손실, "
                     "방치는 랩마다 손실 누적)."]},
-                message=msg("repair_cost", delta=delta),
+                message=repair_message(delta),
                 dedup_key=f"repair_{self._impact_lap}",
             ))
             state.set_issue("damage", f"데미지로 랩당 {delta:.1f}초 손실 — 수리 권장")

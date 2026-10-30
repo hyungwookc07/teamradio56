@@ -757,14 +757,33 @@ namespace TeamRadio56.Core.Logic
 
         private static string ComposeMulti(List<CarTrack> active)
         {
-            // 같은 상태의 차량들을 한 절로 합치고, 위협도 순 상위 2개 절만
-            var byState = new Dictionary<string, List<CarTrack>>();
+            var cars = new List<MultiCar>(active.Count);
             foreach (CarTrack t in active)
+                cars.Add(new MultiCar { State = t.State, Cls = t.Cls, Side = t.Side });
+            return ComposeMulti(cars);
+        }
+
+        /// <summary>다중 차량 문장의 재료 — 상태·클래스·측면만 (traffic.compose_multi와 같은 입력).</summary>
+        public sealed class MultiCar
+        {
+            public string State;
+            public string Cls;
+            public string Side;
+        }
+
+        /// <summary>
+        /// 같은 상태의 차량들을 한 절로 합치고(클래스별 카운트), 위협도 순 상위 2개 절만
+        /// 한 문장으로 — 순수 조립 (traffic.compose_multi 미러, 커버리지 퍼즈가 부른다).
+        /// </summary>
+        public static string ComposeMulti(IList<MultiCar> active)
+        {
+            var byState = new Dictionary<string, List<MultiCar>>();
+            foreach (MultiCar t in active)
             {
-                List<CarTrack> list;
+                List<MultiCar> list;
                 if (!byState.TryGetValue(t.State, out list))
                 {
-                    list = new List<CarTrack>();
+                    list = new List<MultiCar>();
                     byState[t.State] = list;
                 }
                 list.Add(t);
@@ -773,7 +792,7 @@ namespace TeamRadio56.Core.Logic
             var clauses = new List<string>();
             foreach (string st in new[] { Alongside, NearbyBehind, Approaching })
             {
-                List<CarTrack> cars;
+                List<MultiCar> cars;
                 if (!byState.TryGetValue(st, out cars) || clauses.Count >= 2)
                     continue;
                 if (st == Alongside)
@@ -796,7 +815,7 @@ namespace TeamRadio56.Core.Logic
             if (clauses.Count == 0)
                 return null;
             bool aheadFree = true;
-            foreach (CarTrack t in active)
+            foreach (MultiCar t in active)
             {
                 if (t.State == NearbyAhead)
                 {
@@ -809,12 +828,12 @@ namespace TeamRadio56.Core.Logic
             return string.Join(". ", clauses) + "." + tail;
         }
 
-        private static string NamesOf(List<CarTrack> cars)
+        private static string NamesOf(List<MultiCar> cars)
         {
             // 파이썬 dict 삽입 순서 재현: 키 순서 리스트 + 카운트
             var order = new List<string>();
             var counts = new Dictionary<string, int>();
-            foreach (CarTrack c in cars)
+            foreach (MultiCar c in cars)
             {
                 string key = Messages.ClassDisplay(c.Cls);
                 if (!counts.ContainsKey(key))

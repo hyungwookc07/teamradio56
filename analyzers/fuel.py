@@ -12,10 +12,22 @@ from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
 from messages import msg
+from speech_domain import fuel_save_ok
 from state import SessionState
 from telemetry import Snapshot
 
 log = logging.getLogger("fuel")
+
+
+def save_message(fuel_l: float, burn: float, left: int,
+                 save_delta: float) -> Optional[str]:
+    """연료 세이브 코칭 문장 — 목표 미달이면 None, 목표/세이브 값이 무의미하면
+    (랩당 0.5~15리터 밖, 3리터 넘는 세이브) 역시 None. C# FuelAnalyzer.SaveMessage."""
+    target = fuel_l / left
+    delta = burn - target
+    if delta < save_delta or not fuel_save_ok(target, delta):
+        return None
+    return msg("fuel_save", target=target, delta=delta)
 
 
 class FuelAnalyzer:
@@ -96,13 +108,14 @@ class FuelAnalyzer:
             return
         if not (st["fuel_laps"] < left <= st["fuel_laps"] + 2.0):
             return
+        message = save_message(st["fuel_l"], st["burn_per_lap"], left, self.save_delta)
+        if message is None:
+            return
         target = st["fuel_l"] / left
         delta = st["burn_per_lap"] - target
-        if delta < self.save_delta:
-            return
         bus.push(Event(
             type=EventType.FUEL_SAVE, priority=Priority.NORMAL,
             data={"target": round(target, 2), "delta": round(delta, 2),
                   "laps_left": left},
-            message=msg("fuel_save", target=target, delta=delta),
+            message=message,
         ))

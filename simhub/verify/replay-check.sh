@@ -99,6 +99,29 @@ else
     fail=1
 fi
 
+# 내장 트랙 목록 — en 브리핑이 트랙 이름을 말할지 양 엔진이 같은 목록으로 판정해야 한다
+echo
+echo "▶ 내장 트랙 이름 목록 대조 (PhraseLines.TrackNamesEn ↔ voice_lines/track_names_en.txt)"
+if ! "$RUNNER" --check-tracks voice_lines/track_names_en.txt; then
+    fail=1
+fi
+
+# 커버리지 퍼즈 — 순수 조립 함수에 도메인 안팎 값을 넣어 가상 음성 팩으로 판정.
+# 도메인 안 값은 통문장/조립으로, 밖은 억제·클램프·허용된 무음으로만 나가야 한다.
+echo
+echo "▶ 커버리지 퍼즈 (가상 음성 팩, 파이썬 ↔ C#)"
+python3 tools/coverage_fuzz.py gen --seed 56 --out "$OUT/fuzz_cases.jsonl"
+for lang in en ko; do
+    python3 tools/coverage_fuzz.py eval --cases "$OUT/fuzz_cases.jsonl" --lang "$lang" \
+        --out "$OUT/fuzz_py_$lang.tsv"
+    "$RUNNER" --lang "$lang" --fuzz-eval "$OUT/fuzz_cases.jsonl" \
+        ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --out "$OUT/fuzz_cs_$lang.tsv"
+    if ! python3 tools/coverage_fuzz.py check --py "$OUT/fuzz_py_$lang.tsv" \
+        --cs "$OUT/fuzz_cs_$lang.tsv" --lang "$lang" --report-only-miss; then
+        fail=1
+    fi
+done
+
 # 생성된 오디오 캐시가 로컬에 있으면 실제 Resolve까지 확인 (선택 게이트)
 if [ -d audio_cache ] && ls audio_cache/*_rfx3.wav > /dev/null 2>&1; then
     echo
@@ -353,9 +376,6 @@ for replay in data/replays/*.jsonl.gz; do
         grep -E '^  miss |빠진 문장' "$cov" | head -40 || true
         grep -E '^발화 |^❌' "$cov" || true
         fail=1
-    fi
-    if grep -q '^트랙 이름 추가' "$cov"; then
-        grep '^트랙 이름 추가' "$cov" | sed 's/^/⚠️  /'
     fi
 done
 

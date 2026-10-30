@@ -71,6 +71,12 @@ namespace TeamRadio56.Core.Logic
         public VoicePlan Plan(string text, string tone)
         {
             string firstMissing;
+            return Plan(text, tone, out firstMissing);
+        }
+
+        /// <summary>같은 계획 — 세그먼트 미스면 처음 빠진 문장도 (커버리지 퍼즈).</summary>
+        public VoicePlan Plan(string text, string tone, out string firstMissing)
+        {
             return PlanFrom(text, tone ?? "casual", false, out firstMissing);
         }
 

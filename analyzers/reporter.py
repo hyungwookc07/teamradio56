@@ -46,9 +46,7 @@ class StatusReporter:
         if self.laptime_on and lap.valid and lap.lap_time > 0:
             valid_times = [l.lap_time for l in state.laps if l.valid]
             is_best = len(valid_times) >= 2 and lap.lap_time <= min(valid_times)
-            text = msg("last_lap_report", t=fmt_laptime(lap.lap_time))
-            if is_best:
-                text += msg("best_lap_suffix")
+            text = self.laptime_text(lap.lap_time, is_best)
             bus.push(Event(
                 type=EventType.LAP_TIME_REPORT, priority=Priority.NORMAL,
                 message=text, dedup_key=f"laptime_{lap.lap_number}",
@@ -66,25 +64,43 @@ class StatusReporter:
                 self._last_status_lap = lap.lap_number
 
     @staticmethod
+    def laptime_text(lap_time: float, is_best: bool) -> str:
+        """랩타임 콜 — C# StatusReporter.LaptimeText."""
+        text = msg("last_lap_report", t=fmt_laptime(lap_time))
+        if is_best:
+            text += msg("best_lap_suffix")
+        return text
+
+    @staticmethod
     def _compose_status(state: SessionState, lap,
                         fuel_status: Optional[dict],
                         tyre_status: Optional[dict]) -> Optional[str]:
+        fuel_laps = fuel_status.get("fuel_laps") if fuel_status else None
+        has_tyre = bool(tyre_status and tyre_status.get("worst"))
+        tyre_left = tyre_status["worst"].get("laps_left") if has_tyre else None
+        return StatusReporter.status_text(lap.class_place, lap.gap_ahead, lap.gap_behind,
+                                          fuel_laps, tyre_left, has_tyre)
+
+    @staticmethod
+    def status_text(class_place: int, gap_ahead: float, gap_behind: float,
+                    fuel_laps: Optional[float], tyre_left: Optional[float],
+                    has_tyre: bool) -> Optional[str]:
+        """상황 리포트 한 문장 — 순수 조립 (C# StatusReporter.StatusText)."""
         parts: list[str] = []
-        if lap.class_place > 0:
-            parts.append(msg("status_pos", p=lap.class_place))
+        if class_place > 0:
+            parts.append(msg("status_pos", p=class_place))
         gaps: list[str] = []
-        if 0 <= lap.gap_ahead <= 60:
-            gaps.append(msg("status_gap_ahead", g=lap.gap_ahead))
-        if 0 <= lap.gap_behind <= 60:
-            gaps.append(msg("status_gap_behind", g=lap.gap_behind))
+        if 0 <= gap_ahead <= 60:
+            gaps.append(msg("status_gap_ahead", g=gap_ahead))
+        if 0 <= gap_behind <= 60:
+            gaps.append(msg("status_gap_behind", g=gap_behind))
         if gaps:
             parts.append(msg("status_gaps", gaps=", ".join(gaps)))
-        if fuel_status and fuel_status.get("fuel_laps") is not None:
-            parts.append(msg("status_fuel", n=laps_text(fuel_status["fuel_laps"])))
-        if tyre_status and tyre_status.get("worst"):
-            left = tyre_status["worst"].get("laps_left")
-            if left is not None and left <= 20:
-                parts.append(msg("status_tyres", n=laps_text(left)))
+        if fuel_laps is not None:
+            parts.append(msg("status_fuel", n=laps_text(fuel_laps)))
+        if has_tyre:
+            if tyre_left is not None and tyre_left <= 20:
+                parts.append(msg("status_tyres", n=laps_text(tyre_left)))
             else:
                 parts.append(msg("status_tyres_good"))
         if not parts:

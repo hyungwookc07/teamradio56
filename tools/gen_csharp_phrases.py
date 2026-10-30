@@ -7,6 +7,7 @@ voice_lines/*.yaml → C# 멘트 풀 데이터 자동 생성.
     python tools/gen_csharp_phrases.py
 
 출력: simhub/src/TeamRadio56.Core/Logic/PhraseLines.Generated.cs
+(voice_lines/track_names_en.txt도 TrackNamesEn으로 굽는다 — 트랙 목록을 고쳐도 재실행)
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ SRCS = [
     (os.path.join(_ROOT, "voice_lines", "urgent_en.yaml"), "All"),
     (os.path.join(_ROOT, "voice_lines", "urgent_ko.yaml"), "Ko"),
 ]
+TRACKS = os.path.join(_ROOT, "voice_lines", "track_names_en.txt")
 DST = os.path.join(_ROOT, "simhub", "src", "TeamRadio56.Core", "Logic",
                    "PhraseLines.Generated.cs")
 
@@ -82,6 +84,15 @@ def main() -> int:
         lines.append("")
         counts.append((os.path.basename(src), len(pools), total))
 
+    # en 브리핑 트랙 이름 목록 — SpeechDomain.KnownTrackEn (러너 --check-tracks가 파일과 대조)
+    from speech_domain import load_track_names
+    tracks = load_track_names(TRACKS)
+    lines.append("        /// <summary>voice_lines/track_names_en.txt — en 브리핑이 말할 수 있는 트랙 이름.</summary>")
+    lines.append("        public static readonly string[] TrackNamesEn =")
+    lines.append("        {")
+    for t in tracks:
+        lines.append(f"            {cs_str(t)},")
+    lines.append("        };")
     lines.append("    }")
     lines.append("}")
 
@@ -89,6 +100,7 @@ def main() -> int:
         f.write("\n".join(lines) + "\n")
     for name, pool_n, total in counts:
         print(f"생성: {name} → 풀 {pool_n}개, 변형 {total}개")
+    print(f"생성: track_names_en.txt → 트랙 {len(tracks)}개")
     return 0
 
 

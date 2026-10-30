@@ -53,7 +53,8 @@ namespace TeamRadio56.Core.Logic
             double baseline = prior[prior.Count / 2];
             double delta = lap.LapTime - baseline;
 
-            if (Math.Abs(delta) >= _paceDelta)
+            // 10초 이상 편차는 피트/스핀/FCY 랩 — 무의미한 값이라 말하지 않는다
+            if (Math.Abs(delta) >= _paceDelta && SpeechDomain.PaceOk(Math.Round(delta, 3)))
             {
                 var ev = new RadioEvent
                 {
@@ -102,7 +103,9 @@ namespace TeamRadio56.Core.Logic
                 if (g0 < 0 || g1 < 0 || g2 < 0)     // 갭 정보 없음
                     continue;
                 double rate = (g2 - g0) / 2.0;
-                if (Math.Abs(rate) >= _gapRate)
+                // 120초 넘는 갭·랩당 10초 이상 변화는 피트/FCY 산물 — 고르기 전에 뺀다
+                if (Math.Abs(rate) >= _gapRate
+                    && SpeechDomain.GapCandidateOk(Math.Round(g2, 1), Math.Round(rate, 2)))
                 {
                     candidates.Add(new Dictionary<string, object>
                     {
@@ -144,6 +147,8 @@ namespace TeamRadio56.Core.Logic
                 {
                     continue;    // 지난 리포트와 비슷하면 침묵
                 }
+                if (!SpeechDomain.GapCandidateOk(Math.Round(g, 1), Math.Round(g - p, 2)))
+                    continue;
                 candidates.Add(new Dictionary<string, object>
                 {
                     { "who", who },

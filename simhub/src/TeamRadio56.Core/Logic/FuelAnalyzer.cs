@@ -116,6 +116,19 @@ namespace TeamRadio56.Core.Logic
             return st;
         }
 
+        /// <summary>
+        /// 연료 세이브 코칭 문장 — 목표 미달이면 null, 목표/세이브 값이 무의미하면
+        /// (랩당 0.5~15리터 밖, 3리터 넘는 세이브) 역시 null. fuel.save_message 미러.
+        /// </summary>
+        public static string SaveMessage(double fuelL, double burn, int left, double saveDelta)
+        {
+            double target = fuelL / left;
+            double delta = burn - target;
+            if (delta < saveDelta || !SpeechDomain.FuelSaveOk(target, delta))
+                return null;
+            return Messages.Get("fuel_save", "target", target, "delta", delta);
+        }
+
         private void SaveCoaching(Dictionary<string, object> st, EventBus bus)
         {
             // 노피트 경계 상황 (연료 랩 < 잔여 랩 ≤ 연료 랩+2)에서 오버 소모 시
@@ -128,16 +141,17 @@ namespace TeamRadio56.Core.Logic
             double fuelLaps = (double)st["fuel_laps"];
             if (!(fuelLaps < left && left <= fuelLaps + 2.0))
                 return;
+            string message = SaveMessage((double)st["fuel_l"], (double)st["burn_per_lap"],
+                                         left, _saveDelta);
+            if (message == null)
+                return;
             double target = (double)st["fuel_l"] / left;
             double delta = (double)st["burn_per_lap"] - target;
-            if (delta < _saveDelta)
-                return;
             var ev = new RadioEvent
             {
                 Type = EventTypes.FuelSave,
                 Priority = Priority.Normal,
-                Message = Messages.Get("fuel_save",
-                    "target", target, "delta", delta),
+                Message = message,
             };
             ev.Data["target"] = Math.Round(target, 2);
             ev.Data["delta"] = Math.Round(delta, 2);

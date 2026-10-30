@@ -14,6 +14,7 @@ from collections import deque
 from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
+from speech_domain import rival_diff_ok, rival_pit_ok
 from state import SessionState
 from telemetry import Snapshot
 
@@ -52,7 +53,7 @@ class RivalAnalyzer:
             if not (now_in and not was):
                 continue    # 피트 진입 순간만
             their_cp = state.class_place_of(snap, v)
-            if abs(their_cp - my_cp) > PIT_RELEVANT_RANGE:
+            if abs(their_cp - my_cp) > PIT_RELEVANT_RANGE or not rival_pit_ok(their_cp):
                 continue
             rel = "앞" if their_cp < my_cp else "뒤"
             undercut_risk = their_cp > my_cp        # 뒤차가 먼저 피트 → 언더컷 위협
@@ -114,6 +115,8 @@ class RivalAnalyzer:
                         "laps": max(int(laps_to_caught) + 1, 1), "gap": round(gap, 1)}
             else:
                 continue
+            if not rival_diff_ok(data["diff"]):
+                continue    # 랩당 5초 넘는 차이는 피트/스핀 랩이 섞인 평균 — 무의미
             bus.push(Event(
                 type=EventType.RIVAL_PACE, priority=Priority.NORMAL,
                 data=data, dedup_key=f"rpace_{v['id']}_{data['mode']}",

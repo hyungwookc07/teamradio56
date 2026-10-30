@@ -534,39 +534,45 @@ class TrafficAnalyzer:
         ))
 
     def _compose_multi(self, active: list[CarTrack]) -> Optional[str]:
-        """
-        같은 상태의 차량들을 한 절로 합치고(클래스별 카운트), 위협도 순
-        상위 2개 절만 한 문장으로. "뒤로 하이퍼카 하나, GT3 하나 붙는다" 식.
-        """
-        from messages import msg, class_display, multi_names
+        return compose_multi(active)
 
-        def names_of(cars: list[CarTrack]) -> str:
-            counts: dict[str, int] = {}          # 처음 본 순서 유지
-            for c in cars:
-                key = class_display(c.cls)
-                counts[key] = counts.get(key, 0) + 1
-            return multi_names(list(counts.items()))
 
-        by_state: dict[str, list[CarTrack]] = {}
-        for t in active:
-            by_state.setdefault(t.state, []).append(t)
+def compose_multi(active: list) -> Optional[str]:
+    """
+    같은 상태의 차량들을 한 절로 합치고(클래스별 카운트), 위협도 순
+    상위 2개 절만 한 문장으로. "뒤로 하이퍼카 하나, GT3 하나 붙는다" 식.
+    차량은 state/cls/side만 본다 (커버리지 퍼즈가 가짜 차량으로 부른다).
+    C# TrafficAnalyzer.ComposeMulti.
+    """
+    from messages import msg, class_display, multi_names
 
-        clauses: list[str] = []
-        for st in (ALONGSIDE, NEARBY_BEHIND, APPROACHING):   # 위협도 순
-            cars = by_state.get(st)
-            if not cars or len(clauses) >= 2:
-                continue
-            if st == ALONGSIDE:
-                key = {"left": "multi_alongside_left",
-                       "right": "multi_alongside_right"}.get(
-                    cars[0].side, "multi_alongside")
-                clauses.append(msg(key, cls=class_display(cars[0].cls)))
-            elif st == NEARBY_BEHIND:
-                clauses.append(msg("multi_behind", names=names_of(cars)))
-            else:
-                clauses.append(msg("multi_closing", names=names_of(cars)))
-        if not clauses:
-            return None
-        ahead_free = not any(t.state == NEARBY_AHEAD for t in active)
-        tail = msg("multi_ahead_clear") if ahead_free and len(clauses) >= 2 else ""
-        return ". ".join(clauses) + "." + tail
+    def names_of(cars: list) -> str:
+        counts: dict[str, int] = {}          # 처음 본 순서 유지
+        for c in cars:
+            key = class_display(c.cls)
+            counts[key] = counts.get(key, 0) + 1
+        return multi_names(list(counts.items()))
+
+    by_state: dict[str, list] = {}
+    for t in active:
+        by_state.setdefault(t.state, []).append(t)
+
+    clauses: list[str] = []
+    for st in (ALONGSIDE, NEARBY_BEHIND, APPROACHING):   # 위협도 순
+        cars = by_state.get(st)
+        if not cars or len(clauses) >= 2:
+            continue
+        if st == ALONGSIDE:
+            key = {"left": "multi_alongside_left",
+                   "right": "multi_alongside_right"}.get(
+                cars[0].side, "multi_alongside")
+            clauses.append(msg(key, cls=class_display(cars[0].cls)))
+        elif st == NEARBY_BEHIND:
+            clauses.append(msg("multi_behind", names=names_of(cars)))
+        else:
+            clauses.append(msg("multi_closing", names=names_of(cars)))
+    if not clauses:
+        return None
+    ahead_free = not any(t.state == NEARBY_AHEAD for t in active)
+    tail = msg("multi_ahead_clear") if ahead_free and len(clauses) >= 2 else ""
+    return ". ".join(clauses) + "." + tail

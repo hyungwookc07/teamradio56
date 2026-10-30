@@ -27,6 +27,7 @@ from messages import (msg, class_display, gap_slot, side_slot,
                       is_ko, set_language, and_list, join_problems,
                       multi_names, penalty_text, split_sentences,
                       wheel_name, zone_display, brief_length_text)
+from speech_domain import pit_window_ok
 
 log = logging.getLogger("voice")
 
@@ -346,38 +347,66 @@ class VoiceGenerator:
     # -- 긴급 콜: 사전 생성 변형 풀 ------------------------------------------
     # 슬롯 값은 반드시 이산화(정수/고정 문자열)한다. 사전 캐시 히트 조건.
 
+    @staticmethod
+    def pool_call(ev_type: str, d: dict) -> Optional[tuple[str, dict]]:
+        """변형 풀 콜의 (풀 키, 슬롯) — 클램프·이산화까지. 풀 콜이 아니거나 풀 지정이
+        없으면 None. 렌더러와 커버리지 퍼즈가 같이 쓴다 (C# VoiceRenderer.PoolCall)."""
+        T = EventType
+        if ev_type == T.TRAFFIC_APPROACH:
+            g = int(min(max(d["gap_sec"], 1), 6))
+            return "traffic_approach", {"cls": class_display(d["cls"]), "gap": gap_slot(g)}
+        if ev_type in (T.TRAFFIC_CLOSE, T.TRAFFIC_UPDATE):
+            # 트래픽 상태 머신이 풀 이름을 지정 (alongside/.../nearby_behind, pass_complete/dropped)
+            pool = d.get("pool")
+            return (pool, {"cls": class_display(d.get("cls", ""))}) if pool else None
+        if ev_type in (T.FUEL_CRITICAL, T.FUEL_WARNING):
+            return ev_type, {"fuel_laps": fuel_slot(int(min(max(d["fuel_laps"], 1), 4)))}
+        if ev_type in (T.PIT_CALL, T.DAMAGE, T.PENALTY):
+            return ev_type, {}
+        if ev_type in (T.RACE_START, T.FCY, T.FCY_PIT_OPEN, T.GREEN_FLAG,
+                       T.PIT_LIMITER, T.BLUE_FLAG):
+            # 레이스 컨트롤 계열: 상태 머신이 data["pool"]로 풀 지정
+            pool = d.get("pool")
+            return (pool, {}) if pool else None
+        if ev_type == T.SPOTTER:
+            # 스포터 콜: alongside_left/right/both(슬롯 없음), side_clear({side})
+            pool = d.get("pool")
+            return (pool, {"side": side_slot(d.get("side", ""))}) if pool else None
+        if ev_type == T.RACE_END:
+            return "race_end", {"place": int(min(max(d.get("class_place", 1), 1), 8))}
+        if ev_type == T.POSITION_CHANGE:
+            pool = d.get("pool")
+            if not pool:
+                return None
+            return pool, {"place": int(min(max(d.get("class_place", 1), 1), 8))}
+        return None
+
+    def _render_pool(self, ev_type: str, d: dict, tone: str) -> Optional[str]:
+        call = self.pool_call(ev_type, d)
+        if call is None:
+            return None
+        return self.pool.pick(call[0], call[1], tone)
+
     def _render_traffic_approach(self, d: dict, tone: str = "casual") -> Optional[str]:
-        g = int(min(max(d["gap_sec"], 1), 6))
-        return self.pool.pick("traffic_approach", {
-            "cls": class_display(d["cls"]),
-            "gap": gap_slot(g),
-        }, tone)
+        return self._render_pool(EventType.TRAFFIC_APPROACH, d, tone)
 
     def _render_traffic_close(self, d: dict, tone: str = "casual") -> Optional[str]:
-        # 트래픽 상태 머신이 풀 이름을 지정 (alongside/alongside_left/.../nearby_behind)
-        return self.pool.pick(d["pool"], {"cls": class_display(d.get("cls", ""))}, tone)
+        return self._render_pool(EventType.TRAFFIC_CLOSE, d, tone)
 
     def _render_traffic_update(self, d: dict, tone: str = "casual") -> Optional[str]:
-        # pass_complete / dropped — 서사 마무리 멘트
-        return self.pool.pick(d["pool"], {"cls": class_display(d.get("cls", ""))}, tone)
+        return self._render_pool(EventType.TRAFFIC_UPDATE, d, tone)
 
     def _render_fuel_critical(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return self.pool.pick("fuel_critical", {
-            "fuel_laps": fuel_slot(int(min(max(d["fuel_laps"], 1), 4))),
-        }, tone)
+        return self._render_pool(EventType.FUEL_CRITICAL, d, tone)
 
     def _render_fuel_warning(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return self.pool.pick("fuel_warning", {
-            "fuel_laps": fuel_slot(int(min(max(d["fuel_laps"], 1), 4))),
-        }, tone)
+        return self._render_pool(EventType.FUEL_WARNING, d, tone)
 
     def _render_pit_call(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return self.pool.pick("pit_call", {}, tone)
+        return self._render_pool(EventType.PIT_CALL, d, tone)
 
-    # 레이스 컨트롤 계열: 상태 머신이 data["pool"]로 풀 지정 (race_start/
-    # fcy_start/fcy_pit_open/green_flag/pit_limiter)
     def _render_race_start(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return self.pool.pick(d["pool"], {}, tone)
+        return self._render_pool(EventType.RACE_START, d, tone)
 
     _render_fcy = _render_race_start
     _render_fcy_pit_open = _render_race_start
@@ -386,19 +415,13 @@ class VoiceGenerator:
     _render_blue_flag = _render_race_start
 
     def _render_spotter(self, d: dict, tone: str = "urgent") -> Optional[str]:
-        # 스포터 콜: alongside_left/right/both(슬롯 없음), side_clear({side})
-        return self.pool.pick(d["pool"],
-                              {"side": side_slot(d.get("side", ""))}, tone)
+        return self._render_pool(EventType.SPOTTER, d, tone)
 
     def _render_race_end(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return self.pool.pick("race_end", {
-            "place": int(min(max(d.get("class_place", 1), 1), 8)),
-        }, tone)
+        return self._render_pool(EventType.RACE_END, d, tone)
 
     def _render_position_change(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return self.pool.pick(d["pool"], {
-            "place": int(min(max(d.get("class_place", 1), 1), 8)),
-        }, tone)
+        return self._render_pool(EventType.POSITION_CHANGE, d, tone)
 
     def _render_race_milestone(self, d: dict, tone: str = "casual") -> Optional[str]:
         m = d.get("remaining_min")
@@ -410,10 +433,10 @@ class VoiceGenerator:
         return msg("milestone_minutes", m=m)
 
     def _render_damage(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return self.pool.pick("damage", {}, tone)
+        return self._render_pool(EventType.DAMAGE, d, tone)
 
     def _render_penalty(self, d: dict, tone: str = "casual") -> Optional[str]:
-        return self.pool.pick("penalty", {}, tone)
+        return self._render_pool(EventType.PENALTY, d, tone)
 
     # -- 비긴급 멘트: LLM 우선, 실패 시 템플릿 폴백 ---------------------------
 
@@ -446,9 +469,10 @@ class VoiceGenerator:
         return fallback, "template"
 
     def _render_lap_analysis(self, d: dict, tone: str = "casual") -> Optional[str]:
-        # 템플릿 폴백: 판단형 최소 멘트
-        if d.get("pit_window_laps") is not None:
-            return msg("pit_window", n=laps_text(d["pit_window_laps"]))
+        # 템플릿 폴백: 판단형 최소 멘트. 100랩 이상 창은 무의미한 값 — 침묵
+        n = d.get("pit_window_laps")
+        if n is not None and pit_window_ok(n):
+            return msg("pit_window", n=laps_text(n))
         return None
 
     def _render_stint_briefing(self, d: dict, tone: str = "casual") -> Optional[str]:
@@ -617,41 +641,21 @@ def iter_composed_whole_texts():
             yield "urgent", penalty_text(kind, reason)
 
 
-# -- 문장 단위 사전 생성 도메인 (C# PregenSentences와 값·순서 동일) ----------
-# 도메인 밖 값은 kokoro 세션에서 자막만 나간다 (문장 하나라도 없으면 통째로 미스).
-SEG_GAPS = [i / 10 for i in range(100)] + [float(s) for s in range(10, 121)]
-SEG_RATES = [i / 10 for i in range(1, 100)]
-SEG_PACE = [i / 10 for i in range(7, 100)]
-SEG_RIVAL_DIFF = [i / 10 for i in range(3, 51)]
-SEG_RIVAL_LAPS = range(1, 17)
-SEG_TYRE_HOT = range(12, 41)
-SEG_TYRE_LAPS = range(0, 31)
-SEG_MULTI_CLASSES = ("Hypercar", "LMP2", "GT3", "GTE", "faster car")
-SEG_MULTI_MAX_CARS = 3
-SEG_DENT_MAX_ZONES = 3
-# 2단계 — 차량 상태/연료 세이브/세션 브리핑
-SEG_WING_MM = range(10, 61)
-SEG_BRAKE_T = range(700, 1201, 10)          # health: 10도 단위 반올림
-SEG_REPAIR = [i / 10 for i in range(5, 51)]
-SEG_FUEL_TARGET = [i / 10 for i in range(10, 121)]
-SEG_FUEL_SAVE = [i / 10 for i in range(1, 31)]
-SEG_BRIEF_MINUTES = range(1, 1441)          # brief_length_text가 126개 값으로 묶는다
-SEG_BRIEF_LAPS = range(1, 101)
-SEG_BRIEF_CARS = range(2, 41)
-SEG_BRIEF_POS = range(1, 41)
-SEG_BRIEF_TEMP = range(1, 61)
-SEG_BRIEF_FUEL = range(1, 131)
+# -- 문장 단위 사전 생성 도메인 — speech_domain이 단일 출처 (옛 이름은 별칭) ------
+from speech_domain import (SEG_GAPS, SEG_RATES, SEG_PACE,  # noqa: E402,F401
+                           SEG_RIVAL_DIFF, SEG_RIVAL_LAPS, SEG_TYRE_HOT,
+                           SEG_TYRE_LAPS, SEG_MULTI_CLASSES, SEG_MULTI_MAX_CARS,
+                           SEG_DENT_MAX_ZONES, SEG_WING_MM, SEG_BRAKE_T,
+                           SEG_REPAIR, SEG_FUEL_TARGET, SEG_FUEL_SAVE,
+                           SEG_BRIEF_MINUTES, SEG_BRIEF_LAPS, SEG_BRIEF_CARS,
+                           SEG_BRIEF_POS, SEG_BRIEF_TEMP, SEG_BRIEF_FUEL,
+                           load_track_names)
+
+# 음성 팩에 들어가는 문장 단계 (pregen/pack/CountMissing 기본값). C# PregenSentences.PackMaxTier
+PACK_TIERS = (1, 2)
 
 
-def load_track_names(path: str) -> list[str]:
-    """트랙 이름 목록 파일 — 한 줄에 하나, 빈 줄과 '#' 주석은 무시.
-    utf-8-sig: 윈도 편집기가 붙인 BOM을 C# File.ReadAllLines(UTF8)처럼 떼어낸다."""
-    with open(path, "r", encoding="utf-8-sig") as f:
-        return [ln.strip() for ln in f
-                if ln.strip() and not ln.strip().startswith("#")]
-
-
-def iter_pregen_sentences(tiers=(1, 2), tracks=()):
+def iter_pregen_sentences(tiers=PACK_TIERS, tracks=()):
     """
     문장 단위 사전 생성 대상 (톤, 문장) — 실제 멘트를 msg()/헬퍼로 슬롯
     도메인 전체에 대해 렌더한 뒤 split_sentences로 쪼갠다 (중복 제거).

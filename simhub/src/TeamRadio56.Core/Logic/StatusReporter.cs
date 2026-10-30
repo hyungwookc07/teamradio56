@@ -54,10 +54,7 @@ namespace TeamRadio56.Core.Logic
                     }
                 }
                 bool isBest = validCount >= 2 && lap.LapTime <= best;
-                string text = Messages.Get("last_lap_report",
-                    "t", Messages.FmtLaptime(lap.LapTime));
-                if (isBest)
-                    text += Messages.Get("best_lap_suffix");
+                string text = LaptimeText(lap.LapTime, isBest);
                 bus.Push(new RadioEvent
                 {
                     Type = EventTypes.LapTimeReport,
@@ -93,40 +90,57 @@ namespace TeamRadio56.Core.Logic
                                             Dictionary<string, object> fuelStatus,
                                             Dictionary<string, object> tyreStatus)
         {
-            var parts = new List<string>();
-            if (lap.ClassPlace > 0)
-                parts.Add(Messages.Get("status_pos", "p", lap.ClassPlace));
-            var gaps = new List<string>();
-            if (0 <= lap.GapAhead && lap.GapAhead <= 60)
-                gaps.Add(Messages.Get("status_gap_ahead", "g", lap.GapAhead));
-            if (0 <= lap.GapBehind && lap.GapBehind <= 60)
-                gaps.Add(Messages.Get("status_gap_behind", "g", lap.GapBehind));
-            if (gaps.Count > 0)
-                parts.Add(Messages.Get("status_gaps", "gaps", string.Join(", ", gaps)));
+            double? fuel = null;
             object fuelLaps;
             if (fuelStatus != null && fuelStatus.TryGetValue("fuel_laps", out fuelLaps)
                 && fuelLaps != null)
-            {
-                parts.Add(Messages.Get("status_fuel",
-                    "n", Messages.LapsText((double)fuelLaps)));
-            }
+                fuel = (double)fuelLaps;
+            bool hasTyre = false;
+            double? left = null;
             object worstObj;
             if (tyreStatus != null && tyreStatus.TryGetValue("worst", out worstObj)
                 && worstObj != null)
             {
+                hasTyre = true;
                 var worst = (Dictionary<string, object>)worstObj;
                 object leftObj;
-                double? left = worst.TryGetValue("laps_left", out leftObj)
-                    ? (double?)(double)leftObj : null;
-                if (left.HasValue && left.Value <= 20)
-                {
-                    parts.Add(Messages.Get("status_tyres",
-                        "n", Messages.LapsText(left.Value)));
-                }
+                if (worst.TryGetValue("laps_left", out leftObj) && leftObj != null)
+                    left = (double)leftObj;
+            }
+            return StatusText(lap.ClassPlace, lap.GapAhead, lap.GapBehind, fuel, left, hasTyre);
+        }
+
+        /// <summary>랩타임 콜 — reporter.StatusReporter.laptime_text 미러.</summary>
+        public static string LaptimeText(double lapTime, bool isBest)
+        {
+            string text = Messages.Get("last_lap_report", "t", Messages.FmtLaptime(lapTime));
+            if (isBest)
+                text += Messages.Get("best_lap_suffix");
+            return text;
+        }
+
+        /// <summary>상황 리포트 한 문장 — 순수 조립 (reporter.StatusReporter.status_text 미러).</summary>
+        public static string StatusText(int classPlace, double gapAhead, double gapBehind,
+                                        double? fuelLaps, double? tyreLeft, bool hasTyre)
+        {
+            var parts = new List<string>();
+            if (classPlace > 0)
+                parts.Add(Messages.Get("status_pos", "p", classPlace));
+            var gaps = new List<string>();
+            if (0 <= gapAhead && gapAhead <= 60)
+                gaps.Add(Messages.Get("status_gap_ahead", "g", gapAhead));
+            if (0 <= gapBehind && gapBehind <= 60)
+                gaps.Add(Messages.Get("status_gap_behind", "g", gapBehind));
+            if (gaps.Count > 0)
+                parts.Add(Messages.Get("status_gaps", "gaps", string.Join(", ", gaps)));
+            if (fuelLaps.HasValue)
+                parts.Add(Messages.Get("status_fuel", "n", Messages.LapsText(fuelLaps.Value)));
+            if (hasTyre)
+            {
+                if (tyreLeft.HasValue && tyreLeft.Value <= 20)
+                    parts.Add(Messages.Get("status_tyres", "n", Messages.LapsText(tyreLeft.Value)));
                 else
-                {
                     parts.Add(Messages.Get("status_tyres_good"));
-                }
             }
             if (parts.Count == 0)
                 return null;
