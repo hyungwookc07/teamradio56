@@ -24,7 +24,7 @@ defaults:
   run:
     shell: bash
 jobs:
-  # 입력·트리 검사와 모델 캐시는 한 번만 — 렌더 샤드는 캐시에서 모델을 받는다
+  # 입력·트리 검사와 모델 캐시는 한 번만 — 렌더 샤드는 캐시를 먼저 쓰고, 없으면 받아서 sha256 확인
   prepare:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -66,6 +66,7 @@ jobs:
 
   # 통문장·세그먼트 목록을 샤드 수로 나눠 병렬 렌더 (pregen_audio.py --shard K/N).
   # 한 샤드가 실패해도 나머지는 끝까지 — 'Re-run failed jobs'로 실패한 샤드만 다시 돌린다
+  # (샤드 아티팩트 보존 30일 = GitHub 재실행 기한. 그 뒤엔 전체 재실행)
   render:
     needs: prepare
     runs-on: ubuntu-24.04
@@ -83,12 +84,16 @@ jobs:
       - uses: ./.github/actions/setup-gates
         with:
           requirements: tools/requirements-pack.txt
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # 캐시 저장은 실패해도 prepare가 초록이고, 'Re-run failed jobs'는 prepare를 다시 돌리지
+      # 않는다 — 캐시가 없으면 여기서 받는다 (kokoro-models.sh가 sha256 고정)
+      - id: models
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: models
           key: kokoro-model-files-v1.0-7d5df8ec-bca610b8
-          fail-on-cache-miss: true
-      - name: 코코로 모델 sha256 확인
+      - if: steps.models.outputs.cache-hit != 'true'
+        run: echo "::warning::코코로 모델 캐시 없음 — 이 샤드에서 내려받는다"
+      - name: 코코로 모델 (캐시 없으면 받기) + sha256 확인
         run: bash .github/scripts/kokoro-models.sh models
       - name: 렌더 (샤드 ${{ matrix.shard }}/${{ strategy.job-total }} — 통문장 → 문장 세그먼트)
         timeout-minutes: 220
@@ -102,13 +107,15 @@ jobs:
           python tools/pregen_audio.py --engine kokoro --segments --tiers 1,2,3 \
             --tracks voice_lines/track_names_en.txt --shard "$SHARD" 2>&1 \
             | tee "$RUNNER_TEMP/logs/segments.log"
+          # pack이 샤드가 다 모였는지 확인하는 표식 (팩 zip에는 안 들어간다)
+          touch "audio_cache/shard-${SHARD/\//-of-}.done"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: render-shard-${{ matrix.shard }}
           path: audio_cache/
           if-no-files-found: error
           compression-level: 0
-          retention-days: 3
+          retention-days: 30
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -136,9 +143,24 @@ jobs:
           pattern: render-shard-*
           path: audio_cache
           merge-multiple: true
+      - name: 샤드가 다 모였는지 (표식 shard-K-of-N.done)
+        run: |
+          shopt -s nullglob
+          marks=(audio_cache/shard-*-of-*.done)
+          [ ${#marks[@]} -gt 0 ] || { echo "::error::렌더 샤드 아티팩트가 없습니다 (만료됐으면 Re-run all jobs)"; exit 1; }
+          n=${marks[0]##*-of-}; n=${n%.done}
+          missing=()
+          for k in $(seq 1 "$n"); do
+            [ -e "audio_cache/shard-$k-of-$n.done" ] || missing+=("$k")
+          done
+          if [ ${#missing[@]} -gt 0 ] || [ ${#marks[@]} -ne "$n" ]; then
+            echo "::error::샤드 ${missing[*]:-?} / $n 이 없거나 섞였습니다 (${#marks[@]}개 표식) — 아티팩트가 만료됐으면 Re-run all jobs"
+            exit 1
+          fi
+          rm -f "${marks[@]}"
+          echo "✅ 샤드 $n개, 합친 캐시: $(find audio_cache -maxdepth 1 -type f | wc -l)개 파일"
       - name: zip 분할 + 기술자 갱신
         run: |
-          echo "합친 캐시: $(find audio_cache -maxdepth 1 -type f | wc -l)개 파일"
           python tools/pack_audio.py build --cache audio_cache --pack "$PACK" \
             --out "dist/audio/$PACK" --descriptor voice_lines/audio_pack.txt --tag "audio-$PACK"
           cp voice_lines/audio_pack.txt "dist/audio/audio_pack.txt"
