@@ -39,6 +39,11 @@ namespace TeamRadio56.Core.Logic
             return (int)Math.Round(n, MidpointRounding.ToEven);
         }
 
+        static bool Finite(double x)
+        {
+            return !double.IsNaN(x) && !double.IsInfinity(x);
+        }
+
         // -- 한계 (술어 기준) ---------------------------------------------------
 
         public const int GapSegMax = 600;           // 팩이 말하는 갭 상한 (정수 초) — 그 위는 kokoro 세션에서 자막만
@@ -127,7 +132,8 @@ namespace TeamRadio56.Core.Logic
 
         public static bool TyreWearOk(double lapsLeft)
         {
-            return LapsValue(lapsLeft) <= TyreWearMax;
+            // NaN/Inf(센서 튐) — (int) 변환은 런타임마다 값이 달라 판정 전에 거른다 (파이썬과 같은 판정)
+            return Finite(lapsLeft) && LapsValue(lapsLeft) <= TyreWearMax;
         }
 
         public static bool PitWindowOk(int n)
@@ -169,6 +175,8 @@ namespace TeamRadio56.Core.Logic
 
         public static bool StatusFuelOk(double fuelLaps)
         {
+            if (!Finite(fuelLaps))
+                return false;
             int n = LapsValue(fuelLaps);
             return n >= 0 && n <= StatusFuelMax;
         }

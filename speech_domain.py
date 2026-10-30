@@ -12,6 +12,7 @@ C# SpeechDomain.cs와 값·순서가 같아야 한다 (replay-check가 문장 �
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 
@@ -129,7 +130,8 @@ def tyre_hot_ok(delta: float) -> bool:
 
 
 def tyre_wear_ok(laps_left: float) -> bool:
-    return laps_value(laps_left) <= TYRE_WEAR_MAX
+    # NaN/Inf(센서 튐)는 int()가 예외 — 말하지 않는다 (C#도 같은 판정)
+    return math.isfinite(laps_left) and laps_value(laps_left) <= TYRE_WEAR_MAX
 
 
 def pit_window_ok(n: int) -> bool:
@@ -167,7 +169,7 @@ def laptime_in_pack(sec: float) -> bool:
 
 
 def status_fuel_ok(fuel_laps: float) -> bool:
-    return 0 <= laps_value(fuel_laps) <= STATUS_FUEL_MAX
+    return math.isfinite(fuel_laps) and 0 <= laps_value(fuel_laps) <= STATUS_FUEL_MAX
 
 
 def brief_grid_ok(n: int, cp: int) -> bool:
