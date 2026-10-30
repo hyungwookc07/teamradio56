@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
+from race_end import RaceEndTracker
 from telemetry import Snapshot
 
 log = logging.getLogger("state")
@@ -67,6 +68,7 @@ class SessionState:
         self._pit_seen_this_lap = False
         self._last_fuel: Optional[float] = None
         self._last_session_et: float = -1.0
+        self.race_end = RaceEndTracker()
 
     # ------------------------------------------------------------------
 
@@ -147,6 +149,7 @@ class SessionState:
         if self._last_total_laps is not None and me["total_laps"] > self._last_total_laps:
             completed = self._on_lap_complete(snap, me)
         self._last_total_laps = me["total_laps"]
+        self.race_end.observe(self, snap, completed is not None)
         return completed
 
     def _on_lap_complete(self, snap: Snapshot, me: dict) -> Optional[LapRecord]:

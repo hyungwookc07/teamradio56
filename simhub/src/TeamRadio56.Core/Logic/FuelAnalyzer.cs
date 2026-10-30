@@ -47,7 +47,7 @@ namespace TeamRadio56.Core.Logic
                 return null;
             double fuelLaps = fuelNow / avgBurn;
 
-            int? raceLapsLeft = RaceLapsLeft(state, snap);
+            int? raceLapsLeft = RaceLapsLeft(state);
             bool pitNeeded = raceLapsLeft.HasValue && fuelLaps < raceLapsLeft.Value;
 
             var st = new Dictionary<string, object>
@@ -64,23 +64,12 @@ namespace TeamRadio56.Core.Logic
             return st;
         }
 
-        private static int? RaceLapsLeft(RaceState state, Snapshot snap)
+        /// <summary>
+        /// 남은 레이스 랩(지금 랩 포함, 0=체커 받음) — RaceEnd가 이번 라인 통과에서 계산한 값.
+        /// </summary>
+        private static int? RaceLapsLeft(RaceState state)
         {
-            if (!state.IsRace)
-                return null;
-            SessionInfo ses = snap.Session;
-            VehicleInfo me = snap.PlayerScoring();
-            double? baseLap = state.BaselineLapTime();
-            // 랩 수 제한 레이스
-            if (0 < ses.MaxLaps && ses.MaxLaps < 100000)
-                return Math.Max(ses.MaxLaps - me.TotalLaps, 0);
-            // 시간 제한 레이스
-            if (ses.EndEt > 0 && baseLap.HasValue && baseLap.Value > 0)
-            {
-                double remaining = ses.EndEt - ses.CurrentEt;
-                return Math.Max((int)(remaining / baseLap.Value) + 1, 0);
-            }
-            return null;
+            return state.IsRace ? state.RaceEnd.LapsLeft : null;
         }
 
         public Dictionary<string, object> OnLap(RaceState state, Snapshot snap,
@@ -89,6 +78,9 @@ namespace TeamRadio56.Core.Logic
             Dictionary<string, object> st = Status(state, snap);
             if (st == null)
                 return null;
+            object left = st["race_laps_left"];
+            if (left != null && (int)left == 0)
+                return st;                   // 체커 받은 뒤 연료 콜 무의미
 
             double fuelLaps = (double)st["fuel_laps"];
             if (fuelLaps <= _criticalLaps)

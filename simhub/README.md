@@ -401,7 +401,8 @@ diff한다. 세션 시작 브리핑도 양쪽 러너가 첫 틱에 내보내 en/
 (`--coverage --tier 2 --min 100`, 미스면 빠진 문장을 출력). 브리핑 첫 문장의
 트랙 이름이 voice_lines/track_names_en.txt에 없으면 점수에서 빼고 따로 경고한다.
 `race_end_*` 리플레이는 체커 이후까지 가는 짧은 합성 레이스로, 규칙대로 계산한 정답
-(`.truth.json`)과 마지막 랩·체커 콜을 tools/race_end_oracle.py가 대조한다
+(`.truth.json`)과 마지막 랩·체커 콜, 남은 랩 트레이스(`--race-end-trace`, 모든 리플레이에서
+파이썬 ↔ C# 대조)를 tools/race_end_oracle.py가 대조한다
 (생성기 tools/make_race_end_replays.py, 게이트는 `--check`로 재생성 대조).
 분석기를 고치면 파이썬을 먼저 고치고 이 회귀로 C#을 맞춘다.
 

@@ -14,6 +14,7 @@
     따라 결과가 달라지지 않게.
 
 사용법: python tools/replay_calls.py --replay race.jsonl[.gz] [--out calls.jsonl]
+                                    [--race-end-trace trace.jsonl]
 """
 
 from __future__ import annotations
@@ -67,6 +68,8 @@ def main() -> int:
     parser.add_argument("--out", default=None)
     parser.add_argument("--lang", default="en", choices=("en", "ko"),
                         help="C# Messages와 문장 단위 대조 — 양쪽 같은 언어로")
+    parser.add_argument("--race-end-trace", default=None,
+                        help="라인 통과·체커·피니시마다 race_end 판단을 JSONL로 (오라클 대조용)")
     args = parser.parse_args()
 
     # 존재하지 않는 경로 → 항상 DEFAULTS 사용 (회귀 결정성)
@@ -113,6 +116,7 @@ def main() -> int:
 
     bus.push = recording_push
 
+    trace: list[dict] = []
     ticks = 0
     briefed = False
     spotter_sec = cfg.get("thresholds.start_spotter_sec", 45)
@@ -139,7 +143,15 @@ def main() -> int:
             racecontrol.on_tick(state, snap, bus)
             rivals.on_tick(state, snap, bus)
             health.on_tick(state, snap, bus)
+            re_before = (state.race_end.chequered_et is not None, state.race_end.finished)
             lap = state.update(snap)
+            re = state.race_end          # update가 reset하면 새 객체 — 다시 읽는다
+            if state.is_race and (lap is not None
+                                  or (re.chequered_et is not None, re.finished) != re_before):
+                trace.append({"t": round(snap.t, 2),
+                              "lap": snap.player_scoring()["total_laps"],
+                              "laps_left": re.laps_left, "finished": re.finished,
+                              "chequered": re.chequered_et is not None})
             if lap is not None:
                 # main.py on_lap_complete 순서 그대로
                 fuel_status = fuel.on_lap(state, snap, bus)
@@ -165,6 +177,11 @@ def main() -> int:
         out.close()
         print(f"틱 {ticks}개 처리, 수락 이벤트 {len(accepted)}개 → {args.out}",
               file=sys.stderr)
+    if args.race_end_trace:
+        with open(args.race_end_trace, "w", encoding="utf-8") as f:
+            for rec in trace:
+                f.write(json.dumps(rec, sort_keys=True, ensure_ascii=False,
+                                   separators=(",", ":")) + "\n")
     return 0
 
 

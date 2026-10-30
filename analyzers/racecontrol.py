@@ -16,6 +16,7 @@ from typing import Optional
 
 from events import Event, EventBus, EventType, Priority
 from messages import msg, penalty_text
+from race_end import LATE_MIN_TO_LINE_S, RACING_PHASES, flag_out, lap_frac, lap_pace
 from state import SessionState
 from telemetry import Snapshot
 
@@ -83,8 +84,8 @@ class RaceControlAnalyzer:
         self._sector_yellow_announced: dict[int, float] = {}
         self._milestones_done: set[int] = set()
         self._initial_remaining: Optional[float] = None
-        self._final_lap_done = False
-        self._race_started = False
+        self._final_lap_for: Optional[int] = None   # '마지막 랩'이 수락된 시점의 내 total_laps
+        self._race_end_done = False
         self._class_place: Optional[int] = None
         self._limiter_warned_t = 0.0
         self._blue_flag = False
@@ -118,13 +119,14 @@ class RaceControlAnalyzer:
         self._collect_messages(ses, snap.t)
         self._check_penalties(me, snap.t, state, bus)
         if state.is_race and phase == PHASE_GREEN:
-            self._check_time_milestones(state, ses, bus)
+            self._check_time_milestones(ses, bus)
+        if state.is_race:
+            self._check_race_end_tick(state, snap, me, bus)
 
     def _on_phase_change(self, old: int, new: int, state: SessionState,
                          snap: Snapshot, bus: EventBus) -> None:
         # 레이스 스타트: 포메이션/카운트다운 → 그린
         if new == PHASE_GREEN and old in (3, 4) and state.is_race:
-            self._race_started = True
             bus.push(Event(
                 type=EventType.RACE_START, priority=Priority.CRITICAL,
                 data={"pool": "race_start"}, tone="urgent", ttl=6.0,
@@ -149,14 +151,10 @@ class RaceControlAnalyzer:
             ))
             state.clear_issue("fcy")
             state.add_narrative("(이벤트) 리스타트 그린")
-        # 체커
-        elif new == PHASE_OVER and state.is_race and self._race_started:
-            place = self._class_place or (state.laps[-1].class_place if state.laps else 0)
-            bus.push(Event(
-                type=EventType.RACE_END, priority=Priority.HIGH,
-                data={"pool": "race_end", "class_place": place}, ttl=30.0,
-            ))
-            state.add_narrative(f"(이벤트) 체커, 클래스 P{place}")
+        # 체커 게시 — 페이즈 8은 리더 피니시라 랩 다운·다른 클래스 차는 아직 달린다.
+        # 내 체커 콜은 내 피니시(_push_race_end)에서
+        elif new == PHASE_OVER and state.is_race:
+            state.add_narrative("(이벤트) 체커 게시 (리더 피니시)")
 
     def _on_yellow_change(self, old: int, new: int, state: SessionState,
                           bus: EventBus) -> None:
@@ -309,8 +307,7 @@ class RaceControlAnalyzer:
                 data={"pool": "pit_limiter"}, tone="urgent", ttl=3.0,
             ))
 
-    def _check_time_milestones(self, state: SessionState, ses: dict,
-                               bus: EventBus) -> None:
+    def _check_time_milestones(self, ses: dict, bus: EventBus) -> None:
         if ses["end_et"] <= 0:
             return
         remaining = ses["end_et"] - ses["current_et"]
@@ -334,16 +331,52 @@ class RaceControlAnalyzer:
                         data={"remaining_min": minutes},
                         dedup_key=f"ms_{minutes}", ttl=45.0,
                     ))
-        # 마지막 랩: 남은 시간이 평소 랩타임보다 짧아진 순간
-        base = state.baseline_lap_time()
-        if not self._final_lap_done and base and remaining < base:
-            self._final_lap_done = True
-            bus.push(Event(
+
+    # -- 마지막 랩 / 내 피니시 (판단은 state.race_end) ---------------------------
+
+    def _check_race_end_tick(self, state: SessionState, snap: Snapshot, me: dict,
+                             bus: EventBus) -> None:
+        # state.update 전에 돈다(race_end는 직전 틱 값). 이번 틱에 라인을 넘었으면 on_lap이 판단한다.
+        re = state.race_end
+        if re.lap is None or me["total_laps"] != re.lap or re.out:
+            return
+        fs = me["finish_status"]
+        if fs == 1 or re.finished:
+            self._push_race_end(state, snap, me, bus)   # 피니시 플래그가 크로싱 없이 늦게 켜진 경우 등
+            return
+        if fs != 0 or self._final_lap_for == me["total_laps"]:
+            return
+        ses = snap.session
+        if ses["game_phase"] not in RACING_PHASES or not flag_out(snap):
+            return
+        # 예측이 빗나간 채 리더가 체커를 받았다 — 다음 라인 통과가 피니시.
+        # 라인까지 몇 초 안 남았으면 '마지막 랩'과 체커 콜이 겹치니 생략
+        pace = state.baseline_lap_time() or lap_pace(me)
+        if pace and (1.0 - lap_frac(me, ses["current_et"], ses["track_len"], pace)) * pace \
+                < LATE_MIN_TO_LINE_S:
+            return
+        self._push_final_lap(state, me, bus)
+
+    def _push_final_lap(self, state: SessionState, me: dict, bus: EventBus) -> None:
+        lap = me["total_laps"]
+        # 키는 랩마다 — 예측이 빗나가 다음 랩에 다시 부를 때 앞 콜 키에 막히지 않게
+        if bus.push(Event(
                 type=EventType.RACE_MILESTONE, priority=Priority.HIGH,
-                data={"final_lap": True}, message=msg("final_lap"),
-                dedup_key="final_lap", ttl=30.0,
-            ))
+                data={"final_lap": True, "lap": lap + 1}, message=msg("final_lap"),
+                dedup_key=f"final_lap_{lap + 1}", ttl=30.0)):
+            self._final_lap_for = lap              # 수락됐을 때만 — 거절되면 안전망이 다시 시도
             state.add_narrative("(이벤트) 마지막 랩")
+
+    def _push_race_end(self, state: SessionState, snap: Snapshot, me: dict,
+                       bus: EventBus) -> None:
+        if self._race_end_done or not state.race_end.seen_unfinished:
+            return
+        place = state.class_place_of(snap, me)
+        if bus.push(Event(
+                type=EventType.RACE_END, priority=Priority.HIGH,
+                data={"pool": "race_end", "class_place": place}, ttl=30.0)):
+            self._race_end_done = True
+            state.add_narrative(f"(이벤트) 체커, 클래스 P{place}")
 
     # -- 랩 완료: 클래스 순위 변동 ---------------------------------------------
 
@@ -354,6 +387,12 @@ class RaceControlAnalyzer:
         cp = state.class_place_of(snap, me)
         prev = self._class_place
         self._class_place = cp
+        re = state.race_end
+        if re.finished:
+            self._push_race_end(state, snap, me, bus)
+            return                       # 피니시 라인: 순위 변동 콜 대신 체커 콜 하나
+        if re.final_lap and self._final_lap_for != me["total_laps"]:
+            self._push_final_lap(state, me, bus)
         if prev is None or cp == prev:
             return
         # 피트 사이클 중 순위 출렁임은 무시 (내가 피트 랩이면 침묵)

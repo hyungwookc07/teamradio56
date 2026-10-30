@@ -71,6 +71,7 @@ namespace TeamRadio56.Core.Telemetry
         public bool FlagBlue;
         public double EstimatedLap;
         public double TimeIntoLap;
+        public double LapStartEt;
         public bool InGarage;
         public double[] Pos = new double[0];   // 월드 좌표 (x,y,z) — 실존 필터용
     }
@@ -218,6 +219,7 @@ namespace TeamRadio56.Core.Telemetry
                 FlagBlue = v.mFlag == 6,
                 EstimatedLap = v.mEstimatedLapTime,
                 TimeIntoLap = v.mTimeIntoLap,
+                LapStartEt = v.mLapStartET,
                 InGarage = v.mInGarageStall != 0,
                 Pos = new[] { v.mPos.x, v.mPos.y, v.mPos.z },
             };

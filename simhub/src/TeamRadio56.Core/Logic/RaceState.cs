@@ -48,6 +48,7 @@ namespace TeamRadio56.Core.Logic
         public readonly Dictionary<string, string> Issues =
             new Dictionary<string, string>();
         public int StintStartLap;
+        public readonly RaceEndTracker RaceEnd = new RaceEndTracker();
 
         private int? _lastTotalLaps;
         private bool _pitSeenThisLap;
@@ -76,6 +77,7 @@ namespace TeamRadio56.Core.Logic
             _pitSeenThisLap = false;
             _lastFuel = null;
             _lastSessionEt = -1.0;
+            RaceEnd.Reset();
         }
 
         public List<LapRecord> RecentLaps(int n = 3, bool validOnly = true)
@@ -174,6 +176,7 @@ namespace TeamRadio56.Core.Logic
             if (_lastTotalLaps.HasValue && me.TotalLaps > _lastTotalLaps.Value)
                 completed = OnLapComplete(snap, me);
             _lastTotalLaps = me.TotalLaps;
+            RaceEnd.Observe(this, snap, completed != null);
             return completed;
         }
 

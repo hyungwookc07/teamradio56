@@ -24,6 +24,7 @@ namespace TeamRadio56.Replay
         {
             string replayPath = null;
             string outPath = null;
+            string raceEndTracePath = null;
             bool dumpPregen = false;
             bool dumpCacheNames = false;
             string checkCacheDir = null;
@@ -42,6 +43,8 @@ namespace TeamRadio56.Replay
                     replayPath = args[++i];
                 else if (args[i] == "--out" && i + 1 < args.Length)
                     outPath = args[++i];
+                else if (args[i] == "--race-end-trace" && i + 1 < args.Length)
+                    raceEndTracePath = args[++i];
                 else if (args[i] == "--lang" && i + 1 < args.Length)
                     Messages.SetLanguage(args[++i]);   // 분석기/풀 생성 전에
                 else if (args[i] == "--dump-pregen")
@@ -110,6 +113,7 @@ namespace TeamRadio56.Replay
             {
                 Console.Error.WriteLine(
                     "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] [--lang en|ko]"
+                    + " [--race-end-trace trace.jsonl]"
                     + " | --dump-pregen [--out f] | --dump-cache-names [--out f]"
                     + " | --dump-sentences|--dump-seg-names [--tier N] [--tracks f] [--out f]"
                     + " | --replay <f> --coverage [--tier N] [--tracks f] [--min 퍼센트]"
@@ -145,6 +149,7 @@ namespace TeamRadio56.Replay
                 accepted.Add(ev);
             };
 
+            var trace = new List<string>();
             int ticks = 0;
             foreach ((Snapshot snap, bool connected) in ReplayLoader.Read(replayPath))
             {
@@ -157,7 +162,22 @@ namespace TeamRadio56.Replay
                 racecontrol.OnTick(state, snap, bus);
                 rivals.OnTick(state, snap, bus);
                 health.OnTick(state, snap, bus);
+                bool cheqBefore = state.RaceEnd.ChequeredEt.HasValue;
+                bool finBefore = state.RaceEnd.Finished;
                 LapRecord lap = state.Update(snap);
+                RaceEndTracker re = state.RaceEnd;
+                if (state.IsRace && (lap != null || re.ChequeredEt.HasValue != cheqBefore
+                                     || re.Finished != finBefore))
+                {
+                    trace.Add(DataJson(new Dictionary<string, object>
+                    {
+                        { "t", Math.Round(snap.T, 2) },
+                        { "lap", snap.PlayerScoring().TotalLaps },
+                        { "laps_left", re.LapsLeft.HasValue ? (object)re.LapsLeft.Value : null },
+                        { "finished", re.Finished },
+                        { "chequered", re.ChequeredEt.HasValue },
+                    }));
+                }
                 if (lap != null)
                 {
                     // main.py on_lap_complete 순서 그대로
@@ -182,6 +202,12 @@ namespace TeamRadio56.Replay
                 ticks++;
             }
 
+            if (raceEndTracePath != null)
+            {
+                using var tw = new StreamWriter(raceEndTracePath, false, new UTF8Encoding(false));
+                foreach (string line in trace)
+                    tw.WriteLine(line);
+            }
             if (coverage)
                 return Coverage(accepted, maxTier, tracks, minPct);
 

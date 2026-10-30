@@ -8,7 +8,8 @@ namespace TeamRadio56.Core.Logic
     /// analyzers/racecontrol.py 포팅 — 코스 상태/레이스 진행.
     ///
     /// FCY 진입·해제와 FCY 중 피트 오픈, 섹터 로컬 옐로(엣지 트리거),
-    /// 레이스 스타트/체커, 남은 시간 마일스톤/마지막 랩, 피트 리미터 경고,
+    /// 레이스 스타트, 남은 시간 마일스톤, 마지막 랩/내 피니시 체커(판단은 RaceEndTracker),
+    /// 피트 리미터 경고,
     /// 블루 플래그, 페널티(게임 메시지에서 종류/사유 파싱), 클래스 순위 변동.
     /// </summary>
     public sealed class RaceControlAnalyzer
@@ -34,8 +35,8 @@ namespace TeamRadio56.Core.Logic
             new Dictionary<int, double>();
         private readonly HashSet<int> _milestonesDone = new HashSet<int>();
         private double? _initialRemaining;
-        private bool _finalLapDone;
-        private bool _raceStarted;
+        private int? _finalLapFor;             // '마지막 랩'이 수락된 시점의 내 total_laps
+        private bool _raceEndDone;
         private int? _classPlace;
         private double _limiterWarnedT;
         private bool _blueFlag;
@@ -60,8 +61,8 @@ namespace TeamRadio56.Core.Logic
             _sectorYellowAnnounced.Clear();
             _milestonesDone.Clear();
             _initialRemaining = null;
-            _finalLapDone = false;
-            _raceStarted = false;
+            _finalLapFor = null;
+            _raceEndDone = false;
             _classPlace = null;
             _limiterWarnedT = 0.0;
             _blueFlag = false;
@@ -136,7 +137,9 @@ namespace TeamRadio56.Core.Logic
             CollectMessages(ses, snap.T);
             CheckPenalties(me, snap.T, state, bus);
             if (state.IsRace && phase == PhaseGreen)
-                CheckTimeMilestones(state, ses, bus);
+                CheckTimeMilestones(ses, bus);
+            if (state.IsRace)
+                CheckRaceEndTick(state, snap, me, bus);
         }
 
         private void OnPhaseChange(int old, int now, RaceState state, EventBus bus)
@@ -144,7 +147,6 @@ namespace TeamRadio56.Core.Logic
             // 레이스 스타트: 포메이션/카운트다운 → 그린
             if (now == PhaseGreen && (old == 3 || old == 4) && state.IsRace)
             {
-                _raceStarted = true;
                 var ev = new RadioEvent
                 {
                     Type = EventTypes.RaceStart,
@@ -189,21 +191,11 @@ namespace TeamRadio56.Core.Logic
                 state.ClearIssue("fcy");
                 state.AddNarrative("(이벤트) 리스타트 그린");
             }
-            // 체커
-            else if (now == PhaseOver && state.IsRace && _raceStarted)
+            // 체커 게시 — 페이즈 8은 리더 피니시라 랩 다운·다른 클래스 차는 아직 달린다.
+            // 내 체커 콜은 내 피니시(PushRaceEnd)에서
+            else if (now == PhaseOver && state.IsRace)
             {
-                int place = _classPlace
-                    ?? (state.Laps.Count > 0 ? state.Laps[state.Laps.Count - 1].ClassPlace : 0);
-                var ev = new RadioEvent
-                {
-                    Type = EventTypes.RaceEnd,
-                    Priority = Priority.High,
-                    Ttl = 30.0,
-                };
-                ev.Data["pool"] = "race_end";
-                ev.Data["class_place"] = place;
-                bus.Push(ev);
-                state.AddNarrative("(이벤트) 체커, 클래스 P" + place);
+                state.AddNarrative("(이벤트) 체커 게시 (리더 피니시)");
             }
         }
 
@@ -415,7 +407,7 @@ namespace TeamRadio56.Core.Logic
             }
         }
 
-        private void CheckTimeMilestones(RaceState state, SessionInfo ses, EventBus bus)
+        private void CheckTimeMilestones(SessionInfo ses, EventBus bus)
         {
             if (ses.EndEt <= 0)
                 return;
@@ -452,23 +444,80 @@ namespace TeamRadio56.Core.Logic
                     }
                 }
             }
-            // 마지막 랩: 남은 시간이 평소 랩타임보다 짧아진 순간
-            double? baseLap = state.BaselineLapTime();
-            if (!_finalLapDone && baseLap.HasValue && baseLap.Value > 0
-                && remaining < baseLap.Value)
+        }
+
+        // -- 마지막 랩 / 내 피니시 (판단은 state.RaceEnd) ------------------------
+
+        private void CheckRaceEndTick(RaceState state, Snapshot snap, VehicleInfo me,
+                                      EventBus bus)
+        {
+            // state.Update 전에 돈다(RaceEnd는 직전 틱 값). 이번 틱에 라인을 넘었으면 OnLap이 판단한다.
+            RaceEndTracker re = state.RaceEnd;
+            if (!re.Lap.HasValue || me.TotalLaps != re.Lap.Value || re.Out)
+                return;
+            int fs = me.FinishStatus;
+            if (fs == 1 || re.Finished)
             {
-                _finalLapDone = true;
-                var ev = new RadioEvent
-                {
-                    Type = EventTypes.RaceMilestone,
-                    Priority = Priority.High,
-                    Message = Messages.Get("final_lap"),
-                    DedupKey = "final_lap",
-                    Ttl = 30.0,
-                };
-                ev.Data["final_lap"] = true;
-                bus.Push(ev);
+                PushRaceEnd(state, snap, me, bus);   // 피니시 플래그가 크로싱 없이 늦게 켜진 경우 등
+                return;
+            }
+            if (fs != 0 || _finalLapFor == me.TotalLaps)
+                return;
+            SessionInfo ses = snap.Session;
+            if (!RaceEnd.IsRacingPhase(ses.GamePhase) || !RaceEnd.FlagOut(snap))
+                return;
+            // 예측이 빗나간 채 리더가 체커를 받았다 — 다음 라인 통과가 피니시.
+            // 라인까지 몇 초 안 남았으면 '마지막 랩'과 체커 콜이 겹치니 생략
+            double? pace = state.BaselineLapTime();
+            if (!pace.HasValue || pace.Value <= 0)
+                pace = RaceEnd.LapPace(me);
+            if (pace.HasValue && pace.Value > 0
+                && (1.0 - RaceEnd.LapFrac(me, ses.CurrentEt, ses.TrackLength, pace.Value))
+                   * pace.Value < RaceEnd.LateMinToLineSec)
+            {
+                return;
+            }
+            PushFinalLap(state, me, bus);
+        }
+
+        private void PushFinalLap(RaceState state, VehicleInfo me, EventBus bus)
+        {
+            int lap = me.TotalLaps;
+            // 키는 랩마다 — 예측이 빗나가 다음 랩에 다시 부를 때 앞 콜 키에 막히지 않게
+            var ev = new RadioEvent
+            {
+                Type = EventTypes.RaceMilestone,
+                Priority = Priority.High,
+                Message = Messages.Get("final_lap"),
+                DedupKey = "final_lap_" + (lap + 1),
+                Ttl = 30.0,
+            };
+            ev.Data["final_lap"] = true;
+            ev.Data["lap"] = lap + 1;
+            if (bus.Push(ev))
+            {
+                _finalLapFor = lap;              // 수락됐을 때만 — 거절되면 안전망이 다시 시도
                 state.AddNarrative("(이벤트) 마지막 랩");
+            }
+        }
+
+        private void PushRaceEnd(RaceState state, Snapshot snap, VehicleInfo me, EventBus bus)
+        {
+            if (_raceEndDone || !state.RaceEnd.SeenUnfinished)
+                return;
+            int place = RaceState.ClassPlaceOf(snap, me);
+            var ev = new RadioEvent
+            {
+                Type = EventTypes.RaceEnd,
+                Priority = Priority.High,
+                Ttl = 30.0,
+            };
+            ev.Data["pool"] = "race_end";
+            ev.Data["class_place"] = place;
+            if (bus.Push(ev))
+            {
+                _raceEndDone = true;
+                state.AddNarrative("(이벤트) 체커, 클래스 P" + place);
             }
         }
 
@@ -482,6 +531,14 @@ namespace TeamRadio56.Core.Logic
             int cp = RaceState.ClassPlaceOf(snap, me);
             int? prev = _classPlace;
             _classPlace = cp;
+            RaceEndTracker re = state.RaceEnd;
+            if (re.Finished)
+            {
+                PushRaceEnd(state, snap, me, bus);
+                return;                      // 피니시 라인: 순위 변동 콜 대신 체커 콜 하나
+            }
+            if (re.FinalLap && _finalLapFor != me.TotalLaps)
+                PushFinalLap(state, me, bus);
             if (!prev.HasValue || cp == prev.Value)
                 return;
             // 피트 사이클 중 순위 출렁임은 무시 (내가 피트 랩이면 침묵)

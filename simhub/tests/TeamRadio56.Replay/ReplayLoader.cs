@@ -174,6 +174,7 @@ namespace TeamRadio56.Replay
                 FlagBlue = B(v, "flag_blue"),
                 EstimatedLap = D(v, "estimated_lap"),
                 TimeIntoLap = D(v, "time_into_lap"),
+                LapStartEt = D(v, "lap_start_et"),
                 InGarage = B(v, "in_garage"),
                 Pos = Doubles(v, "pos"),
             };

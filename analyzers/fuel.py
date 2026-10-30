@@ -38,7 +38,7 @@ class FuelAnalyzer:
             return None
         fuel_laps = fuel_now / avg_burn
 
-        race_laps_left = self._race_laps_left(state, snap)
+        race_laps_left = self._race_laps_left(state)
         pit_needed = race_laps_left is not None and fuel_laps < race_laps_left
 
         return {
@@ -51,25 +51,17 @@ class FuelAnalyzer:
             "pit_window_laps": max(int(fuel_laps) - 1, 0) if pit_needed else None,
         }
 
-    def _race_laps_left(self, state: SessionState, snap: Snapshot) -> Optional[int]:
-        if not state.is_race:
-            return None
-        ses = snap.session
-        me = snap.player_scoring()
-        base = state.baseline_lap_time()
-        # 랩 수 제한 레이스
-        if 0 < ses["max_laps"] < 100000:
-            return max(ses["max_laps"] - me["total_laps"], 0)
-        # 시간 제한 레이스
-        if ses["end_et"] > 0 and base:
-            remaining = ses["end_et"] - ses["current_et"]
-            return max(int(remaining / base) + 1, 0)
-        return None
+    @staticmethod
+    def _race_laps_left(state: SessionState) -> Optional[int]:
+        """남은 레이스 랩(지금 랩 포함, 0=체커 받음) — race_end가 이번 라인 통과에서 계산한 값."""
+        return state.race_end.laps_left if state.is_race else None
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus) -> Optional[dict]:
         st = self.status(state, snap)
         if st is None:
             return None
+        if st["race_laps_left"] == 0:
+            return st                    # 체커 받은 뒤 연료 콜 무의미
 
         if st["fuel_laps"] <= self.critical_laps:
             bus.push(Event(

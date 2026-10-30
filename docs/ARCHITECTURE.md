@@ -13,12 +13,14 @@
   state.py            SessionState — 랩 히스토리(LapRecord), 이슈(issues),
                       레이스 서사(narrative), 클래스 순위/동클래스 갭 계산
                       → LLM 프롬프트의 문맥이 여기서 나온다
+  race_end.py         RaceEndTracker — 리더 기준 체커 모델: 라인 통과마다 남은 랩,
+                      리더 체커 시각, 내 피니시 (state.update가 매 틱 observe)
 
 [분석 계층]  (Snapshot + SessionState → Event)
   analyzers/
     traffic.py        per-car 상태 머신, 랩핑/백마커/정지차, 다중 차량 종합
     racecontrol.py    페이즈/플래그(FCY·섹터·블루)/패널티(메시지 파싱)/
-                      마일스톤/피트 리미터/클래스 순위 변동
+                      마일스톤/마지막 랩·내 체커/피트 리미터/클래스 순위 변동
     health.py         충격→자동 점검 리포트, 얼라인/윙/리어 불안정, 슬로우 펑처, 온도
     fuel.py           소모 평균/피트 윈도우/세이브 코칭
     tyres.py          마모 수명/온도 불균형/펑크
