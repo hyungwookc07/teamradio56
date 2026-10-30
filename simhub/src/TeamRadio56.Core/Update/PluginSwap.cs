@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace TeamRadio56.Core.Update
@@ -20,7 +21,19 @@ namespace TeamRadio56.Core.Update
 
         public bool Exists(string path) => File.Exists(path);
         public void Move(string src, string dst) => File.Move(src, dst);
-        public void Delete(string path) => File.Delete(path);
+        public void Delete(string path)
+        {
+            // 읽기 전용 속성(수동 설치 때 딸려 온 것)이면 File.Delete가 거부해 .old가 쌓인다
+            try
+            {
+                FileAttributes a = File.GetAttributes(path);
+                if ((a & FileAttributes.ReadOnly) != 0)
+                    File.SetAttributes(path, a & ~FileAttributes.ReadOnly);
+            }
+            catch (Exception) { }
+            File.Delete(path);
+        }
+
         public string[] List(string dir) => Directory.GetFiles(dir);
     }
 
@@ -49,6 +62,9 @@ namespace TeamRadio56.Core.Update
     public static class PluginSwap
     {
         public static readonly string[] DllNames = { "TeamRadio56.Core.dll", "TeamRadio56.SimHub.dll" };
+
+        /// <summary>마지막 교체의 백업 파일 목록 — 새 버전이 안 뜰 때 수동 되돌리기 안내용.</summary>
+        public const string BackupRecordName = "teamradio56_backup.txt";
 
         private const int MaxBackupSlots = 50;
 
@@ -105,7 +121,7 @@ namespace TeamRadio56.Core.Update
 
         /// <summary>
         /// 실행. 실패하면 완료된 이동을 역순으로 되돌린 뒤 예외 — 되돌리기까지
-        /// 실패하면 수동 복구 방법을 메시지에 담는다.
+        /// 실패하면 RollbackFailed와 함께 사용자가 직접 바꿔야 할 이름 쌍을 담는다.
         /// </summary>
         public static void Execute(IList<SwapStep> steps, IFileOps ops)
         {
@@ -141,9 +157,17 @@ namespace TeamRadio56.Core.Update
                 if (failedUndo.Count == 0)
                     throw new UpdateException(ue.Kind,
                         ue.Message + " — 원래 DLL로 되돌렸음", ex);
-                throw new UpdateException(UpdateErrorKind.Io,
+                // 사용자 안내는 "백업 → 원래 이름"만: 새 DLL을 스테이징으로 못 돌린 쪽은
+                // 원래 이름 자리를 새 DLL이 차지하고 있어 백업 복원도 같이 실패한다
+                var restore = new List<KeyValuePair<string, string>>();
+                foreach (SwapStep s in steps)
+                {
+                    if (s.BackupPath != null && ops.Exists(s.BackupPath))
+                        restore.Add(new KeyValuePair<string, string>(s.BackupPath, s.LivePath));
+                }
+                throw new UpdateException(UpdateErrorKind.RollbackFailed,
                     ue.Message + " — 되돌리기 실패, 수동으로 이름을 바꿔 주세요: "
-                    + string.Join("; ", failedUndo), ex);
+                    + string.Join("; ", failedUndo), ex, restore);
             }
         }
 
@@ -153,6 +177,46 @@ namespace TeamRadio56.Core.Update
             IList<SwapStep> steps = Prepare(pluginDir, stagingDir, names, ops);
             Execute(steps, ops);
             return steps;
+        }
+
+        /// <summary>
+        /// 백업 기록 쓰기 (실패 무시). 각 줄은 "백업 파일 -> 원래 이름" — DLL마다 백업 번호가
+        /// 다를 수 있어 사용자가 .old 번호로 짐작하지 않게 정확한 이름을 남긴다.
+        /// </summary>
+        public static bool WriteBackupRecord(string pluginDir, string version,
+                                             IEnumerable<KeyValuePair<string, string>> restore)
+        {
+            string path = Path.Combine(pluginDir, BackupRecordName);
+            try
+            {
+                var sb = new StringBuilder();
+                sb.Append("# teamradio56 플러그인 업데이트 백업 / plugin update backup\r\n");
+                sb.Append("# ").Append(DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss'Z'",
+                    System.Globalization.CultureInfo.InvariantCulture))
+                  .Append(" → ").Append(version ?? "?").Append("\r\n");
+                sb.Append("# 되돌리기: SimHub을 끄고, 각 줄 오른쪽 파일을 지운 뒤 왼쪽 파일을 오른쪽 이름으로 바꾸세요.\r\n");
+                sb.Append("# Roll back: close SimHub, delete each right-hand file, then rename the left-hand file to it.\r\n");
+                foreach (KeyValuePair<string, string> r in restore)
+                    sb.Append(Path.GetFileName(r.Key)).Append(" -> ").Append(Path.GetFileName(r.Value)).Append("\r\n");
+                File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        /// <summary>교체 성공 후 기록할 (백업, 원래 이름) 쌍.</summary>
+        public static IList<KeyValuePair<string, string>> BackupPairs(IEnumerable<SwapStep> steps)
+        {
+            var list = new List<KeyValuePair<string, string>>();
+            foreach (SwapStep s in steps)
+            {
+                if (s.BackupPath != null)
+                    list.Add(new KeyValuePair<string, string>(s.BackupPath, s.LivePath));
+            }
+            return list;
         }
 
         /// <summary>플러그인 시작 시 지난 업데이트의 TeamRadio56.*.dll.old* 정리 (실패는 무시).</summary>
@@ -179,6 +243,14 @@ namespace TeamRadio56.Core.Update
                 }
                 catch (Exception) { }
             }
+            // 이 시점엔 플러그인이 떴으므로 되돌리기 기록은 더 쓸 데가 없다
+            try
+            {
+                string record = Path.Combine(pluginDir, BackupRecordName);
+                if (ops.Exists(record))
+                    ops.Delete(record);
+            }
+            catch (Exception) { }
             return removed;
         }
     }

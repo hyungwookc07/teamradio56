@@ -43,6 +43,9 @@ function Fail($msg) {
     exit 1
 }
 
+# 더블클릭으로 연 창이 예상 못 한 오류(잠긴 파일 등)로 바로 닫히지 않게 — 전부 Fail의 멈춤 경로로
+trap { Fail ("예상하지 못한 오류: " + $_.Exception.Message) }
+
 function Step($msg) { Write-Host "▶ $msg" -ForegroundColor Cyan }
 function Warn($msg) { Write-Host "⚠ $msg" -ForegroundColor Yellow }
 
@@ -58,11 +61,13 @@ function Get-Sha256([string]$path) {
 function Invoke-Quiet([scriptblock]$block) {
     $old = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    # 명령이 아예 없으면 종료 코드가 갱신되지 않으므로 실패로 시작한다
     $global:LASTEXITCODE = -1
     try {
         $out = & $block 2>&1 | ForEach-Object { "$_" }
         return @{ Code = $LASTEXITCODE; Output = @($out) }
+    } catch [System.Management.Automation.CommandNotFoundException] {
+        # 명령이 아예 없으면 예외가 호출부까지 올라가 Stop 모드에선 스크립트가 죽는다
+        return @{ Code = -1; Output = @("command not found: " + $_.Exception.Message) }
     } finally {
         $ErrorActionPreference = $old
     }
@@ -208,9 +213,13 @@ if ($TestMode) {
     if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
         Fail "dotnet이 없습니다 — winget install Microsoft.DotNet.SDK.8 후 창을 새로 여세요"
     }
-    $gitState = Invoke-Quiet { git status --porcelain }
-    if ($gitState.Code -eq 0 -and $gitState.Output.Count -gt 0) {
-        Warn "커밋하지 않은 변경이 있습니다 — 릴리스는 지금 작업 폴더 그대로 빌드됩니다"
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $gitState = Invoke-Quiet { git status --porcelain }
+        if ($gitState.Code -eq 0 -and $gitState.Output.Count -gt 0) {
+            Warn "커밋하지 않은 변경이 있습니다 — 릴리스는 지금 작업 폴더 그대로 빌드됩니다"
+        }
+    } else {
+        Warn "git이 PATH에 없어 커밋 상태를 확인하지 못했습니다 (gh로 게시하려면 git이 필요합니다)"
     }
 
     Step "Release 빌드 (SimHub: $SimHubPath)"
@@ -340,8 +349,19 @@ if ($useGh) {
             if ($view.Output -notcontains $a.Name) { Fail "$AudioTag 릴리스에 $($a.Name) 이(가) 없습니다" }
         }
     }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Fail "git이 PATH에 없습니다 — Git for Windows를 설치하거나 -NoPublish로 파일만 만든 뒤 손으로 올리세요"
+    }
     $exists = Invoke-Quiet { gh release view $Tag --repo $Repo }
-    if ($exists.Code -eq 0) { Fail "릴리스 $Tag 가 이미 있습니다 — 버전을 올리거나 GitHub에서 지운 뒤 다시 실행하세요" }
+    if ($exists.Code -eq 0) {
+        Fail "릴리스 $Tag 가 이미 있습니다 — 버전을 올리거나, 아무도 받지 않았다면 gh release delete $Tag --repo $Repo --cleanup-tag 로 릴리스와 태그를 함께 지운 뒤 다시 실행하세요"
+    }
+    # 릴리스만 지우면 태그는 남고, gh release create는 남은 태그(예전 커밋)에 붙어 --target을 무시한다
+    $tagRef = Invoke-Quiet { git ls-remote --tags "$RepoUrl.git" "refs/tags/$Tag" }
+    if ($tagRef.Code -ne 0) { Fail "GitHub 태그를 확인하지 못했습니다 (git ls-remote) — 네트워크를 확인하세요" }
+    if (@($tagRef.Output | Where-Object { $_.Trim() -ne "" }).Count -gt 0) {
+        Fail "태그 $Tag 가 GitHub에 남아 있습니다 (릴리스를 지워도 태그는 남습니다) — git push origin :refs/tags/$Tag 로 태그를 지우거나 버전을 올린 뒤 다시 실행하세요"
+    }
 
     $head = Invoke-Quiet { git rev-parse HEAD }
     if ($head.Code -ne 0) { Fail "git 커밋을 확인하지 못했습니다" }
@@ -370,6 +390,12 @@ if ($useGh) {
 $branch = Invoke-Quiet { git rev-parse --abbrev-ref HEAD }
 $branchName = "main"
 if ($branch.Code -eq 0 -and $branch.Output.Count -gt 0) { $branchName = $branch.Output[0].Trim() }
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $tagRef = Invoke-Quiet { git ls-remote --tags "$RepoUrl.git" "refs/tags/$Tag" }
+    if ($tagRef.Code -eq 0 -and @($tagRef.Output | Where-Object { $_.Trim() -ne "" }).Count -gt 0) {
+        Warn "태그 $Tag 가 GitHub에 이미 있습니다 — 그대로 게시하면 그 태그의 예전 커밋에 붙습니다. 먼저 git push origin :refs/tags/$Tag 로 지우세요"
+    }
+}
 Start-Process "$RepoUrl/releases/new?tag=$Tag"
 Invoke-Item -LiteralPath $OutDir
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using TeamRadio56.Core.Diagnostics;
@@ -24,12 +25,26 @@ namespace TeamRadio56.Core.Update
         public string RestartPendingVersion { get; private set; }
         /// <summary>이번 세션에 설치한 음성 팩 ID (엔진 재시작 후 적용).</summary>
         public string AudioInstalledPack { get; private set; }
+        /// <summary>
+        /// DLL 교체의 되돌리기가 실패해 사용자가 직접 바꿔야 할 (백업, 원래 이름) 쌍 — 없으면 null.
+        /// 새 작업이 시작돼도 지우지 않는다 (재시작 전에 꼭 봐야 하는 안내).
+        /// </summary>
+        public IReadOnlyList<KeyValuePair<string, string>> ManualRestore { get; private set; }
 
         public bool Busy => Activity != UpdateActivity.Idle;
         public bool RestartPending => RestartPendingVersion != null;
+        public bool ManualRestorePending => ManualRestore != null;
 
+        /// <summary>
+        /// 취소 가능 여부 — 풀기·교체 단계에선 작업이 취소를 무시하므로 버튼도 숨긴다.
+        /// </summary>
+        public bool CanCancel =>
+            Busy && (Progress == null || Progress.Stage == UpdateStage.Downloading
+                     || Progress.Stage == UpdateStage.Verifying);
+
+        // 수동 복구 대기 중 재설치하면 새 DLL이 다시 백업돼 복구할 원래 파일 안내가 흐려진다
         public bool CanInstallPlugin =>
-            !Busy && !RestartPending && Check != null && Check.PluginUpdateAvailable;
+            !Busy && !RestartPending && !ManualRestorePending && Check != null && Check.PluginUpdateAvailable;
 
         public bool CanInstallAudio =>
             !Busy && Check != null && Check.AudioUpdateAvailable;
@@ -54,6 +69,8 @@ namespace TeamRadio56.Core.Update
         }
         internal void SetRestartPending(string version) => RestartPendingVersion = version;
         internal void SetAudioInstalled(string pack) => AudioInstalledPack = pack;
+        internal void SetManualRestore(IReadOnlyList<KeyValuePair<string, string>> restore) =>
+            ManualRestore = restore;
     }
 
     /// <summary>
@@ -151,19 +168,34 @@ namespace TeamRadio56.Core.Update
                 if (string.IsNullOrEmpty(cache))
                     throw new UpdateException(UpdateErrorKind.Io, "오디오 캐시 폴더를 정할 수 없음");
                 FileLog.Info("음성 팩 업데이트 시작: {0} → {1}", cache, m.AudioPack);
-                _service.InstallAudioPack(m, cache, WorkDir(), OnProgress, ct);
-                string installed = null;
                 try
                 {
-                    installed = AudioPack.Installed(cache);
+                    _service.InstallAudioPack(m, cache, WorkDir(), OnProgress, ct);
                 }
-                catch (Exception) { }
-                Update(s =>
+                catch (Exception)
                 {
-                    s.SetAudioInstalled(m.AudioPack);
-                    s.SetCheck(new UpdateCheck(m, _currentVersion, installed), null);
-                });
+                    // 풀기 도중 실패면 표식이 '미완료'로 바뀌었다 — 화면이 이전 팩을 계속 보여주지 않게
+                    RefreshInstalledPack(m, cache, null);
+                    throw;
+                }
+                RefreshInstalledPack(m, cache, m.AudioPack);
                 FileLog.Info("음성 팩 설치 완료: {0} ({1})", m.AudioPack, cache);
+            });
+        }
+
+        private void RefreshInstalledPack(ReleaseManifest m, string cache, string justInstalled)
+        {
+            string installed = null;
+            try
+            {
+                installed = AudioPack.Installed(cache);
+            }
+            catch (Exception) { }
+            Update(s =>
+            {
+                if (justInstalled != null)
+                    s.SetAudioInstalled(justInstalled);
+                s.SetCheck(new UpdateCheck(m, _currentVersion, installed), null);
             });
         }
 
@@ -276,6 +308,8 @@ namespace TeamRadio56.Core.Update
                     s.SetProgress(null);
                     if (failure != null)
                         s.SetError(activity, failure.Kind, failure.Message);
+                    if (failure != null && failure.Kind == UpdateErrorKind.RollbackFailed)
+                        s.SetManualRestore(failure.ManualRestore);
                 });
                 if (ReferenceEquals(_cts, cts))
                     _cts = null;

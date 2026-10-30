@@ -102,17 +102,34 @@ dotnet build -c Release -p:SimHubPath="D:\SimHub"
 | 폴더에 쓸 권한이 없습니다 | SimHub 폴더가 쓰기 금지 (보통은 플러그인이 설정·로그를 쓰는 폴더라 괜찮다). SimHub을 한 번 관리자 권한으로 실행해 업데이트하거나 직접 복사 |
 | 받은 파일이 손상되었습니다 | sha256 불일치 — 기존 플러그인은 그대로다. 다시 시도 |
 
+화면에는 원인 분류만 나오고 자세한 내용(URL, 파일 이름, OS 오류)은 `teamradio56.log`에 남는다.
+
 ### 되돌리기 (.old)
 
 업데이트 뒤 SimHub을 켰는데 플러그인이 안 뜨면(새 DLL이 로드조차 안 되면 정리가
 돌지 않아 `.old`가 남아 있다):
 
 1. SimHub 종료
-2. SimHub 폴더에서 `TeamRadio56.Core.dll`, `TeamRadio56.SimHub.dll` 삭제
-3. `TeamRadio56.Core.dll.old` → `TeamRadio56.Core.dll`,
-   `TeamRadio56.SimHub.dll.old` → `TeamRadio56.SimHub.dll` 로 이름 변경
-   (`.old1`, `.old2`…가 있으면 번호 없는 `.old`가 업데이트 직전에 돌던 버전이다)
+2. SimHub 폴더의 `teamradio56_backup.txt`를 연다. 업데이터가 DLL마다 실제로 백업한
+   파일 이름을 `백업 파일 -> 원래 이름` 줄로 적어 둔다. 예:
+   ```
+   TeamRadio56.Core.dll.old1 -> TeamRadio56.Core.dll
+   TeamRadio56.SimHub.dll.old -> TeamRadio56.SimHub.dll
+   ```
+3. 각 줄마다 오른쪽 파일(새 DLL)을 지우고 왼쪽 파일을 오른쪽 이름으로 바꾼다
 4. SimHub 시작, `teamradio56.log`를 알려주세요
+
+`.old` 번호로 짐작하지 말 것: 지우지 못한 묵은 `.old`가 있으면 비어 있는 다음 번호
+(`.old1`, `.old2`…)에 백업하므로 번호 없는 `.old`가 직전 버전이라는 보장이 없고, 번호는
+DLL마다 다를 수 있다. 기록 파일이 없으면 탐색기에서 수정한 날짜를 본다 — 이름을 바꿔도
+빌드 시각이 그대로라 같은 버전의 두 DLL은 몇 초 차이로 붙어 있다. 지금 DLL보다 오래된
+것 중 가장 최근의 **짝**을 고른다. 다른 버전끼리 섞으면 플러그인이 뜨지 않을 수 있다.
+플러그인이 정상으로 뜨면 시작할 때 `.old*`와 기록 파일을 지운다.
+
+설정 화면에 **"되돌리기 실패"**가 뜨면(DLL 교체 도중 실패했고 원래대로 돌리지도 못한
+경우) 플러그인 폴더에 새 DLL과 이전 DLL이 섞여 있을 수 있다. **SimHub을 재시작하기 전에**
+화면(과 `teamradio56_backup.txt`)에 나온 파일을 위 3번처럼 바꾼다. 이 상태에선 같은
+세션에서 플러그인 업데이트를 다시 하지 못하게 막아 둔다.
 
 `.old`가 이미 지워졌으면 릴리스 페이지에서 이전 버전 zip을 받아 두 DLL을 복사하면 된다.
 업데이터는 **더 높은 버전만** 제안하므로 이전 버전으로 내려가는 건 이 수동 복사뿐이다.
@@ -164,7 +181,8 @@ SimHub이 켜져 있으면 DLL이 잠기므로 스크립트가 종료를 기다�
    `teamradio56-release.txt` 작성
 5. 결과물은 `dist\release\<x.y.z>\` (git에 안 들어간다)
 6. gh가 설치·로그인돼 있으면 `gh release create`로 바로 게시 (현재 커밋이 push됐는지,
-   같은 태그가 이미 없는지, 음성 팩 자산이 참조하는 릴리스에 실제로 있는지 확인).
+   같은 릴리스와 같은 태그가 GitHub에 이미 없는지(`git ls-remote`), 음성 팩 자산이
+   참조하는 릴리스에 실제로 있는지 확인. git이 PATH에 있어야 한다).
    없으면 새 릴리스 페이지(`releases/new?tag=v<x.y.z>`)와 결과 폴더를 열고
    올릴 파일과 순서를 출력한다 — 폴더의 파일을 **이름 그대로 전부** 첨부하고,
    "Set as the latest release"를 켠 채 Publish
@@ -217,6 +235,10 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
 
 - **아직 아무도 안 받았으면**: GitHub에서 그 릴리스를 지우거나 pre-release로 바꾸면
   `latest`가 이전 릴리스로 돌아간다 (단, 음성 팩 자산이 있는 릴리스는 지우지 말 것).
+  같은 버전으로 다시 내려면 **태그까지** 지운다 — 웹에서 릴리스만 지우면 태그가 남고,
+  다시 만든 릴리스가 그 태그(예전 커밋)에 붙는다:
+  `gh release delete v<x.y.z> --repo hyungwookc07/teamradio56 --cleanup-tag`
+  (이미 릴리스만 지웠으면 `git push origin :refs/tags/v<x.y.z>`). 남아 있으면 스크립트가 멈춘다.
 - **이미 받은 사용자가 있으면**: 업데이터는 내려가는 버전을 제안하지 않으므로 고친
   버전을 **더 높은 번호로** 다시 낸다. 플러그인이 아예 안 뜨는 사용자는 위
   [되돌리기 (.old)](#되돌리기-old)로 직전 버전을 살린다.

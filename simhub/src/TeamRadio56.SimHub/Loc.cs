@@ -169,6 +169,11 @@ namespace TeamRadio56.SimHub
             { "upd_err_AccessDenied", "폴더에 쓸 권한이 없습니다 — SimHub을 관리자 권한으로 실행하거나 릴리스 페이지에서 직접 설치하세요" },
             { "upd_err_Io", "파일을 쓰지 못했습니다 (다른 프로그램이 사용 중일 수 있습니다)" },
             { "upd_err_Cancelled", "취소했습니다" },
+            { "upd_err_RollbackFailed", "원래 DLL로 되돌리지 못했습니다 — 아래 복구 안내를 따르세요" },
+            { "upd_see_log", "자세한 내용은 teamradio56.log에 있습니다." },
+            { "upd_rollback_failed", "플러그인 업데이트 실패 — 원래 DLL로 되돌리지도 못했습니다. 플러그인 폴더에 새 DLL과 이전 DLL이 섞여 있을 수 있습니다.\n"
+                                     + "SimHub을 재시작하기 전에 직접 복구하세요: SimHub을 끄고, 폴더 {0} 에서 아래 각 줄의 오른쪽 파일을 지운 뒤 왼쪽 파일을 오른쪽 이름으로 바꾸세요 ({1}에도 적어 두었습니다).\n{2}" },
+            { "upd_banner_rollback", "업데이트 되돌리기 실패 — SimHub을 재시작하기 전에 아래 [업데이트] 섹션의 복구 안내를 따르세요" },
             { "upd_banner_new", "새 버전 {0}이(가) 있습니다 — 아래 [업데이트] 섹션에서 설치하세요" },
             { "upd_banner_audio", "새 음성 팩이 있습니다 — 아래 [업데이트] 섹션에서 설치하세요" },
             { "upd_banner_restart", "업데이트 {0} 설치됨 — SimHub을 재시작하세요" },
@@ -328,6 +333,11 @@ namespace TeamRadio56.SimHub
             { "upd_err_AccessDenied", "no write permission for the folder — run SimHub as administrator or install from the releases page" },
             { "upd_err_Io", "could not write a file (another program may be using it)" },
             { "upd_err_Cancelled", "cancelled" },
+            { "upd_err_RollbackFailed", "the old DLLs could not be restored — follow the recovery steps below" },
+            { "upd_see_log", "Details are in teamradio56.log." },
+            { "upd_rollback_failed", "Plugin update failed, and the old DLLs could not be restored. The plugin folder may now hold a mix of new and old DLLs.\n"
+                                     + "Fix it by hand before restarting SimHub: close SimHub, then in the folder {0} delete each right-hand file below and rename the left-hand file to it (also written to {1}).\n{2}" },
+            { "upd_banner_rollback", "Update rollback failed — follow the recovery steps in the [Updates] section below before restarting SimHub" },
             { "upd_banner_new", "Version {0} is available — install it in the [Updates] section below" },
             { "upd_banner_audio", "A new voice pack is available — install it in the [Updates] section below" },
             { "upd_banner_restart", "Update {0} installed — restart SimHub" },

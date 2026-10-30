@@ -79,7 +79,9 @@ namespace TeamRadio56.Core.Update
             req.ReadWriteTimeout = TimeoutMs;
             if (UseSystemProxy)
             {
-                IWebProxy proxy = WebRequest.DefaultWebProxy;
+                // 요청마다 새 인스턴스 — 공유 DefaultWebProxy에 자격 증명을 달면 SimHub 전체
+                // 요청이 프록시 407에 Windows 자격 증명으로 응답하게 된다
+                IWebProxy proxy = WebRequest.GetSystemWebProxy();
                 if (proxy != null)
                     proxy.Credentials = CredentialCache.DefaultCredentials;   // 사내 인증 프록시
                 req.Proxy = proxy;

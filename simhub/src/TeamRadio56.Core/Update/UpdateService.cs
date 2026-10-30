@@ -136,7 +136,17 @@ namespace TeamRadio56.Core.Update
 
             // 여기부터는 취소하지 않는다 — 교체는 짧고, 중간 중단은 롤백으로만 처리
             progress?.Invoke(new UpdateProgress(UpdateStage.Installing, 1, 1, m.PluginAsset, 0, -1));
-            PluginSwap.Install(pluginDir, staging, PluginSwap.DllNames, _ops);
+            IList<SwapStep> steps;
+            try
+            {
+                steps = PluginSwap.Install(pluginDir, staging, PluginSwap.DllNames, _ops);
+            }
+            catch (UpdateException ue) when (ue.Kind == UpdateErrorKind.RollbackFailed)
+            {
+                PluginSwap.WriteBackupRecord(pluginDir, m.Version, ue.ManualRestore);
+                throw;
+            }
+            PluginSwap.WriteBackupRecord(pluginDir, m.Version, PluginSwap.BackupPairs(steps));
 
             TryDeleteDir(staging);
             TryDeleteFile(zip);
@@ -173,6 +183,8 @@ namespace TeamRadio56.Core.Update
                 zips.Add(zip);
             }
 
+            // 여기부터는 취소하지 않는다 — 풀기는 로컬이라 몇 초면 끝나고, 중간에 멈추면
+            // 두 팩이 섞인 캐시가 남는다
             ct.ThrowIfCancellationRequested();
             Guard("음성 팩 표식", () => AudioPack.WriteMarker(cacheDir, AudioPack.IncompletePrefix + m.AudioPack));
             for (int i = 0; i < n; i++)
@@ -183,7 +195,6 @@ namespace TeamRadio56.Core.Update
                 Guard("음성 팩 풀기", () => SafeZip.ExtractRootFiles(zips[item - 1], cacheDir, ".wav",
                     (done, total) => progress?.Invoke(
                         new UpdateProgress(UpdateStage.Extracting, item, n, name, done, total))));
-                ct.ThrowIfCancellationRequested();
             }
             Guard("음성 팩 표식", () => AudioPack.WriteMarker(cacheDir, m.AudioPack));
             foreach (string zip in zips)

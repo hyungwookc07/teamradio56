@@ -746,23 +746,29 @@ namespace TeamRadio56.SimHub
                 status = ProgressText(st);
                 brush = Fg;
             }
-            else if (st.ErrorKind.HasValue)
+            else if (st.ErrorKind.HasValue && st.ErrorKind.Value != UpdateErrorKind.RollbackFailed)
             {
+                // Core의 상세 문구는 한국어 진단용이라 로그에만 — 화면엔 Loc 문구만
                 status = L("upd_failed_" + st.FailedActivity) + L("upd_err_" + st.ErrorKind.Value);
-                if (st.ErrorKind.Value != UpdateErrorKind.Cancelled && !string.IsNullOrEmpty(st.ErrorDetail))
-                    status += "\n(" + Truncate(st.ErrorDetail, 300) + ")";
+                if (st.ErrorKind.Value != UpdateErrorKind.Cancelled)
+                    status += "\n" + L("upd_see_log");
                 brush = st.ErrorKind.Value == UpdateErrorKind.Cancelled ? Dim : Off;
             }
             if (!st.Busy)
             {
                 var notes = new System.Collections.Generic.List<string>();
+                if (st.ManualRestorePending)
+                {
+                    notes.Add(ManualRestoreText(st, u.PluginDir));
+                    brush = Off;
+                }
                 if (status.Length > 0)
                     notes.Add(status);
                 if (st.RestartPending)
                     notes.Add(string.Format(L("upd_restart"), st.RestartPendingVersion));
                 if (st.AudioInstalledPack != null)
                     notes.Add(string.Format(L("upd_audio_done"), st.AudioInstalledPack));
-                if (status.Length == 0 && notes.Count > 0)
+                if (status.Length == 0 && notes.Count > 0 && !st.ManualRestorePending)
                     brush = Ok;
                 status = string.Join("\n", notes);
             }
@@ -772,12 +778,17 @@ namespace TeamRadio56.SimHub
             _btnUpdCheck.IsEnabled = !st.Busy;
             _btnUpdPlugin.IsEnabled = st.CanInstallPlugin;
             _btnUpdAudio.IsEnabled = st.CanInstallAudio;
-            _btnUpdCancel.Visibility = st.Busy ? Visibility.Visible : Visibility.Collapsed;
+            _btnUpdCancel.Visibility = st.CanCancel ? Visibility.Visible : Visibility.Collapsed;
 
             // 상단 배너 — 업데이트 섹션이 화면 맨 아래라 놓치지 않게
             string banner = null;
             Brush bannerBrush = Accent;
-            if (st.RestartPending)
+            if (st.ManualRestorePending)
+            {
+                banner = L("upd_banner_rollback");
+                bannerBrush = Off;
+            }
+            else if (st.RestartPending)
             {
                 banner = string.Format(L("upd_banner_restart"), st.RestartPendingVersion);
                 bannerBrush = Ok;
@@ -846,9 +857,13 @@ namespace TeamRadio56.SimHub
                                             System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        private static string Truncate(string text, int max)
+        private static string ManualRestoreText(UpdateState st, string pluginDir)
         {
-            return text.Length <= max ? text : text.Substring(0, max) + "...";
+            var lines = new System.Collections.Generic.List<string>();
+            foreach (var r in st.ManualRestore)
+                lines.Add("  " + System.IO.Path.GetFileName(r.Key) + " → " + System.IO.Path.GetFileName(r.Value));
+            return string.Format(L("upd_rollback_failed"), pluginDir, PluginSwap.BackupRecordName,
+                                 string.Join("\n", lines));
         }
 
         // -- 위젯 헬퍼 -------------------------------------------------------

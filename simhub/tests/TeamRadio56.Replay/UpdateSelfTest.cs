@@ -358,6 +358,11 @@ namespace TeamRadio56.Replay
                   && Text(Path.Combine(dir, SimHubDll)) == "MZ new simhub", "새 DLL 설치");
             Check(Text(Path.Combine(dir, CoreDll + ".old")) == "MZ old core"
                   && Text(Path.Combine(dir, SimHubDll + ".old")) == "MZ old simhub", "구 DLL은 .old로");
+            string record = Path.Combine(dir, PluginSwap.BackupRecordName);
+            Check(File.Exists(record)
+                  && File.ReadAllLines(record).Contains(CoreDll + ".old -> " + CoreDll)
+                  && File.ReadAllLines(record).Contains(SimHubDll + ".old -> " + SimHubDll),
+                  "백업 기록: DLL별 정확한 백업 이름");
             Check(!File.Exists(Path.Combine(dir, "README.txt")), "zip의 다른 파일은 설치 안 함");
             Check(Text(Path.Combine(dir, "teamradio56.settings.txt")) == "keep", "설정 파일 보존");
             Check(!Directory.Exists(Path.Combine(work, "staging"))
@@ -514,10 +519,34 @@ namespace TeamRadio56.Replay
             }
             catch (UpdateException ex)
             {
-                Check(ex.Kind == UpdateErrorKind.Io && ex.Message.Contains("수동"), "되돌리기 실패 → 수동 복구 안내");
+                Check(ex.Kind == UpdateErrorKind.RollbackFailed && ex.Message.Contains("수동"),
+                      "되돌리기 실패 → RollbackFailed + 수동 복구 안내");
                 // 나머지 되돌리기는 계속 진행 — SimHub DLL은 원래대로
                 Check(Text(liveSimHub) == "MZ old simhub", "되돌리기 실패해도 나머지는 복구");
+                string liveCore = Path.Combine(plugin, CoreDll);
+                Check(ex.ManualRestore.Count == 1 && ex.ManualRestore[0].Key == liveCore + ".old"
+                      && ex.ManualRestore[0].Value == liveCore,
+                      "되돌리기 실패: 수동 복구 목록은 남은 백업 → 원래 이름만 (실제 "
+                      + string.Join("; ", ex.ManualRestore.Select(r => r.Key + "→" + r.Value)) + ")");
             }
+
+            // 서비스 경유 되돌리기 실패 → 백업 기록에 수동 복구 쌍
+            string rbDir = PluginDir();
+            byte[] rbZip = ZipBytes((CoreDll, B("MZ new core")), (SimHubDll, B("MZ new simhub")));
+            var rbDl = new FakeDownloader();
+            rbDl.Files[PluginUrl] = rbZip;
+            string rbSimHub = Path.Combine(rbDir, SimHubDll);
+            string rbStagedCore = Path.Combine(UpdateService.DefaultWorkDir(rbDir), "staging", CoreDll);
+            var rbOps = new FaultyFileOps();
+            FaultyFileOps rbRef = rbOps;
+            rbOps.FailMoveTo = dst => (rbRef.Moves == 4 && dst == rbSimHub) || (rbRef.Moves > 4 && dst == rbStagedCore);
+            Throws(UpdateErrorKind.RollbackFailed, () => new UpdateService(rbDl, Base, rbOps).InstallPlugin(
+                PluginManifest(rbZip), rbDir, UpdateService.DefaultWorkDir(rbDir), null, CancellationToken.None),
+                "서비스 경유 되돌리기 실패");
+            string rbRecord = Path.Combine(rbDir, PluginSwap.BackupRecordName);
+            Check(File.Exists(rbRecord) && File.ReadAllLines(rbRecord).Contains(CoreDll + ".old -> " + CoreDll)
+                  && !File.ReadAllLines(rbRecord).Any(l => l.StartsWith(SimHubDll)),
+                  "되돌리기 실패: 백업 기록엔 직접 바꿔야 할 것만");
         }
 
         // -- .old 정리 --------------------------------------------------------
@@ -529,6 +558,7 @@ namespace TeamRadio56.Replay
                                          "Other.dll.old", "TeamRadio56.settings.txt", "TeamRadio56.Core.dll.older" })
                 File.WriteAllText(Path.Combine(dir, f), f);
             Directory.CreateDirectory(Path.Combine(dir, UpdateService.WorkDirName, "staging"));
+            File.WriteAllText(Path.Combine(dir, PluginSwap.BackupRecordName), "x");
             var ops = new FaultyFileOps();
             ops.Locked.Add(Path.Combine(dir, CoreDll + ".old1"));
             int removed = UpdateService.CleanupOnStartup(dir, ops);
@@ -540,6 +570,14 @@ namespace TeamRadio56.Replay
                   && File.Exists(Path.Combine(dir, "TeamRadio56.settings.txt"))
                   && File.Exists(Path.Combine(dir, "TeamRadio56.Core.dll.older")), "다른 파일은 안 건드림");
             Check(!Directory.Exists(Path.Combine(dir, UpdateService.WorkDirName)), "작업 폴더 삭제");
+            Check(!File.Exists(Path.Combine(dir, PluginSwap.BackupRecordName)), "백업 기록 삭제 (플러그인이 떴음)");
+
+            // 읽기 전용 .old도 지운다 (Windows에선 속성을 풀어야 지워짐)
+            dir = NewDir("cleanup-ro");
+            string ro = Path.Combine(dir, SimHubDll + ".old");
+            File.WriteAllText(ro, "ro");
+            File.SetAttributes(ro, FileAttributes.ReadOnly);
+            Check(UpdateService.CleanupOnStartup(dir) == 1 && !File.Exists(ro), "읽기 전용 .old 삭제");
             Check(UpdateService.CleanupOnStartup(Path.Combine(dir, "nope")) == 0, "없는 폴더도 예외 없음");
         }
 
@@ -646,6 +684,17 @@ namespace TeamRadio56.Replay
                 NewDir("work2"), null, CancellationToken.None), "음성 팩 zip-slip");
             Check(!File.Exists(Path.Combine(Path.GetDirectoryName(cache2), "escape.wav")), "음성 팩 zip-slip: 밖에 안 씀");
             Check(AudioPack.NeedsUpdate(sm, cache2), "중단된 설치 → 다시 권유");
+
+            // 풀기 시작 후 취소는 무시 — 반쯤 섞인 팩을 남기지 않는다
+            string cache4 = NewDir("cache4");
+            var cts4 = new CancellationTokenSource();
+            new UpdateService(dl, Base).InstallAudioPack(good, cache4, NewDir("work4"), p =>
+            {
+                if (p.Stage == UpdateStage.Extracting)
+                    cts4.Cancel();
+            }, cts4.Token);
+            Check(cts4.IsCancellationRequested && AudioPack.Installed(cache4) == "kokoro-v016"
+                  && File.Exists(Path.Combine(cache4, "b1.wav")), "풀기 중 취소 → 끝까지 설치");
 
             // 캐시 폴더가 없으면 만든다
             string cache3 = Path.Combine(NewDir("cache3"), "audio_cache");
@@ -762,6 +811,42 @@ namespace TeamRadio56.Replay
             Check(Untouched(dir2), "컨트롤러 실패: 플러그인 그대로");
             Check(ctl2.StartInstallAudio() && ctl2.Wait(wait) && ctl2.State.ErrorKind == UpdateErrorKind.Io,
                   "캐시 폴더를 못 정하면 Io 오류");
+
+            // 풀기 도중 실패 → 확인 결과의 설치된 팩을 '미완료'로 갱신
+            string cache5 = NewDir("ctl-cache5");
+            MakeSegments(cache5);
+            byte[] slipPack = ZipBytes(("ok.wav", B("ok")), ("../escape.wav", B("x")));
+            var dl5 = new FakeDownloader();
+            dl5.Files[latestUrl] = B(manifest.Replace(Sha256Util.OfBytes(pack), Sha256Util.OfBytes(slipPack)));
+            dl5.Files[Base + "/download/v0.16.0/pk.zip"] = slipPack;
+            var ctl5 = new UpdateController(new UpdateService(dl5, Base), "0.16.0", PluginDir(), () => cache5);
+            Check(ctl5.StartCheck() && ctl5.Wait(wait) && ctl5.State.Check.InstalledAudioPack == AudioPack.LegacyPackId,
+                  "확인: 수동 설치 팩");
+            Check(!ctl5.State.CanCancel, "대기 중엔 취소 버튼 없음");
+            Check(ctl5.StartInstallAudio() && ctl5.Wait(wait) && ctl5.State.ErrorKind == UpdateErrorKind.BadPackage,
+                  "풀기 도중 실패");
+            Check(ctl5.State.Check.InstalledAudioPack != null
+                  && ctl5.State.Check.InstalledAudioPack.StartsWith(AudioPack.IncompletePrefix)
+                  && ctl5.State.CanInstallAudio, "실패 후 설치된 팩 = 미완료, 다시 설치 가능");
+
+            // 되돌리기 실패 → 수동 복구 안내 유지, 재설치 막음
+            string dir6 = PluginDir();
+            var dl6 = new FakeDownloader();
+            dl6.Files[latestUrl] = B(manifest);
+            dl6.Files[PluginUrl] = plugin;
+            string live6 = Path.Combine(dir6, SimHubDll);
+            string staged6 = Path.Combine(UpdateService.DefaultWorkDir(dir6), "staging", CoreDll);
+            var ops6 = new FaultyFileOps();
+            FaultyFileOps ref6 = ops6;
+            ops6.FailMoveTo = dst => (ref6.Moves == 4 && dst == live6) || (ref6.Moves > 4 && dst == staged6);
+            var ctl6 = new UpdateController(new UpdateService(dl6, Base, ops6), "0.15.0", dir6, () => cache);
+            Check(ctl6.StartCheck() && ctl6.Wait(wait) && ctl6.StartInstallPlugin() && ctl6.Wait(wait),
+                  "되돌리기 실패 설치 시도");
+            Check(ctl6.State.ErrorKind == UpdateErrorKind.RollbackFailed && ctl6.State.ManualRestorePending
+                  && ctl6.State.ManualRestore.Count == 1 && !ctl6.State.CanInstallPlugin,
+                  "되돌리기 실패: 수동 복구 대기, 재설치 막음");
+            Check(ctl6.StartCheck() && ctl6.Wait(wait) && ctl6.State.ManualRestorePending && ctl6.State.ErrorKind == null,
+                  "다시 확인해도 수동 복구 안내 유지");
 
             // 오프라인 확인 실패도 시도로 기록 (하루 한 번 원칙)
             dl2.FailAll = true;
