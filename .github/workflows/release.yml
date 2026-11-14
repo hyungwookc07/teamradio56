@@ -1,6 +1,7 @@
 name: release
 # 플러그인 릴리스 — v* 태그 push(게시: git push로 태그를 올리거나 GitHub 화면에서 릴리스를 만들면
-# 태그가 생기며 시작), release-dry/** 브랜치 push(dry run), 수동 실행(기본 dry_run).
+# 태그가 생기며 시작), release/v<버전> 브랜치 push(게시 — 태그를 push할 수 없을 때, 태그는 게시하며
+# 생긴다), release-dry/** 브랜치 push(dry run), 수동 실행(기본 dry_run).
 # 게시물은 이 워크플로가 Windows에서 실제 SimHub으로 만든 아티팩트 그대로다 (스텁 빌드 금지).
 # 멘트 집합이 바뀐 게시 실행은 음성 팩을 먼저 렌더·게시하고(audio 잡 → audio-pack.yml, 약 2시간)
 # 그 기술자로 빌드한다.
@@ -8,7 +9,9 @@ on:
   push:
     tags: ['v*']
     # workflow_dispatch 권한 없이 push만으로 Windows 설치·빌드·검증 경로를 시험한다 (게시·렌더 없음)
-    branches: ['release-dry/**']
+    # release/v*: 브랜치 push만 되는 곳에서 게시 (preflight가 이름 = release/v<버전>, 커밋이 main에 있음,
+    # 태그 없음을 확인하고 수동 게시처럼 --target으로 태그를 만든다)
+    branches: ['release-dry/**', 'release/v*']
   workflow_dispatch:
     inputs:
       dry_run:
@@ -240,5 +243,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.preflight.outputs.tag }}
           SHA: ${{ github.sha }}
+          # tag: 이미 있는 태그에 게시(빈 릴리스 이어받기 포함) / dispatch: 수동 게시·release/v* push — 태그를 만든다
           MODE: ${{ github.event_name == 'push' && github.ref_type == 'tag' && 'tag' || 'dispatch' }}
         run: bash .github/scripts/publish-release.sh

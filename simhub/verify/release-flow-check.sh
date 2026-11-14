@@ -362,6 +362,51 @@ preflight push branch feature/x
 [ "$RC" = 1 ]
 expect "release-dry 아닌 브랜치 push → 실패"
 
+# release/v<버전> 브랜치 push — 태그를 push할 수 없을 때의 게시 (수동 게시처럼 태그를 만든다)
+reset_state
+preflight push branch "release/$TAG"
+[ "$RC" = 0 ] && [ "$(out_val publish)" = true ] && [ "$(out_val adopt)" = false ] \
+    && [ "$(out_val tag)" = "$TAG" ]
+expect "release/$TAG 브랜치 push: 게시 (이어받기 없음)"
+
+preflight push branch release/v0.0.1
+[ "$RC" = 1 ] && has "release/$TAG" && [ ! -s "$W/gho" ]
+expect "release/<다른 버전> 브랜치 push → 실패"
+
+echo '{"status": "ahead", "files": []}' > "$ST/compare.json"
+preflight push branch "release/$TAG"
+[ "$RC" = 1 ] && has 'main에 없습니다'
+expect "release/$TAG 브랜치 커밋이 main에 없음 → 실패"
+
+reset_state
+echo "$SHA" > "$ST/commits/$TAG"
+preflight push branch "release/$TAG"
+[ "$RC" = 1 ] && has "태그 $TAG 가 이미 있습니다"
+expect "release/$TAG 브랜치 push인데 태그가 이미 있음 → 실패"
+
+# 태그 없이 릴리스만 보이는 경합이어도 이어받지 않는다 (이어받기는 태그 push만)
+reset_state
+mk_release "$TAG" false false
+preflight push branch "release/$TAG"
+[ "$RC" = 1 ] && has '이미 있습니다' && ! has '이어받습니다'
+expect "release/$TAG 브랜치 push는 빈 릴리스를 이어받지 않음 → 실패"
+
+# 변경 사항 한 줄 = 브랜치 커밋의 Release-Notes: 트레일러
+reset_state
+NR="$W/notes-repo"
+rm -rf "$NR"
+"$REAL_GIT" init -q "$NR"
+"$REAL_GIT" -C "$NR" -c user.name=t -c user.email=t@t commit -q --allow-empty \
+    -m "제목" -m "본문" -m "Release-Notes: 한 줄 변경 사항"
+NSHA=$("$REAL_GIT" -C "$NR" rev-parse HEAD)
+: > "$W/gho"
+RC=0
+env EVENT=push REF_TYPE=branch REF_NAME="release/$TAG" DRY_RUN=true GITHUB_SHA="$NSHA" REPO=$REPO \
+    GIT_DIR="$NR/.git" GITHUB_OUTPUT="$W/gho" GITHUB_STEP_SUMMARY="$W/sum" SIMHUB_VERSION=9.13.3 NOTES_INPUT= \
+    GH_TOKEN=fake-read bash "$SCRIPTS/release-preflight.sh" > "$W/out" 2>&1 || RC=$?
+[ "$RC" = 0 ] && [ "$(out_val notes)" = "한 줄 변경 사항" ]
+expect "release/$TAG 브랜치 push: 변경 사항 = 커밋의 Release-Notes: 트레일러"
+
 reset_state
 preflight push tag v0.0.1
 [ "$RC" = 1 ] && has '플러그인 버전 태그'
@@ -694,6 +739,20 @@ publish tag
     && called "^release delete-asset $TAG $ZIPNAME" && ! called "^release edit" \
     && [ "$(jq '.assets | length' "$ST/releases/$TAG.json")" = 0 ]
 expect "이어받기 중 매니페스트 업로드 실패 → 올린 zip 지워 빈 릴리스로"
+
+# 수동 게시·release/v* push: 태그를 만들며 게시 (--target 이 커밋, --verify-tag 없음)
+pub_reset
+rm -f "$ST/commits/$TAG"
+publish dispatch
+[ "$RC" = 0 ] \
+    && called "^release create $TAG dist/ci/assets/$ZIPNAME dist/ci/assets/teamradio56-release.txt .*--latest --target $SHA" \
+    && ! called 'verify-tag' && [ "$(cat "$ST/latest")" = "$TAG" ]
+expect "태그 없이 게시(dispatch): create --latest --target <커밋>"
+
+pub_reset
+publish dispatch
+[ "$RC" = 1 ] && has "태그 $TAG 가 이미 있습니다" && ! called '^release create'
+expect "태그 없이 게시(dispatch)인데 태그가 이미 있음 → 실패"
 
 pub_reset
 mk_release "$TAG" false false

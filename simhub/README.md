@@ -194,6 +194,13 @@ git push origin v0.17.1
    올린 뒤 제목·본문·latest를 고친다. `releases/latest/download/teamradio56-release.txt`가 새
    버전을 가리키는지 확인. 쓰기 권한은 이 잡과 음성 팩 게시 잡에만 있다
 
+- **태그를 push할 수 없을 때** (브랜치 push만 허용되는 자동화 등): main에 있는 커밋을
+  **`release/vX.Y.Z` 브랜치로 push**해도 같은 흐름으로 게시한다 (`git push origin
+  main:refs/heads/release/v0.17.1`). 브랜치 이름 = `release/v<Version 숫자부>`, 커밋이 main에
+  있어야 하고 태그가 아직 없어야 한다 — 태그는 게시할 때 GitHub이 그 커밋에 만든다 (수동 게시와
+  같은 길, 이어받기 없음). 설정 화면 '변경 사항' 한 줄은 그 커밋 메시지의
+  `Release-Notes: 한 줄 요약` 트레일러. 게시가 끝나면 브랜치는 지워도 된다. 실패해서 코드를
+  고쳤으면 브랜치를 main 최신 커밋으로 다시 push한다 (태그는 게시 때만 생기므로 지울 것이 없다).
 - 태그가 버전과 다르거나(예: `v0.17.1-rc1`) main에 없으면 실패한다 — 태그를 지우고
   (`git push origin :refs/tags/<태그>`) 맞게 다시 만든다.
 - 화면에서 만든 릴리스는 실행이 끝날 때까지 빈 채로 latest라서 그동안 [업데이트 확인]은

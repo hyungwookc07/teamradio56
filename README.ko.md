@@ -62,7 +62,8 @@ Kokoro 런타임이 있을 때)만 요청하고, 아니면 API를 부르지 않�
 `TeamRadio56Plugin.Version`과 같은 `vX.Y.Z` 태그를 main 커밋에 push하거나 GitHub 화면에서
 그 릴리스를 만들면, GitHub Actions가 실제 SimHub 어셈블리로 플러그인을 빌드하고, 멘트 집합이
 바뀌었으면 음성 팩(별도 `audio-<pack>` 프리릴리스)을 먼저 렌더·게시해(약 2시간 더) 기술자를
-main에 커밋한 뒤 릴리스를 채웁니다. dry run은 `release-dry/**` 브랜치 push, 음성 팩만 따로
+main에 커밋한 뒤 릴리스를 채웁니다. 태그를 push할 수 없으면 main 커밋을 `release/vX.Y.Z`
+브랜치로 push해도 같습니다 (태그는 게시할 때 생김). dry run은 `release-dry/**` 브랜치 push, 음성 팩만 따로
 만들 때는 `audio-pack` 워크플로. 실패한 실행은 플러그인 릴리스를 남기지 않습니다 — 네트워크·
 권한·승인처럼 코드 밖 원인이면 원인을 풀고 Re-run failed jobs. Re-run은 같은 태그 커밋을 다시
 빌드하므로, 코드를 고쳐야 하면 main에 고친 뒤 태그를 지우고 main 최신 커밋에 다시 push합니다

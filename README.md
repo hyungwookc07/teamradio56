@@ -76,7 +76,9 @@ commit, or create that release in the GitHub UI. GitHub Actions builds the
 plugin against the real SimHub assemblies; if the sentence set changed it first
 renders and publishes a new voice pack (its own `audio-<pack>` pre-release,
 about 2 hours extra) and commits the pack descriptor to `main`; then it fills
-the release. Push a `release-dry/**` branch for a dry run; the `audio-pack`
+the release. Where tags can't be pushed, pushing a `main` commit to a
+`release/vX.Y.Z` branch publishes the same way (the tag is created on publish).
+Push a `release-dry/**` branch for a dry run; the `audio-pack`
 workflow can still be run on its own. If a run fails no plugin release is left
 behind; fix the cause and use *Re-run failed jobs* if it was outside the code
 (network, permissions, approval). A re-run builds the same tag commit, so for a
