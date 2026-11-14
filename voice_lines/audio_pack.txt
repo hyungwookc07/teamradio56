@@ -12,9 +12,13 @@
 # GitHub Actions → audio-pack 을 따로 실행해도 된다 (실행한 브랜치에 커밋). 주석은 그대로 둔다.
 # kokoro-v015 = 손으로 배포한 0.16 집합(tag=v0.16.0 — audio-<pack> 릴리스가 아니다). 0.17 집합
 # (HUD 리포트 3단계·도메인 확장 문장)은 v0.17.1 릴리스 실행이 새 팩 kokoro-v016으로 렌더한다.
-pack=kokoro-v015
-tag=v0.16.0
-asset=teamradio56_kokoro_v015_1of4.zip,bf9ab0afd1c2875444ba73bb369fc4b02a5a6fec79a7f1c921f525b340f771ad,23753492
-asset=teamradio56_kokoro_v015_2of4.zip,c21a5102a919146aa8663d67b80334670202b43a8d06e5b95bdfa061a74b13fb,23696378
-asset=teamradio56_kokoro_v015_3of4.zip,9db5a7cf3dd5bf2718dd6a76c84b2f712c53b0fe9a38db6ba1e02011aa75b6bd,23718727
-asset=teamradio56_kokoro_v015_4of4.zip,4d364adebe07c0610af4ef27a750a04323615d3a6be9bb9f0a4698fc1b35fa93,21704901
+pack=kokoro-v016
+tag=audio-kokoro-v016
+asset=teamradio56_kokoro_v016_1of8.zip,5b4dc2110a9f91cf9c098781c348fad197fe9402e12a3d16549adfd3642bd8b8,24109598
+asset=teamradio56_kokoro_v016_2of8.zip,de66bb647153da9ce86d4ff861bc30fdfb7f3a0927fc9da8adf5ba21c36493de,24102079
+asset=teamradio56_kokoro_v016_3of8.zip,1ea6631f8fb5b04ac4e036d7a7dbde3db5d5abfc18ece10194d2b788fa591dd8,24072976
+asset=teamradio56_kokoro_v016_4of8.zip,2821d9805e16d78d16e1489990849210e204aa2a353cd84b032653203f561342,24041648
+asset=teamradio56_kokoro_v016_5of8.zip,0dc67fd6e22a1633f63008bd2e88fd1758f4ecfa5822d594428c6ccbb07ec190,24083221
+asset=teamradio56_kokoro_v016_6of8.zip,a5dfb9cce456c30db639f2a039a4ac24d0f326f2002130c56783be7adb738725,24118579
+asset=teamradio56_kokoro_v016_7of8.zip,f2121eb909f54c8d3234985525327ba98400bb8c370e0f237ede3adb8eb80c52,24129555
+asset=teamradio56_kokoro_v016_8of8.zip,8a4815d1f266414c36570eb0c35f1c95cd149df6a465b7b508c24f19a2247485,268983
