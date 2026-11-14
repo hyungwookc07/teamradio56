@@ -78,9 +78,14 @@ renders and publishes a new voice pack (its own `audio-<pack>` pre-release,
 about 2 hours extra) and commits the pack descriptor to `main`; then it fills
 the release. Push a `release-dry/**` branch for a dry run; the `audio-pack`
 workflow can still be run on its own. If a run fails no plugin release is left
-behind; fix the cause and use *Re-run failed jobs*. Right now `v0.17.0` is an
-empty release created by hand; 0.17.1 is the first real one. Maintainers: see
-the release section of [simhub/README.md](simhub/README.md).
+behind; fix the cause and use *Re-run failed jobs* if it was outside the code
+(network, permissions, approval). A re-run builds the same tag commit, so for a
+code fix commit to `main`, delete the tag and push it again on `main`'s latest
+commit (for a release created in the GitHub UI, delete that release and its
+tag, then create the release again). A voice pack that was already published
+is not rendered again. Right now `v0.17.0` is an empty release created by hand;
+0.17.1 is the first real one. Maintainers: see the release section of
+[simhub/README.md](simhub/README.md).
 
 ```bat
 python -m venv venv

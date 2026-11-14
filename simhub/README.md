@@ -171,13 +171,16 @@ git tag -a v0.17.1 -m "한 줄 요약"     # 주석 태그 첫 줄 = 설정 화�
 git push origin v0.17.1
 ```
 
-1. **preflight** — 태그 = `v<Version 숫자부>`, 태그 커밋이 main에 있음, 게시된 최신보다 높은
-   버전. 같은 태그 릴리스가 이미 있으면 **화면에서 만든 빈 릴리스**(초안 아님, 자산 0개, 태그가
-   이 커밋)일 때만 이어받는다 — 자산이 하나라도 있으면 실패. 그리고 `voice_lines/audio_pack.txt`의
+1. **preflight** — 태그 = `v<Version 숫자부>`, 태그 커밋이 main에 있음, 공개된 플러그인
+   릴리스(매니페스트가 있는 `vX.Y.Z`, 초안·프리릴리스 제외) 중 가장 높은 버전보다 높음
+   (`releases/latest`는 보지 않는다 — 화면에서 만든 빈 릴리스가 latest여도 같다). 같은 태그
+   릴리스가 이미 있으면 **화면에서 만든 빈 릴리스**(초안 아님, 자산 0개, 태그가 이 커밋)일 때만
+   이어받는다 — 자산이 하나라도 있으면 실패. 그리고 `voice_lines/audio_pack.txt`의
    `audio-<pack>` 릴리스가 공개돼 있고 zip 이름·크기·sha256과 **지금 코드가 찾는 멘트 집합**이
-   맞는지 본다. 기술자가 `audio-<pack>`이 아니거나, 그 릴리스가 없거나, 멘트 집합이 다르면
-   **새 팩이 필요** — 새 ID는 숫자 꼬리 +1(`kokoro-v015` → `kokoro-v016`, 이미 공개된 ID는
-   건너뜀). 공개된 팩의 자산이 기술자와 다르거나 기술자가 초안을 가리키면 실패
+   맞는지 본다. 기술자 tag가 `audio-<pack>`이 아니거나 멘트 집합이 다르면 **새 팩이 필요** — 새
+   ID는 숫자 꼬리 +1(`kokoro-v015` → `kokoro-v016`, 이미 공개된 ID는 건너뜀). 기술자가 가리키는
+   `audio-<pack>` 릴리스가 없거나 초안이면(preflight의 읽기 토큰엔 초안이 안 보여 둘을 가르지
+   못한다), 또는 공개된 팩의 자산이 기술자와 다르면 새 팩을 렌더하지 않고 실패
 2. **gates** — `build-check.sh` + `replay-check.sh` (`TEAMRADIO56_STRICT=1`)
 3. **audio** (새 팩이 필요할 때만) — `audio-pack.yml`을 불러 렌더 → `audio-<pack>` 게시 →
    새 `audio_pack.txt`를 **main에 커밋** (아래 음성 팩 절)
@@ -197,10 +200,15 @@ git push origin v0.17.1
   "릴리스 파일을 찾을 수 없습니다"가 된다. 저장소에서 변경 불가(immutable) 릴리스를 켰으면
   화면 경로는 쓸 수 없다 (공개된 릴리스에 자산을 더할 수 없다) — 태그 push를 쓴다.
 - **실패하면** 플러그인 릴리스는 남지 않는다 (게시는 마지막 잡이고, 이어받기는 중간에 멈추면
-  올린 자산을 지워 빈 릴리스로 되돌린다). 원인을 풀고 실행 화면의 **Re-run failed jobs** —
-  성공한 잡(게시한 음성 팩 포함)은 다시 돌지 않는다. Re-run all jobs는 쓰지 않는다: 새 팩을
-  게시한 뒤라면 preflight가 "main의 기술자가 바뀌었다"로 멈춘다. 그때는 Version을 올려 main
-  최신 커밋에 새 태그를 만든다 (새 팩은 이미 기술자에 있어 다시 렌더하지 않는다).
+  올린 자산을 지워 빈 릴리스로 되돌린다). Re-run은 **같은 태그 커밋**(그 커밋의 워크플로·
+  스크립트)을 다시 돌린다 — 네트워크·권한·승인처럼 코드 밖 원인이면 원인을 풀고 실행 화면의
+  **Re-run failed jobs** (게시한 음성 팩을 포함해 성공한 잡은 다시 돌지 않는다). **코드를 고쳐야
+  하면** main에 고친 뒤 태그를 지우고(`git push origin :refs/tags/v0.17.1`) main 최신 커밋에 다시
+  태그해 push한다 — 이미 게시한 음성 팩은 main의 기술자에 들어 있어 다시 렌더하지 않는다.
+  화면에서 만든 릴리스였다면 그 빈 릴리스와 태그를 화면에서 지우고 main을 대상으로 다시 만든다
+  (태그만 지우면 릴리스가 초안으로 남는다). 버전을 올려 새 태그를 만들어도 된다. Re-run all
+  jobs는 쓰지 않는다: 새 팩을 게시한 뒤라면 preflight가 "main의 기술자가 바뀌었다"로 멈춘다
+  (그때도 위처럼 main 최신 커밋에 태그를 다시 만든다).
 
 **시험 빌드 (dry run)**: `release-dry/`로 시작하는 브랜치를 push하면
 (`git push origin HEAD:release-dry/test`) 게시·음성 팩 렌더 없이 preflight → gates → Windows
@@ -308,8 +316,8 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
   다시 만든 릴리스가 그 태그(예전 커밋)에 붙는다:
   `gh release delete v<x.y.z> --repo hyungwookc07/teamradio56 --cleanup-tag`
   (이미 릴리스만 지웠으면 `git push origin :refs/tags/v<x.y.z>`). 남아 있으면 스크립트가 멈춘다.
-  Actions로 다시 낼 때도 같다 — 태그를 지운 뒤 다시 push한다. 빈 릴리스는 지우지 않아도
-  된다 (태그 push 실행이 이어받는다 — 자산이 있으면 지우거나 버전을 올린다).
+  Actions로 다시 낼 때도 같다 — 태그를 지운 뒤 다시 push한다. 화면에서 만든 빈 릴리스면 그
+  릴리스와 태그를 함께 지우고 다시 만든다 (태그만 지우면 릴리스가 초안으로 남는다).
 - **음성 팩 릴리스가 latest가 됐으면**: `gh release edit <v태그> --latest` 로 플러그인
   릴리스를 되돌리고 `gh release edit audio-<pack> --prerelease --latest=false`.
 - **audio-pack이 기술자는 커밋했는데 공개에 실패했으면**(초안으로 남음): 그 실행의 Re-run
