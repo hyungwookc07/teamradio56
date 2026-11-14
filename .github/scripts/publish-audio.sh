@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # 렌더된 음성 팩을 audio-<pack> 릴리스(프리릴리스, latest 아님)로 내고, 새 기술자를
-# 실행한 브랜치에 커밋한다. 순서: 초안 → 기술자 push → 공개.
+# BRANCH(단독 실행은 실행한 브랜치, release 워크플로가 부르면 main)에 커밋한다.
+# 순서: 초안 → 기술자 push → 공개. SHA는 렌더한 소스 커밋(release가 부르면 태그 커밋).
 # 업로드 중에 멈추면 초안을 지운다. 기술자 커밋·push에서 멈추면 초안은 남기고(사용자에겐 안
 # 보인다) 손으로 마무리하는 방법을 출력한다 — 지우면 기술자가 없는 릴리스를 가리키게 된다.
-# publish 잡만 다시 실행해도 된다: 남은 초안은 지우고 아티팩트에서 다시 올린다.
+# publish 잡만 다시 실행해도 된다: 남은 초안은 지우고 아티팩트에서 다시 올린다 (기술자가 이미
+# push됐으면 — 공개에서 멈춘 경우 — 커밋 없이 공개만 한다).
 #
 # env: PACK SHA BRANCH RUN_URL GH_TOKEN REPO   — 작업 폴더에 dist/audio (pack 잡 아티팩트)
 set -euo pipefail
@@ -80,28 +82,34 @@ descriptor_untouched() {
         || err "실행 뒤 $BRANCH 의 $DESC 가 바뀌었습니다 — 손으로 맞추세요"
 }
 git fetch --no-tags origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
-if [ "$(git rev-parse "origin/$BRANCH")" != "$SHA" ]; then
-    descriptor_untouched
+if git show "origin/$BRANCH:$DESC" 2> /dev/null | cmp -s - "$NEWDESC"; then
+    # 앞선 시도가 기술자를 push하고 공개에서 멈췄다 — 같은 아티팩트를 다시 올렸으니 공개만 이어서
+    echo "::warning::$BRANCH 에 이 팩의 기술자가 이미 있습니다 (앞선 시도) — 커밋 없이 공개로 넘어갑니다"
+    COMMIT=$(git rev-parse "origin/$BRANCH")
+else
+    if [ "$(git rev-parse "origin/$BRANCH")" != "$SHA" ]; then
+        descriptor_untouched
+    fi
+    git checkout -q -B "$BRANCH" "origin/$BRANCH"
+    cp "$NEWDESC" "$DESC"
+    changed=$(git diff --name-only)
+    [ "$changed" = "$DESC" ] || err "기술자 말고 바뀐 파일이 있습니다: $changed"
+    git commit -q -m "음성 팩 기술자 갱신: $PACK ($TAG)" -m "Actions 렌더: $RUN_URL" -- "$DESC"
+    if ! git push origin "HEAD:refs/heads/$BRANCH"; then
+        echo "::warning::push 거부 — 한 번 다시 맞춰 봅니다"
+        git fetch --no-tags origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+        descriptor_untouched
+        git rebase -q "origin/$BRANCH"
+        git push origin "HEAD:refs/heads/$BRANCH" \
+            || err "$BRANCH 에 push하지 못했습니다 (보호 규칙?)"
+    fi
+    COMMIT=$(git rev-parse HEAD)
 fi
-git checkout -q -B "$BRANCH" "origin/$BRANCH"
-cp "$NEWDESC" "$DESC"
-changed=$(git diff --name-only)
-[ "$changed" = "$DESC" ] || err "기술자 말고 바뀐 파일이 있습니다: $changed"
-git commit -q -m "음성 팩 기술자 갱신: $PACK ($TAG)" -m "Actions 렌더: $RUN_URL" -- "$DESC"
-if ! git push origin "HEAD:refs/heads/$BRANCH"; then
-    echo "::warning::push 거부 — 한 번 다시 맞춰 봅니다"
-    git fetch --no-tags origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
-    descriptor_untouched
-    git rebase -q "origin/$BRANCH"
-    git push origin "HEAD:refs/heads/$BRANCH" \
-        || err "$BRANCH 에 push하지 못했습니다 (보호 규칙?)"
-fi
-COMMIT=$(git rev-parse HEAD)
 stage=done
 
 # 5. 공개 — 프리릴리스 + latest 아님 (releases/latest는 플러그인 릴리스만 가리킨다)
 gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease --latest=false \
-    || err "기술자는 push됐는데 공개에 실패 — gh release edit $TAG --repo $REPO --draft=false --prerelease --latest=false 로 마저 공개하세요 (그 전까지 플러그인 릴리스 게이트가 거부합니다)"
+    || err "기술자는 push됐는데 공개에 실패 — publish 잡만 다시 실행(Re-run failed jobs)하거나 gh release edit $TAG --repo $REPO --draft=false --prerelease --latest=false 로 마저 공개하세요 (그 전까지 플러그인 릴리스 게이트가 거부합니다)"
 
 # 6. 사용자 경로로 확인
 for a in "${ASSETS[@]}"; do
@@ -118,6 +126,6 @@ latest=$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2> /dev/null || tru
     echo
     echo "- 릴리스: https://github.com/$REPO/releases/tag/$TAG (프리릴리스, latest: ${latest:-없음})"
     echo "- 기술자 커밋: $COMMIT ($BRANCH)"
-    echo "- 다음: 이 커밋을 받은 뒤 플러그인 버전 태그를 push하면 release 워크플로가 이 팩을 가리키는 릴리스를 냅니다"
+    echo "- 다음: release 워크플로가 불렀으면 같은 실행이 이 팩으로 플러그인 릴리스를 이어서 낸다. 단독 실행이면 이 커밋 위에서 플러그인 버전 태그를 push"
 } >> "$SUMMARY"
 echo "✅ $TAG 게시, 기술자 $COMMIT"

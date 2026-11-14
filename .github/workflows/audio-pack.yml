@@ -1,6 +1,9 @@
 name: audio-pack
 # 코코로 음성 팩 — CI에서 샤드 병렬 렌더 → 합치기 → zip 분할 → audio-<pack> 릴리스(프리릴리스, latest 아님)
-# → voice_lines/audio_pack.txt를 실행한 브랜치에 커밋. 팩 릴리스는 한 번 게시하면 바꾸지 않는다.
+# → voice_lines/audio_pack.txt를 커밋. 팩 릴리스는 한 번 게시하면 바꾸지 않는다.
+# 단독 실행(workflow_dispatch)은 실행한 브랜치에 기술자를 커밋한다. release 워크플로는 멘트 집합이
+# 바뀐 릴리스에서 이 워크플로를 불러(workflow_call) 새 팩을 먼저 게시하고 기술자를 inputs.branch(main)에
+# 커밋한다 — 그때 github.*는 부른 실행(태그 push)의 것이다.
 on:
   workflow_dispatch:
     inputs:
@@ -12,6 +15,21 @@ on:
         description: 렌더·zip·아티팩트만 (게시·커밋 안 함)
         type: boolean
         default: false
+  # 입력은 workflow_dispatch의 상위 집합으로 둔다 (inputs.*를 두 이벤트가 같이 쓴다)
+  workflow_call:
+    inputs:
+      pack:
+        description: 팩 ID (release preflight가 정한 새 ID)
+        type: string
+        required: true
+      dry_run:
+        description: 렌더·zip·아티팩트만 (게시·커밋 안 함)
+        type: boolean
+        default: false
+      branch:
+        description: 기술자를 커밋할 브랜치 (비우면 실행한 브랜치 — 태그 실행에서는 꼭 준다)
+        type: string
+        default: ''
 permissions: {}
 # 직렬화는 게시 잡에만 — 워크플로 전체에 걸면 대기 중인 실행이 뒤에 들어온 실행에 밀려 취소된다
 env:
@@ -31,15 +49,23 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: 입력 확인 (브랜치에서만, 팩 ID 규칙, 기존 팩 릴리스 없음)
+      - name: 입력 확인 (기술자 브랜치, 팩 ID 규칙, 공개된 팩 릴리스 없음)
         env:
           GH_TOKEN: ${{ github.token }}
           REF_TYPE: ${{ github.ref_type }}
+          BRANCH: ${{ inputs.branch }}
         run: |
-          [ "$REF_TYPE" = branch ] || { echo "::error::브랜치에서 실행하세요 (기술자를 그 브랜치에 커밋합니다)"; exit 1; }
+          # 단독 실행은 실행한 브랜치에 커밋한다. release가 부르면(태그 실행) inputs.branch에
+          if [ -z "$BRANCH" ]; then
+            [ "$REF_TYPE" = branch ] || { echo "::error::브랜치에서 실행하세요 (기술자를 그 브랜치에 커밋합니다)"; exit 1; }
+          elif [[ ! "$BRANCH" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ || "$BRANCH" == *..* ]]; then
+            echo "::error::기술자 브랜치 형식: $BRANCH"; exit 1
+          fi
           [[ "$PACK" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,121}$ && "$PACK" != *..* ]] || { echo "::error::팩 ID 형식: $PACK"; exit 1; }
-          if gh release view "audio-$PACK" --repo "$REPO" > /dev/null 2>&1; then
-            echo "::error::audio-$PACK 릴리스가 이미 있습니다 — 팩은 바꾸지 않습니다. 새 팩 ID를 쓰세요"; exit 1
+          # 공개된 팩만 막는다 — 앞선 실행이 남긴 초안은 게시 단계가 지우고 다시 올린다
+          if draft=$(gh release view "audio-$PACK" --repo "$REPO" --json isDraft --jq .isDraft 2> /dev/null) \
+            && [ "$draft" = false ]; then
+            echo "::error::audio-$PACK 릴리스가 이미 공개돼 있습니다 — 팩은 바꾸지 않습니다. 새 팩 ID를 쓰세요"; exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -201,7 +227,8 @@ jobs:
       - name: 초안 릴리스 → 기술자 커밋·push → 게시 (prerelease, latest 아님)
         env:
           GH_TOKEN: ${{ github.token }}
+          # release가 부르면 태그 커밋 — 렌더한 소스와 같은 커밋
           SHA: ${{ github.sha }}
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ inputs.branch || github.ref_name }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: bash .github/scripts/publish-audio.sh

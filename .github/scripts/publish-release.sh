@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # 검증된 아티팩트를 그대로 플러그인 릴리스(latest)로 게시한다. 빌드하지 않는다.
 #
+# 태그 push 실행(MODE=tag)에서 같은 태그 릴리스가 이미 있으면 GitHub 화면에서 만든 빈
+# 릴리스(초안 아님, 자산 0개, 태그 = 이 커밋)일 때만 이어받는다: zip → 매니페스트 순으로
+# 올리고(업데이터는 매니페스트를 보므로 마지막에) 제목·본문·latest를 고친다. 중간에 멈추면
+# 올린 자산을 지워 빈 릴리스로 되돌린다 — 'Re-run failed jobs'로 다시 이어받을 수 있게.
+# 판단은 preflight가 아니라 게시하는 지금의 릴리스 상태로 한다 (그사이 만들어졌을 수 있다).
+#
 # env: TAG SHA MODE(tag|dispatch) GH_TOKEN REPO   — 작업 폴더에 dist/ci (아티팩트)
 set -euo pipefail
 
 : "${TAG:?}" "${SHA:?}" "${MODE:?}" "${REPO:?}"
+export REPO
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 DIST=dist/ci
+# shellcheck source=release-lib.sh
+. "$(dirname "$0")/release-lib.sh"
 
 err() { echo "::error::$*"; exit 1; }
 kv() { sed -n "s/^$1=//p" "$2" | head -n1; }
@@ -27,10 +36,21 @@ mapfile -t files < <(find "$DIST/assets" -mindepth 1 -maxdepth 1 -printf "%f\n" 
 TITLE=$(kv title "$INFO")
 [ -n "$TITLE" ] && [ -s "$NOTES" ] || err "release-info.txt title 또는 release-notes.md가 비었습니다"
 
-# 2. 같은 태그 릴리스 없음
-if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
-    err "릴리스 $TAG 가 이미 있습니다"
-fi
+# 2. 같은 태그 릴리스 — 없거나, 태그 push 실행이면 화면에서 만든 빈 릴리스
+ADOPT=false
+rc=0
+rel=$(gh_published_release "$TAG") || rc=$?
+case "$rc" in
+    0)
+        [ "$MODE" = tag ] || err "릴리스 $TAG 가 이미 있습니다"
+        why=$(adopt_blocker "$rel" "$TAG" "$SHA")
+        [ -z "$why" ] || err "릴리스 $TAG 가 이미 있습니다 — $why"
+        ADOPT=true
+        OLD_BODY=$(jq -r '.body // ""' <<< "$rel")
+        ;;
+    2) ;;
+    *) err "릴리스 $TAG 를 확인하지 못했습니다 (gh api)" ;;
+esac
 
 # 3. 게시된 최신보다 높은 버전
 tmp=$(mktemp)
@@ -76,9 +96,38 @@ else
     flags=(--target "$SHA")
 fi
 
-# 6. 게시 — 자산을 다 올린 뒤 공개되고, 실패하면 gh가 초안을 지운다
-gh release create "$TAG" "$ZIP" "$MAN" --repo "$REPO" --title "$TITLE" \
-    --notes-file "$NOTES" --latest "${flags[@]}"
+# 6. 게시
+if [ "$ADOPT" = true ]; then
+    # 화면에서 쓴 본문이 있으면 생성한 본문 아래에 남긴다
+    body=$(mktemp)
+    cat "$NOTES" > "$body"
+    if [ -n "$(tr -d '[:space:]' <<< "$OLD_BODY")" ]; then
+        printf '\n%s\n' "$OLD_BODY" >> "$body"
+    fi
+    uploaded=()
+    undo() {
+        [ "${#uploaded[@]}" -gt 0 ] || return 0
+        echo "::warning::이어받기 중에 멈춤 — 올린 자산(${uploaded[*]})을 지워 빈 릴리스로 되돌립니다. 원인을 푼 뒤 Re-run failed jobs"
+        for n in "${uploaded[@]}"; do
+            gh release delete-asset "$TAG" "$n" --repo "$REPO" --yes || true
+        done
+    }
+    trap undo EXIT
+    # 매니페스트는 마지막 — 업데이터가 매니페스트를 받았는데 zip이 없는 순간이 없게
+    for f in "$ZIP" "$MAN"; do
+        uploaded+=("$(basename "$f")")    # 업로드 도중 실패해 반쯤 남은 자산도 지우게 먼저 적는다
+        gh release upload "$TAG" "$f" --repo "$REPO"
+    done
+    gh release edit "$TAG" --repo "$REPO" --title "$TITLE" --notes-file "$body" \
+        --prerelease=false --latest
+    uploaded=()
+    trap - EXIT
+    rm -f "$body"
+else
+    # 자산을 다 올린 뒤 공개되고, 실패하면 gh가 초안을 지운다
+    gh release create "$TAG" "$ZIP" "$MAN" --repo "$REPO" --title "$TITLE" \
+        --notes-file "$NOTES" --latest "${flags[@]}"
+fi
 
 # 7. 사용자 업데이터가 보는 주소 확인
 ok=false
@@ -97,7 +146,7 @@ done
 {
     echo "### ✅ 게시: $TITLE"
     echo
-    echo "- https://github.com/$REPO/releases/tag/$TAG"
+    echo "- https://github.com/$REPO/releases/tag/$TAG$([ "$ADOPT" = true ] && echo ' (화면에서 만든 빈 릴리스를 이어받음)')"
     echo "- 업데이터 확인 주소: https://github.com/$REPO/releases/latest/download/teamradio56-release.txt (version=$V, audio_tag=$AUDIO_TAG)"
 } >> "$SUMMARY"
 echo "✅ 릴리스 $TAG 게시 완료"

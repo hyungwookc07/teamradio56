@@ -2,13 +2,17 @@
 # Windows 빌드 아티팩트(게시될 바로 그 파일)로 사용자 업데이트 흐름을 재현한다:
 # 매니페스트 → 플러그인 zip 교체 → audio-<pack> 릴리스에서 음성 팩 설치.
 #
-#   verify-release-artifact.sh <dist/ci> <음성 팩 내려받을 폴더>
+#   verify-release-artifact.sh <dist/ci> <음성 팩 내려받을 폴더> [기술자]
 #
+# 기술자 = 빌드가 쓴 audio_pack.txt (기본 voice_lines/audio_pack.txt — 이번 실행이 새 팩을
+# 렌더했으면 그 아티팩트의 audio_pack.txt). 매니페스트의 audio_* 줄을 이것과 대조한다.
 # env PUBLISH=true면 음성 팩을 못 받는 것도 실패 (dry run은 경고 후 팩 설치 흐름만 뺀다).
+# env EXPECT_PACK: 매니페스트의 audio_pack이 이 팩이어야 한다 (새 팩 렌더 실행).
 set -euo pipefail
 
 DIST=${1:?dist dir}
 AUDIO=${2:?audio dir}
+DESC=${3:-voice_lines/audio_pack.txt}
 REPO=${REPO:?}
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 
@@ -35,6 +39,10 @@ done
 [ "$(kv plugin_asset "$MAN")" = "$ZIP" ] || err "plugin_asset ≠ $ZIP"
 sha=$(sha256sum "$DIST/assets/$ZIP" | cut -d' ' -f1)
 [ "$sha" = "$(kv plugin_sha256 "$MAN")" ] || err "plugin_sha256 ≠ zip 실제 해시 $sha"
+[ -f "$DESC" ] || err "기술자가 없습니다: $DESC"
+if [ -n "${EXPECT_PACK:-}" ] && [ "$(kv audio_pack "$MAN")" != "$EXPECT_PACK" ]; then
+    err "매니페스트 audio_pack $(kv audio_pack "$MAN") ≠ 이번 실행이 렌더한 팩 $EXPECT_PACK"
+fi
 
 AUDIO_TAG=$(kv audio_tag "$MAN")
 IFS=, read -r -a names <<< "$(kv audio_assets "$MAN")"
@@ -56,7 +64,7 @@ done
 
 dotnet build simhub/tests/TeamRadio56.Replay/TeamRadio56.Replay.csproj -c Release -v q --nologo
 simhub/tests/TeamRadio56.Replay/bin/Release/net8.0/teamradio56-replay \
-    --release-check voice_lines/audio_pack.txt --manifest "$MAN" ${AUDIO_ARGS[@]+"${AUDIO_ARGS[@]}"}
+    --release-check "$DESC" --manifest "$MAN" ${AUDIO_ARGS[@]+"${AUDIO_ARGS[@]}"}
 
 {
     echo "### 아티팩트 검증 — $(kv tag "$MAN")"

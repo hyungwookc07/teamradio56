@@ -1,6 +1,7 @@
 name: ci
 on:
   push:
+    # release-dry/** 브랜치도 여기서 게이트가 돈다 (release 워크플로의 dry run과 별개로 — 그대로 둔다)
     branches: ['**']
   pull_request:
   workflow_dispatch:

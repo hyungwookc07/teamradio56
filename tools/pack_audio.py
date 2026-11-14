@@ -8,16 +8,18 @@ en 코코로 음성 팩 도구 — audio_cache → 독립 zip 여러 개 → voi
   verify     zip 폴더를 기술자(이름·sha256·크기)와 대조, 루트 *.wav만인지 확인
   expected   팩에 들어가야 할 파일 이름 집합 (게이트와 같은 열거기)
   descriptor 기술자 해석 결과를 셸에서 읽기 좋게 출력
+  next-id    다음 팩 ID (숫자 꼬리 +1, 자릿수 유지, 다른 집합으로 배포된 ID 건너뜀)
   selftest   합성 wav로 분할·이름·기술자 갱신·verify 거부 규칙 확인
 
-verify / descriptor / selftest는 표준 라이브러리만 쓴다 (python3 -I로 돌릴 수 있게
-저장소 모듈은 expected/build에서만 불러온다).
+verify / descriptor / next-id / selftest는 표준 라이브러리만 쓴다 (python3 -I로 돌릴 수
+있게 저장소 모듈은 expected/build에서만 불러온다).
 
 사용법: python tools/pack_audio.py build --cache audio_cache --pack kokoro-v016 --out dist/audio/kokoro-v016
                                        [--descriptor voice_lines/audio_pack.txt --tag audio-kokoro-v016]
         python tools/pack_audio.py verify --dir DIR --descriptor FILE [--expect-names FILE]
         python tools/pack_audio.py expected --out FILE
         python tools/pack_audio.py descriptor --print FILE
+        python tools/pack_audio.py next-id kokoro-v015 [--expect-names FILE]
         python tools/pack_audio.py selftest
 """
 
@@ -67,6 +69,29 @@ def name_set_sha(names) -> str:
 def zip_names(pack: str, n: int) -> list:
     stem = pack.replace("-", "_").replace(".", "_")
     return [f"teamradio56_{stem}_{i}of{n}.zip" for i in range(1, n + 1)]
+
+
+def next_pack_id(pack: str, expected=None, known=None) -> str:
+    """release 워크플로가 새 팩을 렌더할 때의 ID — 숫자 꼬리 +1, 자릿수 유지
+    (kokoro-v015 → kokoro-v016). 다른 멘트 집합으로 배포된 ID(KNOWN_NAME_SETS)는 건너뛴다.
+    공개된 audio-<id> 릴리스 건너뛰기는 호출하는 셸(check-audio-release.sh)이 한다."""
+    known = KNOWN_NAME_SETS if known is None else known
+    m = re.fullmatch(r"(.*?)([0-9]+)", pack)
+    if not m or not is_safe_name(pack):
+        raise PackError(f"팩 ID에 숫자 꼬리가 없어 다음 ID를 정할 수 없음: {pack!r}")
+    prefix, digits = m.groups()
+    n = int(digits)
+    want = name_set_sha(expected) if expected is not None else None
+    for _ in range(1000):
+        n += 1
+        cand = prefix + str(n).zfill(len(digits))
+        # 태그 audio-<id>도 IsSafeName(128자) 안에 들어야 한다
+        if not is_safe_name(cand) or len("audio-" + cand) > 128:
+            raise PackError(f"다음 팩 ID가 규칙을 벗어남: {cand!r}")
+        if cand in known and known[cand] != want:
+            continue
+        return cand
+    raise PackError(f"다음 팩 ID를 찾지 못함: {pack!r}")
 
 
 # ── 기대 집합 ────────────────────────────────────────────────────────────
@@ -367,6 +392,18 @@ def selftest() -> int:
     check(zip_names("a.b-c", 2) == ["teamradio56_a_b_c_1of2.zip", "teamradio56_a_b_c_2of2.zip"],
           "zip 이름 규칙 (. - → _)")
 
+    # 다음 팩 ID: 숫자 꼬리 +1, 자릿수 유지, 다른 집합으로 배포된 ID 건너뜀
+    check(next_pack_id("kokoro-v015", known={}) == "kokoro-v016", "다음 ID v015 → v016")
+    check(next_pack_id("kokoro-v099", known={}) == "kokoro-v100", "다음 ID 자리 올림")
+    check(next_pack_id("p9", known={}) == "p10", "다음 ID 패딩 없음")
+    check(next_pack_id("kokoro-v015") == "kokoro-v016", "다음 ID (실제 KNOWN_NAME_SETS)")
+    raises(lambda: next_pack_id("custom", known={}), "숫자 꼬리 없는 팩 ID")
+    raises(lambda: next_pack_id("bad id1", known={}), "형식이 잘못된 팩 ID")
+    taken = {"x-v002": name_set_sha({"a.wav"})}
+    check(next_pack_id("x-v001", {"b.wav"}, taken) == "x-v003", "다른 집합으로 배포된 ID 건너뜀")
+    check(next_pack_id("x-v001", None, taken) == "x-v003", "집합을 모르면 배포된 ID 건너뜀")
+    check(next_pack_id("x-v001", {"a.wav"}, taken) == "x-v002", "같은 집합이면 그 ID 허용")
+
     with tempfile.TemporaryDirectory() as tmp:
         cache = os.path.join(tmp, "cache")
         os.makedirs(cache)
@@ -497,6 +534,10 @@ def main(argv=None) -> int:
     d = sub.add_parser("descriptor")
     d.add_argument("--print", dest="path", required=True, metavar="FILE")
 
+    nx = sub.add_parser("next-id")
+    nx.add_argument("pack")
+    nx.add_argument("--expect-names", default=None)
+
     sub.add_parser("selftest")
     args = p.parse_args(argv)
 
@@ -508,6 +549,10 @@ def main(argv=None) -> int:
             print(f"PACK={desc['pack']}")
             print(f"TAG={desc['tag']}")
             print("ASSETS=" + " ".join(f"{n}:{s}:{z}" for n, s, z in desc["assets"]))
+            return 0
+        if args.cmd == "next-id":
+            expect = _read_names(args.expect_names) if args.expect_names else None
+            print(next_pack_id(args.pack, expect))
             return 0
         if args.cmd == "verify":
             desc = parse_descriptor(_read_text(args.descriptor))

@@ -289,6 +289,22 @@ if [ -n "$PWSH" ]; then
         cat "$OUT/rel/ci.log"
         fail=1
     fi
+    # 같은 실행이 새 음성 팩을 렌더한 릴리스 — 아티팩트의 기술자(-AudioPackFile)로 매니페스트를 만든다
+    sed -e 's/^pack=.*/pack=kokoro-v999/' -e 's/^tag=.*/tag=audio-kokoro-v999/' \
+        voice_lines/audio_pack.txt > "$OUT/rel/new_pack.txt"
+    if "$PWSH" -NoProfile -NonInteractive -File release.ps1 -Ci -TestDllDir "$OUT/rel/dlls" \
+        -OutDir "$OUT/rel/ci3/assets" -MetaDir "$OUT/rel/ci3/meta" -ExpectTag "v$REL_NUM" \
+        -AudioPackFile "$OUT/rel/new_pack.txt" > "$OUT/rel/ci3.log" 2>&1 \
+        && grep -qx 'audio_pack=kokoro-v999' "$OUT/rel/ci3/assets/teamradio56-release.txt" \
+        && grep -qx 'audio_tag=audio-kokoro-v999' "$OUT/rel/ci3/meta/release-info.txt" \
+        && "$RUNNER" --release-check "$OUT/rel/new_pack.txt" \
+            --manifest "$OUT/rel/ci3/assets/teamradio56-release.txt" > "$OUT/rel/ci3-check.log" 2>&1; then
+        echo "✅ release.ps1 -Ci -AudioPackFile — 새 팩 기술자로 매니페스트"
+    else
+        echo "❌ release.ps1 -Ci -AudioPackFile 실패:"
+        cat "$OUT/rel/ci3.log" "$OUT/rel/ci3-check.log" 2> /dev/null || true
+        fail=1
+    fi
     if timeout 60 "$PWSH" -NoProfile -NonInteractive -File release.ps1 -Ci -TestDllDir "$OUT/rel/dlls" \
         -OutDir "$OUT/rel/ci2/assets" -MetaDir "$OUT/rel/ci2/meta" -ExpectTag v0.0.0 \
         > "$OUT/rel/ci2.log" 2>&1; then
@@ -310,6 +326,18 @@ echo
 echo "▶ 음성 팩 도구 셀프테스트 (tools/pack_audio.py)"
 if ! python3 tools/pack_audio.py selftest; then
     fail=1
+fi
+
+# release 워크플로 판단 — 게시/이어받기/dry run, 새 음성 팩 필요 여부와 ID, 게시 호출 순서.
+# 가짜 gh/curl/git으로 돌린다 (GitHub Actions는 로컬에서 못 돌리므로 스크립트만이라도)
+echo
+echo "▶ 릴리스 흐름 (preflight · 음성 팩 판단 · 게시 — 가짜 gh/curl/git, 네트워크 없음)"
+if command -v jq > /dev/null; then
+    if ! bash simhub/verify/release-flow-check.sh; then
+        fail=1
+    fi
+else
+    skip_or_fail "건너뜀 — jq 없음"
 fi
 
 # 무전 효과 출력 고정 — 배포 캐시(_rfx3)를 만드는 체인의 리팩터 가드

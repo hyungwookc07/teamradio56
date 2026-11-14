@@ -30,6 +30,9 @@ param(
     # 한 줄 요약을 UTF-8 파일로 — Windows PowerShell 5는 명령줄 한글을 ANSI 코드페이지로 받는다
     [string]$NotesFile = "",
     [string]$MetaDir = "",
+    # 음성 팩 기술자 (기본 voice_lines\audio_pack.txt). Actions가 같은 실행에서 새 팩을 렌더했으면
+    # 그 아티팩트의 audio_pack.txt를 넘긴다 — 체크아웃한 파일을 덮어쓰면 '커밋하지 않은 변경'이 된다
+    [string]$AudioPackFile = "",
     # 최신 릴리스보다 높지 않아도 경고만 (시험 빌드)
     [switch]$DryRun
 )
@@ -121,6 +124,10 @@ if ($AudioDir -ne "") {
     if (-not (Test-Path -LiteralPath $AudioDir -PathType Container)) { Fail "-AudioDir 폴더가 없습니다: $AudioDir" }
     $AudioDir = (Resolve-Path -LiteralPath $AudioDir).Path
 }
+if ($AudioPackFile -ne "") {
+    if (-not (Test-Path -LiteralPath $AudioPackFile -PathType Leaf)) { Fail "-AudioPackFile 파일이 없습니다: $AudioPackFile" }
+    $AudioPackFile = (Resolve-Path -LiteralPath $AudioPackFile).Path
+}
 if ($TestMode) {
     if (-not (Test-Path -LiteralPath $TestDllDir -PathType Container)) { Fail "-TestDllDir 폴더가 없습니다: $TestDllDir" }
     $TestDllDir = (Resolve-Path -LiteralPath $TestDllDir).Path
@@ -148,6 +155,10 @@ if ($ExpectTag -ne "" -and $ExpectTag -ne $Tag) {
 
 # ── 2. 음성 팩 기술자 ────────────────────────────────────────────────────
 $packFile = Join-Path $PSScriptRoot "voice_lines\audio_pack.txt"
+if ($AudioPackFile -ne "") {
+    $packFile = $AudioPackFile
+    Write-Host "음성 팩 기술자: $packFile"
+}
 if (-not (Test-Path -LiteralPath $packFile)) { Fail "음성 팩 기술자가 없습니다: $packFile" }
 $PackId = ""
 $AudioTag = ""
