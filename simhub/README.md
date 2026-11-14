@@ -157,69 +157,58 @@ SimHub이 켜져 있으면 DLL이 잠기므로 스크립트가 종료를 기다�
 없어도 된다 — Windows 러너가 SimHub을 무인 설치(버전별 캐시)하고 그 실제 어셈블리로
 빌드한다. 스텁(`verify/build-check.sh`)으로 빌드한 DLL은 배포하지 않는다.
 
-**v0.17.0 (음성 팩 kokoro-v016 먼저)**: 0.17은 멘트 집합이 바뀌어(HUD 리포트 3단계·도메인
-확장 문장) 새 음성 팩 `kokoro-v016`이 필요하다. 지금 `voice_lines/audio_pack.txt`는 손으로
-배포한 `kokoro-v015`(`tag=v0.16.0`, 그런 릴리스는 없다)를 가리키므로 그대로 태그를 push하면
-preflight가 "CI 릴리스는 audio-<pack> 릴리스만 참조"로 멈춘다. 순서:
+**지금 상황**: `v0.17.0`은 GitHub 화면에서 손으로 만든 빈 릴리스다 (자산이 없어 설정 화면이
+업데이트를 찾지 못한다). 그대로 두고 **0.17.1이 첫 실제 릴리스**다. 기술자는 아직 손으로
+배포한 `kokoro-v015`(`tag=v0.16.0`)를 가리키므로 v0.17.1 실행이 새 음성 팩 `kokoro-v016`을
+먼저 렌더·게시한다 (약 2시간 더).
 
-1. 로컬 커밋을 main에 push한다
-2. Actions → **audio-pack** → Run workflow, branch `main`, `pack`=**`kokoro-v016`**(기본값),
-   `dry_run` 끔. 통문장 1223 + 세그먼트 6214 = 약 7400개를 렌더 잡 6개가 나눠
-   (`pregen_audio.py --shard K/6`) 병렬로 렌더한다 — 렌더 잡 하나에 약 1시간, 전체 약
-   1.5~2시간. 샤드 하나가 실패하면 실행 화면의 **Re-run failed jobs**로 그 샤드와 뒤 단계만
-   다시 돌린다 — 실행 후 30일(샤드 아티팩트 보존 기간) 안에만. 그 뒤엔 **Re-run all jobs**
-3. 실행이 끝나 main에 `음성 팩 기술자 갱신: kokoro-v016 (audio-kokoro-v016)` 커밋이 생긴 것을
-   확인한다
-4. **그 커밋 위에서** 주석 태그를 만들어 push한다:
+**한 단계로**: `TeamRadio56Plugin.Version` 숫자부와 같은 **`vX.Y.Z` 태그를 main에 있는 커밋에
+push**하거나, **GitHub 화면에서 그 릴리스를 만든다** (Releases → Draft a new release → 새 태그
+`vX.Y.Z`, Target `main` → Publish release — 제목·본문은 비워도 된다). 나머지는 워크플로가 한다:
 
 ```bash
-git pull origin main
-git tag -a v0.17.0 -m "한 목소리: 음성 팩에 없는 멘트는 자막으로만, 음성 팩 kokoro-v016"
-git push origin v0.17.0
-```
-
-- `audio-kokoro-v016`이 공개되기 전에는 release preflight가 게시를 거부한다.
-- v015 사용자(표식 없음 + 조립 자산 4개 → `kokoro-v015`로 판정)에게는 플러그인 업데이트 뒤
-  [음성 팩 업데이트]가 켜진다.
-- `kokoro-v015`는 0.16 멘트 집합에 묶여 있다 — `pack_audio.py`가 다른 집합으로 v015를 다시
-  게시하는 것을 거부한다.
-
-그 뒤 릴리스마다:
-
-1. `TeamRadio56Plugin.Version`을 올린다 (`"0.17.1-…"` — **숫자 x.y.z가 게시된
-   최신보다 커야** 사용자에게 업데이트가 뜬다. 뒤 꼬리표는 화면 표시용)
-2. 커밋 → **main에 병합·push** (태그 커밋은 main에 있어야 게시된다)
-3. 주석 태그를 만들어 push — 태그 메시지 첫 줄이 설정 화면 '변경 사항'이 된다:
-
-```bash
-git tag -a v0.17.1 -m "한 줄 요약"
+git tag -a v0.17.1 -m "한 줄 요약"     # 주석 태그 첫 줄 = 설정 화면 '변경 사항' (화면에서 만들면 없음)
 git push origin v0.17.1
 ```
 
-워크플로가 하는 일 (Actions 탭 → release 실행에서 단계별로 보인다):
-
-1. **preflight** — 태그 = `v<Version 숫자부>`, 태그 커밋이 main에 있음, 게시된 최신보다
-   높은 버전, 같은 릴리스 없음. `voice_lines/audio_pack.txt`가 가리키는 `audio-<pack>`
-   릴리스가 공개돼 있고 zip 이름·크기·sha256과 **지금 코드가 찾는 멘트 집합**이 팩과 맞는지
-   (안 맞으면 게시 거부 — 아래 음성 팩)
+1. **preflight** — 태그 = `v<Version 숫자부>`, 태그 커밋이 main에 있음, 게시된 최신보다 높은
+   버전. 같은 태그 릴리스가 이미 있으면 **화면에서 만든 빈 릴리스**(초안 아님, 자산 0개, 태그가
+   이 커밋)일 때만 이어받는다 — 자산이 하나라도 있으면 실패. 그리고 `voice_lines/audio_pack.txt`의
+   `audio-<pack>` 릴리스가 공개돼 있고 zip 이름·크기·sha256과 **지금 코드가 찾는 멘트 집합**이
+   맞는지 본다. 기술자가 `audio-<pack>`이 아니거나, 그 릴리스가 없거나, 멘트 집합이 다르면
+   **새 팩이 필요** — 새 ID는 숫자 꼬리 +1(`kokoro-v015` → `kokoro-v016`, 이미 공개된 ID는
+   건너뜀). 공개된 팩의 자산이 기술자와 다르거나 기술자가 초안을 가리키면 실패
 2. **gates** — `build-check.sh` + `replay-check.sh` (`TEAMRADIO56_STRICT=1`)
-3. **build** (Windows) — SimHub 무인 설치(`simhub/ci/install-simhub.ps1`, zip sha256 고정,
-   작업·드라이버 전부 끔) → `release.bat -Ci`로 실제 SimHub 빌드(참조 어셈블리 버전 확인) →
-   플러그인 zip + 매니페스트 + 메타 → 아티팩트 `teamradio56-release-<x.y.z>`
-4. **verify-artifact** — 게시될 바로 그 파일로 사용자 업데이트 흐름 재현
+3. **audio** (새 팩이 필요할 때만) — `audio-pack.yml`을 불러 렌더 → `audio-<pack>` 게시 →
+   새 `audio_pack.txt`를 **main에 커밋** (아래 음성 팩 절)
+4. **build** (Windows) — audio가 돌면 끝날 때까지 기다린다. SimHub 무인 설치
+   (`simhub/ci/install-simhub.ps1`, zip sha256 고정) → `release.bat -Ci`로 실제 SimHub 빌드(참조
+   어셈블리 버전 확인) → 플러그인 zip + 매니페스트 + 메타. 새 팩을 렌더했으면 그 실행의
+   기술자로 만든다 (`-AudioPackFile`, 태그 커밋의 기술자는 옛 팩)
+5. **verify-artifact** — 게시될 바로 그 파일로 사용자 업데이트 흐름 재현
    (플러그인 교체 + `audio-<pack>`에서 음성 팩 설치)
-5. **publish** — 같은 파일을 `gh release create --latest`로 게시하고
-   `releases/latest/download/teamradio56-release.txt`가 새 버전을 가리키는지 확인.
-   쓰기 권한은 이 잡에만 있다 (SimHub 설치 프로그램을 돌리는 Windows 잡에는 없다)
+6. **publish** — 새로 만들면 `gh release create --latest`, 이어받으면 zip → 매니페스트 순으로
+   올린 뒤 제목·본문·latest를 고친다. `releases/latest/download/teamradio56-release.txt`가 새
+   버전을 가리키는지 확인. 쓰기 권한은 이 잡과 음성 팩 게시 잡에만 있다
 
-태그가 버전과 다르거나(예: `v0.17.0-rc1`) main에 없으면 실행이 실패한다 — 태그를 지우고
-(`git push origin :refs/tags/<태그>`) 맞게 다시 만든다.
+- 태그가 버전과 다르거나(예: `v0.17.1-rc1`) main에 없으면 실패한다 — 태그를 지우고
+  (`git push origin :refs/tags/<태그>`) 맞게 다시 만든다.
+- 화면에서 만든 릴리스는 실행이 끝날 때까지 빈 채로 latest라서 그동안 [업데이트 확인]은
+  "릴리스 파일을 찾을 수 없습니다"가 된다. 저장소에서 변경 불가(immutable) 릴리스를 켰으면
+  화면 경로는 쓸 수 없다 (공개된 릴리스에 자산을 더할 수 없다) — 태그 push를 쓴다.
+- **실패하면** 플러그인 릴리스는 남지 않는다 (게시는 마지막 잡이고, 이어받기는 중간에 멈추면
+  올린 자산을 지워 빈 릴리스로 되돌린다). 원인을 풀고 실행 화면의 **Re-run failed jobs** —
+  성공한 잡(게시한 음성 팩 포함)은 다시 돌지 않는다. Re-run all jobs는 쓰지 않는다: 새 팩을
+  게시한 뒤라면 preflight가 "main의 기술자가 바뀌었다"로 멈춘다. 그때는 Version을 올려 main
+  최신 커밋에 새 태그를 만든다 (새 팩은 이미 기술자에 있어 다시 렌더하지 않는다).
 
-**시험 빌드 (dry run)**: Actions → release → Run workflow → `dry_run` 켠 채(기본) 실행.
-게시 없이 빌드·검증까지 하고 결과를 아티팩트로 받을 수 있다. 다른 SimHub 버전은
-`simhub_version`으로 (새 버전은 zip sha256을 경고로 찍는다 — 확인 후
-`install-simhub.ps1` 표에 더한다). `dry_run`을 끄면 main에서 태그 push 없이 게시한다
-(태그는 GitHub이 그 커밋에 만든다, `notes`가 변경 사항).
+**시험 빌드 (dry run)**: `release-dry/`로 시작하는 브랜치를 push하면
+(`git push origin HEAD:release-dry/test`) 게시·음성 팩 렌더 없이 preflight → gates → Windows
+설치·빌드 → verify-artifact까지 돌고 결과를 아티팩트로 받는다 (팩이 없거나 낡았으면 경고만 하고
+지금 기술자로 빌드). Actions → release → Run workflow(`dry_run` 켠 채, 기본)도 같다. 다른 SimHub
+버전은 Run workflow의 `simhub_version`으로 (새 버전은 zip sha256을 경고로 찍는다 — 확인 후
+`install-simhub.ps1` 표에 더한다). `dry_run`을 끄면 main에서 태그 push 없이 게시한다 (태그는
+GitHub이 그 커밋에 만든다, `notes`가 변경 사항, 같은 태그가 있으면 거부).
 
 **캐시**: SimHub 설치본과 코코로 모델은 Actions 캐시에 둔다. 캐시는 ref별이라 태그 실행이
 저장한 캐시는 다음 태그가 못 쓴다 — main에서 한 번 dry run을 돌려 데워 두면 이후 태그는
@@ -239,20 +228,22 @@ asset=teamradio56_kokoro_v016_1of7.zip,<sha256>,<바이트 수>
 ...
 ```
 
-- **멘트 집합이 바뀔 때만** 새 팩: Actions → **audio-pack** → Run workflow, `pack`에
-  **새 ID**(예: `kokoro-v020`). 렌더 전 게이트(샤드 분할 검사 포함) → 코코로 모델(sha256
-  고정) → 통문장·세그먼트를 샤드 6개로 병렬 렌더(약 1.5~2시간) → 샤드 캐시 합치기 →
-  `tools/pack_audio.py`로 24 MiB 이하 zip 분할 → 렌더 후 게이트(실캐시
-  100% + 팩 설치 흐름) → `audio-<pack>` 초안 → 새 `audio_pack.txt`를 **실행한 브랜치에 커밋**
-  → 프리릴리스로 공개. `dry_run`은 렌더·zip·아티팩트까지만. 이미 있는 팩 ID는 거부한다.
+- **멘트 집합이 바뀔 때만** 새 팩. 보통은 릴리스 실행이 알아서 만든다(위 3단계 — 기술자는
+  main에 커밋). 따로 만들려면 Actions → **audio-pack** → Run workflow, `pack`에 **새 ID**
+  (예: `kokoro-v020`) — 기술자는 **실행한 브랜치에 커밋**. 어느 쪽이든 렌더 전 게이트(샤드 분할
+  검사 포함) → 코코로 모델(sha256 고정) → 통문장·세그먼트를 샤드 6개로 병렬 렌더(약 1.5~2시간)
+  → 샤드 캐시 합치기 → `tools/pack_audio.py`로 24 MiB 이하 zip 분할 → 렌더 후 게이트(실캐시
+  100% + 팩 설치 흐름) → `audio-<pack>` 초안 → 새 `audio_pack.txt` 커밋 → 프리릴리스로 공개.
+  `dry_run`은 렌더·zip·아티팩트까지만. 이미 공개된 팩 ID는 거부한다 (남은 초안은 지우고 다시).
 - 팩 ID가 바뀐 사용자에게만 [음성 팩 업데이트]가 켜진다. 배포된 ID는 그 멘트 집합에 묶인다
   (`pack_audio.py`가 집합 해시로 확인 — `kokoro-v015`처럼 다른 집합에 배포된 ID를 쓰면 거부).
-- 멘트가 바뀌었는데 팩을 안 바꾸면 release preflight가 "멘트 집합이 팩과 다름"으로 게시를
-  막는다 (그대로 내면 빠진 멘트는 자막으로만 나간다).
+- 멘트가 바뀌었는데 팩이 그대로면 게시 실행은 새 팩을 먼저 렌더하고, dry run은 경고만 한다
+  (그대로 내면 빠진 멘트는 자막으로만 나간다).
 - **`audio-*` 릴리스는 지우거나 자산을 바꾸지 말 것** — 매니페스트가 sha256으로 고정하고
   있어 모든 사용자의 음성 팩 업데이트가 깨진다.
 - zip 업로드 중에 실패하면 초안을 지운다 — publish 잡만 다시 실행하면 된다 (렌더는
-  아티팩트를 그대로 쓴다).
+  아티팩트를 그대로 쓴다). 기술자 push 뒤 공개에서 멈췄어도 publish 잡 재실행이 커밋 없이
+  공개만 한다.
 - 기술자 커밋·push가 막히면(보호 규칙 등) **초안은 남긴다** (사용자에겐 안 보인다). 손으로
   마무리: 아티팩트 `teamradio56-audio-<pack>`의 `audio_pack.txt`를 그 브랜치의
   `voice_lines/audio_pack.txt`로 커밋·push → `gh release edit audio-<pack> --draft=false
@@ -262,10 +253,13 @@ asset=teamradio56_kokoro_v016_1of7.zip,<sha256>,<바이트 수>
 ### 필요한 저장소 설정
 
 - Actions 사용, 워크플로 권한은 기본(읽기)이어도 된다 — 잡마다 필요한 권한을 적어 두었다
-- audio-pack이 `github-actions[bot]`으로 실행 브랜치(보통 main)에 push한다. main에 보호
-  규칙이 있으면 github-actions 우회를 허용하거나, 위 '손으로 마무리'대로 기술자 커밋과 초안
-  공개를 손으로 한다 (기술자만 옮기고 초안을 공개하지 않으면 release preflight가 거부한다)
+- audio-pack이 `github-actions[bot]`으로 기술자를 push한다 (단독 실행은 실행 브랜치, 릴리스
+  실행은 main). main에 보호 규칙이 있으면 github-actions 우회를 허용하거나, 위 '손으로
+  마무리'대로 기술자 커밋과 초안 공개를 손으로 한다 (기술자만 옮기고 초안을 공개하지 않으면
+  release preflight가 거부한다)
 - (선택) Environment `release`에 Required reviewers를 걸면 게시 잡마다 승인을 받는다
+  (릴리스 실행 안의 음성 팩 게시도)
+- 변경 불가(immutable) 릴리스를 켜면 화면에서 만든 릴리스는 이어받지 못한다 — 태그 push로
 
 ### 대체 경로 — `release.bat` (실제 SimHub이 있는 Windows PC)
 
@@ -298,9 +292,9 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
 | 키 | 예 | 의미 |
 |---|---|---|
 | `format` | `1` | 형식 버전 |
-| `version` | `0.17.0` | 숫자 x.y.z — 플러그인 `Version`의 숫자부와 비교 |
-| `tag` | `v0.17.0` | 이 릴리스 태그 |
-| `plugin_asset` / `plugin_sha256` | `teamradio56-plugin-0.17.0.zip` / 소문자 hex | 두 DLL zip |
+| `version` | `0.17.1` | 숫자 x.y.z — 플러그인 `Version`의 숫자부와 비교 |
+| `tag` | `v0.17.1` | 이 릴리스 태그 |
+| `plugin_asset` / `plugin_sha256` | `teamradio56-plugin-0.17.1.zip` / 소문자 hex | 두 DLL zip |
 | `audio_pack` | `kokoro-v016` | 음성 팩 ID (설치된 표식과 다르면 업데이트 제안) |
 | `audio_tag` | `audio-kokoro-v016` | 팩 zip이 올라가 있는 릴리스 태그 |
 | `audio_assets` / `audio_sha256` / `audio_size` | 콤마 구분, 같은 순서 | 팩 zip들 (`audio_size`는 선택 — 다운로드 전 크기 표시) |
@@ -314,12 +308,13 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
   다시 만든 릴리스가 그 태그(예전 커밋)에 붙는다:
   `gh release delete v<x.y.z> --repo hyungwookc07/teamradio56 --cleanup-tag`
   (이미 릴리스만 지웠으면 `git push origin :refs/tags/v<x.y.z>`). 남아 있으면 스크립트가 멈춘다.
-  Actions로 다시 낼 때도 같다 — 태그를 지운 뒤 다시 push한다.
+  Actions로 다시 낼 때도 같다 — 태그를 지운 뒤 다시 push한다. 빈 릴리스는 지우지 않아도
+  된다 (태그 push 실행이 이어받는다 — 자산이 있으면 지우거나 버전을 올린다).
 - **음성 팩 릴리스가 latest가 됐으면**: `gh release edit <v태그> --latest` 로 플러그인
   릴리스를 되돌리고 `gh release edit audio-<pack> --prerelease --latest=false`.
-- **audio-pack이 기술자는 커밋했는데 공개에 실패했으면**(초안으로 남음):
-  `gh release edit audio-<pack> --draft=false --prerelease --latest=false`. 그 전까지
-  release preflight가 게시를 거부한다.
+- **audio-pack이 기술자는 커밋했는데 공개에 실패했으면**(초안으로 남음): 그 실행의 Re-run
+  failed jobs(공개만 이어서) 또는 `gh release edit audio-<pack> --draft=false --prerelease
+  --latest=false`. 그 전까지 release preflight가 게시를 거부한다.
 - **이미 받은 사용자가 있으면**: 업데이터는 내려가는 버전을 제안하지 않으므로 고친
   버전을 **더 높은 번호로** 다시 낸다. 플러그인이 아예 안 뜨는 사용자는 위
   [되돌리기 (.old)](#되돌리기-old)로 직전 버전을 살린다.
@@ -334,9 +329,11 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
 돈다(`--audio-dir`로 `audio-<pack>` 릴리스 자리에서 설치). 리눅스에 pwsh가 없으면
 `dotnet tool install -g PowerShell`.
 
-`release.ps1 -Ci` 검증 모드(메타 파일·태그 대조·한글 요약 파일, 태그 불일치가 멈춤 없이
-실패하는지)와 `tools/pack_audio.py selftest`(분할 경계·zip 이름·기술자 갱신·verify 거부)도
-돈다. CI는 환경 변수로 더 엄격하게 돌린다:
+`release.ps1 -Ci` 검증 모드(메타 파일·태그 대조·한글 요약 파일, `-AudioPackFile`, 태그 불일치가
+멈춤 없이 실패하는지)와 `tools/pack_audio.py selftest`(분할 경계·zip 이름·기술자 갱신·verify
+거부·다음 팩 ID)도 돈다. `verify/release-flow-check.sh`는 release 워크플로 스크립트를 가짜
+gh/curl/git으로 돌려(네트워크 없음) 게시·이어받기·dry run 판단, 새 음성 팩 필요 여부와 ID,
+음성 팩 게시(기술자 커밋·재실행), 플러그인 게시 호출 순서를 확인한다. CI는 환경 변수로 더 엄격하게 돌린다:
 
 | 변수 | 뜻 |
 |---|---|

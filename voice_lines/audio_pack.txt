@@ -6,10 +6,12 @@
 #          릴리스 매니페스트는 이 태그를 가리킨다 — 이 릴리스는 지우거나 자산을 바꾸지 말 것
 #   asset  zip 이름,sha256,바이트 수 (설치 순서대로 한 줄씩). zip 루트에 *.wav만 둔다
 #
-# 새 팩(멘트 집합이 바뀔 때만): GitHub Actions → audio-pack 을 새 pack ID로 실행하면
-# 렌더·zip·audio-<pack> 릴리스·이 파일의 pack/tag/asset 줄 커밋까지 한다 (주석은 그대로 둔다).
-# kokoro-v016 (0.17) = kokoro-v015(0.16 집합)의 상위 집합 + HUD 리포트 3단계·도메인 확장 문장.
-# 0.17 앱은 kokoro-v016을 기대한다 (첫 게시 순서: simhub/README.md 릴리스 절 'v0.17.0').
+# 새 팩(멘트 집합이 바뀔 때만): v태그 릴리스 실행이 지금 코드의 멘트 집합을 이 팩과 대조해 다르면
+# 새 pack ID(숫자 꼬리 +1, 예 kokoro-v015 → kokoro-v016)로 audio-pack을 불러 렌더·zip·audio-<pack>
+# 릴리스·이 파일의 pack/tag/asset 줄 커밋(main)까지 하고 그 팩으로 플러그인 릴리스를 낸다.
+# GitHub Actions → audio-pack 을 따로 실행해도 된다 (실행한 브랜치에 커밋). 주석은 그대로 둔다.
+# kokoro-v015 = 손으로 배포한 0.16 집합(tag=v0.16.0 — audio-<pack> 릴리스가 아니다). 0.17 집합
+# (HUD 리포트 3단계·도메인 확장 문장)은 v0.17.1 릴리스 실행이 새 팩 kokoro-v016으로 렌더한다.
 pack=kokoro-v015
 tag=v0.16.0
 asset=teamradio56_kokoro_v015_1of4.zip,bf9ab0afd1c2875444ba73bb369fc4b02a5a6fec79a7f1c921f525b340f771ad,23753492

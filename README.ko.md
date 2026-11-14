@@ -58,10 +58,14 @@ Kokoro 런타임이 있을 때)만 요청하고, 아니면 API를 부르지 않�
 바꾸므로 엔진도 업데이트하세요 (`update.bat` 또는 새 `teamradio56.exe`) — 엔진이 0.17보다
 옛 버전이면 설정 화면이 경고합니다.
 
-릴리스(플러그인 zip + `teamradio56-release.txt` 매니페스트)는 버전 태그 `vX.Y.Z`를
-push하면 GitHub Actions가 실제 SimHub 어셈블리로 빌드해 게시합니다. 음성 팩은 별도
-`audio-<pack>` 프리릴리스에 있습니다. 메인테이너는 [simhub/README.md](simhub/README.md)의
-릴리스 절 참고.
+릴리스(플러그인 zip + `teamradio56-release.txt` 매니페스트)는 한 단계입니다 —
+`TeamRadio56Plugin.Version`과 같은 `vX.Y.Z` 태그를 main 커밋에 push하거나 GitHub 화면에서
+그 릴리스를 만들면, GitHub Actions가 실제 SimHub 어셈블리로 플러그인을 빌드하고, 멘트 집합이
+바뀌었으면 음성 팩(별도 `audio-<pack>` 프리릴리스)을 먼저 렌더·게시해(약 2시간 더) 기술자를
+main에 커밋한 뒤 릴리스를 채웁니다. dry run은 `release-dry/**` 브랜치 push, 음성 팩만 따로
+만들 때는 `audio-pack` 워크플로. 실패한 실행은 플러그인 릴리스를 남기지 않습니다 — 원인을
+풀고 Re-run failed jobs. 지금 `v0.17.0`은 손으로 만든 빈 릴리스이고 0.17.1이 첫 실제
+릴리스입니다. 메인테이너는 [simhub/README.md](simhub/README.md)의 릴리스 절 참고.
 
 ```bat
 python -m venv venv

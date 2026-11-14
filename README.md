@@ -70,10 +70,17 @@ replaces only the plugin DLLs, so update the engine too (`update.bat` or the new
 Building from source still works with a double-click on `update.bat`
 (pull + build + copy DLLs).
 
-Releases (plugin zip + `teamradio56-release.txt` manifest) are built against
-the real SimHub assemblies and published by GitHub Actions when a version tag
-`vX.Y.Z` is pushed; the voice pack lives in its own `audio-<pack>` pre-release.
-Maintainers: see the release section of [simhub/README.md](simhub/README.md).
+Releases (plugin zip + `teamradio56-release.txt` manifest) are made in one
+step: push a `vX.Y.Z` tag matching `TeamRadio56Plugin.Version` on a `main`
+commit, or create that release in the GitHub UI. GitHub Actions builds the
+plugin against the real SimHub assemblies; if the sentence set changed it first
+renders and publishes a new voice pack (its own `audio-<pack>` pre-release,
+about 2 hours extra) and commits the pack descriptor to `main`; then it fills
+the release. Push a `release-dry/**` branch for a dry run; the `audio-pack`
+workflow can still be run on its own. If a run fails no plugin release is left
+behind; fix the cause and use *Re-run failed jobs*. Right now `v0.17.0` is an
+empty release created by hand; 0.17.1 is the first real one. Maintainers: see
+the release section of [simhub/README.md](simhub/README.md).
 
 ```bat
 python -m venv venv
