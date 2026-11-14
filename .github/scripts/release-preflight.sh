@@ -85,14 +85,13 @@ case "$rc" in
         ;;
 esac
 
-# 사용자 플러그인은 게시된 최신보다 높은 버전만 업데이트로 제안한다
-tmp=$(mktemp)
-code=$(curl -sSL --retry 3 -o "$tmp" -w '%{http_code}' \
-    "https://github.com/$REPO/releases/latest/download/teamradio56-release.txt" || true)
+# 사용자 플러그인은 게시된 최신보다 높은 버전만 업데이트로 제안한다. releases/latest가 아니라
+# 공개된 플러그인 릴리스 전체의 최고 버전과 비교한다 (화면에서 만든 빈 릴리스가 latest여도 같게)
 LATEST=""
-if [ "$code" = 200 ]; then
-    LATEST=$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*\([0-9]*\.[0-9]*\.[0-9]*\)[[:space:]]*$/\1/p' "$tmp" | head -n1)
-    if [ -n "$LATEST" ]; then
+if LATEST=$(published_plugin_max "$TAG"); then
+    if [ -z "$LATEST" ]; then
+        echo "공개된 플러그인 릴리스(매니페스트 있는 vX.Y.Z) 없음 — 첫 릴리스입니다"
+    else
         top=$(printf '%s\n%s\n' "$LATEST" "$NUM" | sort -V | tail -n1)
         if [ "$LATEST" = "$NUM" ] || [ "$top" != "$NUM" ]; then
             msg="이번 버전 $NUM 이(가) 게시된 최신 $LATEST 보다 높지 않습니다 — TeamRadio56Plugin.Version을 올리세요"
@@ -100,14 +99,12 @@ if [ "$code" = 200 ]; then
             warn "$msg (dry run이라 계속)"
         fi
     fi
-elif [ "$code" = 404 ]; then
-    echo "게시된 매니페스트 없음 — 첫 릴리스입니다"
 else
-    msg="최신 릴리스 매니페스트를 확인하지 못했습니다 (HTTP $code)"
+    LATEST=""
+    msg="게시된 플러그인 릴리스 목록을 확인하지 못했습니다 (gh api releases)"
     if [ "$PUBLISH" = true ]; then err "$msg"; fi
     warn "$msg"
 fi
-rm -f "$tmp"
 
 # 설정 화면 '변경 사항' 한 줄: 입력 > 주석 태그 제목
 NOTES=${NOTES_INPUT:-}

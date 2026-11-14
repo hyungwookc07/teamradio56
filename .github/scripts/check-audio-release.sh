@@ -8,12 +8,14 @@
 # 출력($GITHUB_OUTPUT): need_pack(true|false) pack(이번 릴리스가 쓸 팩 ID)
 #
 # env PUBLISH=true (게시 실행):
-#   - 팩이 낡음 — 기술자 tag가 audio-<pack>이 아님 / 그 릴리스가 없음 / 멘트 집합이 다름
+#   - 팩이 낡음 — 기술자 tag가 audio-<pack>이 아님 / 멘트 집합이 다름
 #     → need_pack=true, pack=새 ID (숫자 꼬리 +1, 자릿수 유지, 이미 공개된 audio-<id>와
 #     다른 집합으로 배포된 ID는 건너뜀). release 워크플로가 audio-pack을 불러 렌더·게시하고
 #     그 기술자로 빌드한다
-#   - 망가진 상태 — 기술자가 가리키는 초안, 공개된 팩의 자산 크기·sha256이 기술자와 다름,
-#     공개 주소에서 못 받음, 확인 실패 → 실패 (새로 렌더해도 고쳐지지 않는다)
+#   - 망가진 상태 — 기술자가 가리키는 audio-<pack> 릴리스가 안 보임(없음 또는 초안: preflight의
+#     읽기 토큰엔 초안이 안 보인다 — 기술자 push 뒤 공개에서 멈춘 팩이면 공개만 하면 된다),
+#     공개된 팩의 자산 크기·sha256이 기술자와 다름, 공개 주소에서 못 받음, 확인 실패
+#     → 실패 (새로 렌더해도 고쳐지지 않거나, 약 2시간 렌더가 헛돈다)
 # 아니면(dry run) 문제는 전부 경고 후 need_pack=false — 렌더하지 않고 지금 기술자로
 # 빌드한다 (팩 릴리스가 아직 없어도 Windows 빌드 경로를 시험할 수 있게).
 #
@@ -77,7 +79,7 @@ pick_new_pack() {
         rc=0
         json=$(gh_release_view "audio-$cand" isDraft) || rc=$?
         case "$rc" in
-            2) ;;
+            2) ;;    # 없음 — 읽기 토큰엔 앞선 실행이 남긴 초안도 여기 (audio-pack 게시 단계가 지우고 다시 올린다)
             0)
                 if [ "$(jq -r .isDraft <<< "$json")" != true ]; then
                     echo "audio-$cand 는 이미 공개돼 있어 건너뜁니다"
@@ -105,7 +107,7 @@ stale() {
         files=$(gh api "repos/$REPO/compare/$GITHUB_SHA...$BRANCH" --jq '.files[]?.filename') \
             || err "$BRANCH 와 이 커밋 비교 실패 (gh api compare)"
         if grep -qx 'voice_lines/audio_pack.txt' <<< "$files"; then
-            err "$* — 그런데 이 커밋 뒤 $BRANCH 의 voice_lines/audio_pack.txt가 바뀌었습니다 (새 팩이 이미 들어갔을 수 있다). $BRANCH 최신 커밋에서 새 버전 태그로 다시 릴리스하세요 (같은 실행을 이어갈 때는 Re-run failed jobs)"
+            err "$* — 그런데 이 커밋 뒤 $BRANCH 의 voice_lines/audio_pack.txt가 바뀌었습니다 (새 팩이 이미 들어갔을 수 있다). 태그를 지우고 $BRANCH 최신 커밋에 다시 태그해 push하세요 (화면에서 만든 릴리스면 그 릴리스와 태그를 지우고 다시 만든다, 버전을 올려도 된다). 같은 실행을 이어갈 때는 Re-run failed jobs"
         fi
     fi
     expected_names
@@ -129,9 +131,11 @@ rc=0
 json=$(gh_release_view "$TAG" isDraft,isPrerelease,assets) || rc=$?
 case "$rc" in
     0) ;;
-    2) stale "음성 팩 릴리스 $TAG 가 없습니다" ;;
+    # 새 ID로 렌더하지 않는다 — 초안이면 공개만 하면 되고, 정말 없으면 누가 지운 것이다
+    2) problem "음성 팩 릴리스 $TAG 가 없거나 초안입니다 (읽기 토큰엔 초안이 안 보인다). 초안이면 렌더한 실행의 Re-run failed jobs 또는 gh release edit $TAG --repo $REPO --draft=false --prerelease --latest=false 뒤 이 실행을 다시 (Re-run failed jobs). 정말 없으면 기술자 커밋을 되돌리거나 Actions → audio-pack을 새 ID로" ;;
     *) problem "음성 팩 릴리스 $TAG 를 확인하지 못했습니다" ;;
 esac
+# 쓰기 토큰으로 돌릴 때만 초안이 보인다 (위 2와 같은 처리)
 if [ "$(jq -r .isDraft <<< "$json")" != false ]; then
     problem "음성 팩 릴리스 $TAG 가 초안입니다 — 사용자가 받을 수 없습니다. gh release edit $TAG --repo $REPO --draft=false --prerelease --latest=false 로 공개하거나, 기술자 커밋을 되돌린 커밋에서 다시 릴리스하세요 (같은 ID로 다시 렌더하고 초안은 지우고 올린다)"
 fi

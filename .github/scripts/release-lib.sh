@@ -46,6 +46,20 @@ gh_published_release() {
     return "$rc"
 }
 
+# 이 실행의 태그를 뺀, 공개된(초안·프리릴리스 아님) 플러그인 릴리스 중 가장 높은 버전.
+# 플러그인 릴리스 = teamradio56-release.txt가 있는 vX.Y.Z 릴리스 (게시 스크립트가 태그 = v<매니페스트
+# version>을 강제하므로 태그 이름이 곧 버전이다 — 매니페스트를 받지 않는다).
+# releases/latest는 보지 않는다: 화면에서 만든 빈 릴리스가 latest가 되면 매니페스트가 404라
+# '첫 릴리스'로 보고 비교를 건너뛰게 된다. 어느 릴리스가 latest 표시인지와도 상관없다.
+#   published_plugin_max <이 실행의 태그> — 0: stdout에 x.y.z (빈 출력 = 첫 릴리스) / 1: 확인 실패
+published_plugin_max() {
+    local json
+    json=$(gh api --paginate "repos/$REPO/releases?per_page=100") || return 1
+    jq -r --arg t "$1" '.[] | select((.draft | not) and (.prerelease | not) and .tag_name != $t)
+        | select(any(.assets[]?; .name == "teamradio56-release.txt")) | .tag_name' <<< "$json" \
+        | sed -n 's/^v\([0-9]*\.[0-9]*\.[0-9]*\)$/\1/p' | sort -V | tail -n1
+}
+
 # GitHub 화면에서 만든 빈 릴리스를 이 태그 실행이 이어받을 수 있는지.
 # 출력이 비면 가능, 아니면 이유 한 줄 (preflight와 게시 잡이 같은 규칙을 쓴다).
 #   adopt_blocker <릴리스 json(gh_published_release)> <태그> <이 실행의 커밋>

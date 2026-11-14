@@ -39,6 +39,8 @@ MAX_BYTES = 24 * 1024 * 1024
 SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 # 이미 배포된 팩 ID → 그 팩의 파일 이름 집합 sha256 (정렬, LF 연결, 끝 LF).
 # 같은 ID로 다른 집합을 내면 표식이 같은 사용자는 새 파일을 영영 못 받는다.
+# audio-<pack> 릴리스가 공개된 뒤 여기에 등록한다 (셀프테스트·release-flow-check는 이 표 내용에
+# 기대지 않으니 등록해도 게이트가 그대로 돈다).
 KNOWN_NAME_SETS = {
     "kokoro-v015": "2062e3431c563f16b10425be7d3473401a1628096d97057e3ed9dbf24ebd5fda",
 }
@@ -396,7 +398,9 @@ def selftest() -> int:
     check(next_pack_id("kokoro-v015", known={}) == "kokoro-v016", "다음 ID v015 → v016")
     check(next_pack_id("kokoro-v099", known={}) == "kokoro-v100", "다음 ID 자리 올림")
     check(next_pack_id("p9", known={}) == "p10", "다음 ID 패딩 없음")
-    check(next_pack_id("kokoro-v015") == "kokoro-v016", "다음 ID (실제 KNOWN_NAME_SETS)")
+    # 실제 표는 팩을 낼 때마다 늘어난다 — 표 내용에 기대지 않는 성질만 본다
+    check(all(next_pack_id(p) not in KNOWN_NAME_SETS for p in KNOWN_NAME_SETS),
+          "집합을 모르면 배포된 ID는 다음 ID가 아님 (실제 KNOWN_NAME_SETS)")
     raises(lambda: next_pack_id("custom", known={}), "숫자 꼬리 없는 팩 ID")
     raises(lambda: next_pack_id("bad id1", known={}), "형식이 잘못된 팩 ID")
     taken = {"x-v002": name_set_sha({"a.wav"})}

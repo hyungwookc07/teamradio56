@@ -52,20 +52,15 @@ case "$rc" in
     *) err "릴리스 $TAG 를 확인하지 못했습니다 (gh api)" ;;
 esac
 
-# 3. 게시된 최신보다 높은 버전
-tmp=$(mktemp)
-code=$(curl -sSL --retry 3 -o "$tmp" -w '%{http_code}' \
-    "https://github.com/$REPO/releases/latest/download/teamradio56-release.txt" || true)
-if [ "$code" = 200 ]; then
-    latest=$(kv version "$tmp")
+# 3. 게시된 최신보다 높은 버전 — releases/latest가 아니라 공개된 플러그인 릴리스 전체의 최고 버전
+#    (이어받는 빈 릴리스가 latest면 latest 매니페스트는 404라 비교를 건너뛰게 된다)
+latest=$(published_plugin_max "$TAG") || err "게시된 플러그인 릴리스 목록 확인 실패 (gh api releases)"
+if [ -n "$latest" ]; then
     top=$(printf '%s\n%s\n' "$latest" "$V" | sort -V | tail -n1)
     if [ "$latest" = "$V" ] || [ "$top" != "$V" ]; then
         err "이번 $V 이(가) 게시된 최신 $latest 보다 높지 않습니다"
     fi
-elif [ "$code" != 404 ]; then
-    err "최신 릴리스 매니페스트 확인 실패 (HTTP $code)"
 fi
-rm -f "$tmp"
 
 # 4. 음성 팩 릴리스 (가벼운 재확인 — 이름·크기·digest, 초안 아님)
 AUDIO_TAG=$(kv audio_tag "$MAN")

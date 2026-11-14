@@ -3,10 +3,13 @@
 # 돌려 판단을 확인한다. 네트워크·GitHub 없이 돈다 (replay-check.sh가 부른다).
 #
 #   release-preflight.sh   태그 push / 화면에서 만든 빈 릴리스 이어받기 / 자산 있는 릴리스 거부 /
-#                          release-dry/** dry run / 태그·main·버전 규칙
-#   check-audio-release.sh 새 음성 팩이 필요한지(need_pack)와 새 팩 ID, 망가진 팩은 실패
+#                          release-dry/** dry run / 태그·main 규칙 / 공개된 플러그인 릴리스 최고 버전과
+#                          비교 (빈 릴리스가 latest여도)
+#   check-audio-release.sh 새 음성 팩이 필요한지(need_pack)와 새 팩 ID, 망가진 팩·안 보이는 팩은 실패
+#                          (팩 ID는 KNOWN_NAME_SETS에 없는 test-v* — 표가 늘어나도 기대값이 그대로)
 #   publish-audio.sh       태그 실행에서 main에 기술자 커밋, 공개에서 멈춘 뒤 재실행, main 기술자 충돌
-#   publish-release.sh     새로 만들기 vs 이어받기 (zip → 매니페스트 → edit --latest 순서, 실패 시 되돌림)
+#   publish-release.sh     새로 만들기 vs 이어받기 (zip → 매니페스트 → edit --latest 순서, 실패 시 되돌림),
+#                          이어받기도 버전 비교
 #
 # 사용법:  bash simhub/verify/release-flow-check.sh
 set -euo pipefail
@@ -27,6 +30,8 @@ mkdir -p "$W/bin"
 # ── 가짜 gh ──────────────────────────────────────────────────────────────
 # 상태: $FAKE_STATE/releases/<태그>.json (REST 모양), assets/<태그>/<이름>, commits/<태그>,
 # compare.json, latest(releases/latest 태그), fail_match(맞는 호출은 실패), calls.log(호출 기록)
+# GH_TOKEN=fake-read(preflight 잡의 contents: read)면 GitHub처럼 초안이 안 보인다 —
+# release view는 'release not found', 릴리스 목록에서는 빠진다. fake-write면 보인다.
 cat > "$W/bin/gh" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -42,12 +47,14 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --repo | -R) shift 2 ;;
         --jq | -q) jqx=$2; shift 2 ;;
+        --paginate) shift ;;
         *) args+=("$1"); shift ;;
     esac
 done
 set -- "${args[@]}"
 emit() { if [ -n "$jqx" ]; then jq -r "$jqx"; else cat; fi; }
 relf() { echo "$S/releases/$1.json"; }
+read_token() { [ "${GH_TOKEN:-}" = fake-read ]; }
 upd() { local r=$1; shift; jq "$@" "$r" > "$r.tmp" && mv "$r.tmp" "$r"; }
 add_asset() {
     local tag=$1 f=$2 a
@@ -60,7 +67,10 @@ add_asset() {
 case "${1:-} ${2:-}" in
     "release view")
         f=$(relf "$3")
-        [ -f "$f" ] || { echo "release not found" >&2; exit 1; }
+        if [ ! -f "$f" ] || { read_token && [ "$(jq -r .draft "$f")" = true ]; }; then
+            echo "release not found" >&2
+            exit 1
+        fi
         jq '{isDraft: .draft, isPrerelease: .prerelease, assets, body, tagName: .tag_name}' "$f" | emit
         ;;
     "release create")
@@ -125,6 +135,12 @@ case "${1:-} ${2:-}" in
                     exit 1
                 fi
                 emit < "$f"
+                ;;
+            repos/*/releases\?*)
+                shopt -s nullglob
+                rels=("$S"/releases/*.json)
+                if [ "${#rels[@]}" = 0 ]; then echo '[]'; else jq -s . "${rels[@]}"; fi \
+                    | if read_token; then jq '[.[] | select(.draft | not)]'; else cat; fi | emit
                 ;;
             repos/*/releases/latest)
                 [ -s "$S/latest" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
@@ -214,7 +230,7 @@ exec "$FAKE_REAL_GIT" "$@"
 FAKE
 printf '#!/bin/sh\nexit 0\n' > "$W/bin/sleep"
 chmod +x "$W/bin/"*
-export PATH="$W/bin:$PATH" FAKE_STATE=$ST FAKE_REAL_GIT=$REAL_GIT GH_TOKEN=fake-token
+export PATH="$W/bin:$PATH" FAKE_STATE=$ST FAKE_REAL_GIT=$REAL_GIT GH_TOKEN=fake-write
 # 러너처럼 전역 git 설정 없이 (개발 PC의 서명·push 설정이 섞이지 않게)
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 unset GITHUB_SHA GITHUB_OUTPUT GITHUB_STEP_SUMMARY
@@ -224,6 +240,8 @@ FULL=$(sed -n 's/.*public const string Version = "\([^"]*\)".*/\1/p' \
     simhub/src/TeamRadio56.SimHub/TeamRadio56Plugin.cs | head -n1)
 NUM=$(grep -oE '^[0-9]+\.[0-9]+\.[0-9]+' <<< "$FULL")
 TAG=v$NUM
+# 이번 버전보다 높은 버전 (부 번호 +1) — 저장소 버전이 올라가도 그대로 맞게
+HI=$(awk -F. '{ print $1 "." $2 + 1 ".0" }' <<< "$NUM")
 SHA=1111111111111111111111111111111111111111
 OTHER=2222222222222222222222222222222222222222
 
@@ -285,7 +303,14 @@ preflight() {      # <EVENT> <REF_TYPE> <REF_NAME> [DRY_RUN]
     RC=0
     env EVENT="$1" REF_TYPE="$2" REF_NAME="$3" DRY_RUN="${4:-true}" GITHUB_SHA=$SHA REPO=$REPO \
         GITHUB_OUTPUT="$W/gho" GITHUB_STEP_SUMMARY="$W/sum" SIMHUB_VERSION=9.13.3 NOTES_INPUT= \
-        bash "$SCRIPTS/release-preflight.sh" > "$W/out" 2>&1 || RC=$?
+        GH_TOKEN=fake-read bash "$SCRIPTS/release-preflight.sh" > "$W/out" 2>&1 || RC=$?
+}
+
+# mk_plugin_release <버전> [draft] [prerelease] — 매니페스트가 있는 플러그인 릴리스 v<버전>
+mk_plugin_release() {
+    mkdir -p "$W/man-$1"
+    printf 'format=1\nversion=%s\ntag=v%s\n' "$1" "$1" > "$W/man-$1/teamradio56-release.txt"
+    mk_release "v$1" "${2:-false}" "${3:-false}" "$W/man-$1/teamradio56-release.txt"
 }
 
 echo "  · release-preflight.sh"
@@ -300,8 +325,8 @@ mk_release "$TAG" false false
 echo "$TAG" > "$ST/latest"
 preflight push tag "$TAG"
 [ "$RC" = 0 ] && [ "$(out_val publish)" = true ] \
-    && [ "$(out_val adopt)" = true ]
-expect "화면에서 만든 빈 릴리스 → 이어받기"
+    && [ "$(out_val adopt)" = true ] && has '첫 릴리스'
+expect "화면에서 만든 빈 릴리스(latest) → 이어받기"
 
 set_release "$TAG" '.prerelease = true'
 preflight push tag "$TAG"
@@ -355,68 +380,113 @@ preflight workflow_dispatch branch main false
 expect "수동 게시는 기존 태그를 거부 (이어받지 않음)"
 
 reset_state
-printf 'format=1\nversion=99.0.0\ntag=v99.0.0\n' > "$W/teamradio56-release.txt"
-mk_release v99.0.0 false false "$W/teamradio56-release.txt"
+mk_plugin_release 99.0.0
 echo v99.0.0 > "$ST/latest"
 preflight push tag "$TAG"
 [ "$RC" = 1 ] && has '높지 않습니다'
 expect "게시된 최신보다 낮은 버전 → 실패"
 
+# 화면에서 만든 빈 릴리스가 latest여도(latest 매니페스트 404) 공개된 플러그인 릴리스와 비교한다
+reset_state
+echo "$SHA" > "$ST/commits/$TAG"
+mk_plugin_release "$HI"
+mk_release "$TAG" false false
+echo "$TAG" > "$ST/latest"
+preflight push tag "$TAG"
+[ "$RC" = 1 ] && has "게시된 최신 $HI 보다 높지 않습니다" && [ ! -s "$W/gho" ]
+expect "빈 릴리스가 latest, 더 높은 v$HI 플러그인 릴리스 있음 → 이어받기 전에 실패"
+
+reset_state
+echo "$SHA" > "$ST/commits/$TAG"
+mk_plugin_release 0.0.1
+mk_plugin_release "$HI" false true
+mk_release v99.0.0 false false "$W/notes.txt"
+preflight push tag "$TAG"
+[ "$RC" = 0 ] && [ "$(out_val publish)" = true ] && has '최신 0.0.1'
+expect "프리릴리스·매니페스트 없는 릴리스는 비교에서 뺌 (최신 0.0.1)"
+
+mk_plugin_release "$HI" true false
+preflight push tag "$TAG"
+[ "$RC" = 0 ] && has '최신 0.0.1'
+expect "초안 플러그인 릴리스는 비교에서 뺌 (읽기 토큰엔 안 보임)"
+
+echo '/releases\?per_page' > "$ST/fail_match"
+preflight push tag "$TAG"
+[ "$RC" = 1 ] && has '목록을 확인하지 못했습니다'
+expect "릴리스 목록 확인 실패 → 게시 실행은 실패"
+preflight push branch release-dry/x
+[ "$RC" = 0 ] && [ "$(out_val publish)" = false ] && has '::warning::게시된 플러그인 릴리스 목록'
+expect "릴리스 목록 확인 실패 → dry run은 경고만"
+
 # ── check-audio-release.sh ───────────────────────────────────────────────
 echo "  · check-audio-release.sh"
 python3 tools/pack_audio.py expected --tiers 1,2,3 --tracks voice_lines/track_names_en.txt \
     --out "$W/expected.txt" 2> /dev/null
-# 가짜 팩: 지금 코드가 찾는 이름 전부(full) / 하나 빠짐(short) — 내용은 작은 가짜 wav
+# 가짜 팩: 지금 코드가 찾는 이름 전부(full) / 하나 빠짐(short) — 내용은 작은 가짜 wav.
+# 팩 ID는 KNOWN_NAME_SETS에 없는 test-v* — 실제 표가 팩마다 늘어나도 기대 ID가 그대로다
 python3 - "$W/expected.txt" "$W" <<'PY'
 import os, sys, zipfile
 names = [n.strip() for n in open(sys.argv[1], encoding="utf-8") if n.strip()]
 for label, members in (("full", names), ("short", names[1:])):
     d = os.path.join(sys.argv[2], "pack-" + label)
     os.makedirs(d)
-    with zipfile.ZipFile(os.path.join(d, "teamradio56_kokoro_v016_1of1.zip"), "w") as zf:
+    with zipfile.ZipFile(os.path.join(d, "teamradio56_test_v016_1of1.zip"), "w") as zf:
         for n in members:
             zf.writestr(zipfile.ZipInfo(n, (2026, 1, 1, 0, 0, 0)), b"RIFF" + n.encode())
 PY
 desc_for() {       # <팩 zip 폴더> → 기술자 경로
-    local z="$1/teamradio56_kokoro_v016_1of1.zip" d="$1/audio_pack.txt"
-    printf '# 시험용\npack=kokoro-v016\ntag=audio-kokoro-v016\nasset=%s,%s,%s\n' "$(basename "$z")" \
+    local z="$1/teamradio56_test_v016_1of1.zip" d="$1/audio_pack.txt"
+    printf '# 시험용\npack=test-v016\ntag=audio-test-v016\nasset=%s,%s,%s\n' "$(basename "$z")" \
         "$(sha256sum "$z" | cut -d' ' -f1)" "$(stat -c %s "$z")" > "$d"
     echo "$d"
 }
 FULL_DESC=$(desc_for "$W/pack-full")
 SHORT_DESC=$(desc_for "$W/pack-short")
-V015_DESC=$ROOT/voice_lines/audio_pack.txt
-grep -qx 'tag=v0.16.0' "$V015_DESC" && grep -qx 'pack=kokoro-v015' "$V015_DESC" \
-    || V015_DESC=$(printf 'pack=kokoro-v015\ntag=v0.16.0\nasset=a.zip,%s,1\n' "$(printf 'a%.0s' {1..64})" \
-        > "$W/v015.txt" && echo "$W/v015.txt")
+# 손으로 배포한 kokoro-v015 모양 — tag가 audio-<pack>이 아닌 옛 기술자
+V015_DESC=$W/v015.txt
+printf 'pack=test-v015\ntag=v0.16.0\nasset=teamradio56_test_v015_1of1.zip,%s,1\n' \
+    "$(printf 'a%.0s' {1..64})" > "$V015_DESC"
 
 audio_check() {    # <PUBLISH> <기술자>
     : > "$W/gho"
     rm -rf "$W/dl"
     RC=0
-    env PUBLISH="$1" GITHUB_SHA=$SHA GITHUB_OUTPUT="$W/gho" GITHUB_STEP_SUMMARY="$W/sum" \
+    env PUBLISH="$1" GITHUB_SHA=$SHA GITHUB_OUTPUT="$W/gho" GITHUB_STEP_SUMMARY="$W/sum" GH_TOKEN=fake-read \
         bash "$SCRIPTS/check-audio-release.sh" "$REPO" "$2" "$W/dl" > "$W/out" 2>&1 || RC=$?
 }
 need() { [ "$RC" = 0 ] && [ "$(out_val need_pack)" = "$1" ] && [ "$(out_val pack)" = "$2" ]; }
 
 reset_state
 audio_check true "$V015_DESC"
-need true kokoro-v016
-expect "kokoro-v015 (tag=v0.16.0) 게시 → 새 팩 kokoro-v016"
+need true test-v016
+expect "test-v015 (tag=v0.16.0, 손 배포 모양) 게시 → 새 팩 test-v016"
 
-mk_release audio-kokoro-v016 false true "$W/pack-full/teamradio56_kokoro_v016_1of1.zip"
+mk_release audio-test-v016 false true "$W/pack-full/teamradio56_test_v016_1of1.zip"
 audio_check true "$V015_DESC"
-need true kokoro-v017
-expect "공개된 audio-kokoro-v016은 건너뜀 → kokoro-v017"
+need true test-v017
+expect "공개된 audio-test-v016은 건너뜀 → test-v017"
 
-set_release audio-kokoro-v016 '.draft = true'
+set_release audio-test-v016 '.draft = true'
 audio_check true "$V015_DESC"
-need true kokoro-v016
-expect "남은 초안 audio-kokoro-v016은 다시 씀 → kokoro-v016"
+need true test-v016
+expect "남은 초안 audio-test-v016은 다시 씀 → test-v016"
+
+# 저장소 기술자가 아직 audio-<pack> 릴리스가 아니면(손 배포 kokoro-v015) v0.17.1 실행의 실제 경로 —
+# 기대 ID는 운영 경로와 같은 CLI로 정한다 (KNOWN_NAME_SETS 내용에 기대지 않게)
+REAL_DESC=$ROOT/voice_lines/audio_pack.txt
+real=$(python3 -I tools/pack_audio.py descriptor --print "$REAL_DESC")
+real_pack=$(sed -n 's/^PACK=//p' <<< "$real")
+if [ "$(sed -n 's/^TAG=//p' <<< "$real")" != "audio-$real_pack" ]; then
+    reset_state
+    N1=$(python3 -I tools/pack_audio.py next-id "$real_pack" --expect-names "$W/expected.txt")
+    audio_check true "$REAL_DESC"
+    need true "$N1"
+    expect "저장소 기술자 $real_pack (audio-<pack> 아님) 게시 → 새 팩 $N1"
+fi
 
 reset_state
 audio_check false "$V015_DESC"
-need false kokoro-v015 && has '::warning::'
+need false test-v015 && has '::warning::'
 expect "dry run: 렌더 안 함 (경고, 지금 기술자)"
 
 echo '{"status": "ahead", "files": [{"filename": "voice_lines/audio_pack.txt"}]}' > "$ST/compare.json"
@@ -426,46 +496,47 @@ audio_check true "$V015_DESC"
 expect "이 커밋 뒤 main 기술자가 바뀜 → 렌더 전에 실패"
 
 reset_state
-mk_release audio-kokoro-v016 false true "$W/pack-full/teamradio56_kokoro_v016_1of1.zip"
+mk_release audio-test-v016 false true "$W/pack-full/teamradio56_test_v016_1of1.zip"
 audio_check true "$FULL_DESC"
-need false kokoro-v016
+need false test-v016
 expect "맞는 팩(공개·자산·멘트 집합) → need_pack=false"
 
 reset_state
-mk_release audio-kokoro-v016 false true "$W/pack-short/teamradio56_kokoro_v016_1of1.zip"
+mk_release audio-test-v016 false true "$W/pack-short/teamradio56_test_v016_1of1.zip"
 audio_check true "$SHORT_DESC"
-need true kokoro-v017
-expect "멘트 집합이 다름 → 새 팩 kokoro-v017"
+need true test-v017
+expect "멘트 집합이 다름 → 새 팩 test-v017"
 
 reset_state
 audio_check true "$FULL_DESC"
-need true kokoro-v017
-expect "기술자의 audio-<pack> 릴리스가 없음 → 새 팩 kokoro-v017"
+[ "$RC" = 1 ] && has '없거나 초안' && [ ! -s "$W/gho" ]
+expect "기술자의 audio-<pack> 릴리스가 안 보임 → 새 ID로 렌더하지 않고 실패"
 
 audio_check false "$FULL_DESC"
-need false kokoro-v016
+need false test-v016 && has '::warning::'
 expect "dry run: 팩 릴리스 없음도 경고만"
 
-mk_release audio-kokoro-v016 false true "$W/pack-full/teamradio56_kokoro_v016_1of1.zip"
-set_release audio-kokoro-v016 '.assets[0].size += 1'
+mk_release audio-test-v016 false true "$W/pack-full/teamradio56_test_v016_1of1.zip"
+set_release audio-test-v016 '.assets[0].size += 1'
 audio_check true "$FULL_DESC"
 [ "$RC" = 1 ] && has '크기' && [ ! -s "$W/gho" ]
 expect "공개된 팩의 자산 크기 ≠ 기술자 → 실패"
 
-mk_release audio-kokoro-v016 false true "$W/pack-full/teamradio56_kokoro_v016_1of1.zip"
-set_release audio-kokoro-v016 '.assets[0].digest = "sha256:" + ("0" * 64)'
+mk_release audio-test-v016 false true "$W/pack-full/teamradio56_test_v016_1of1.zip"
+set_release audio-test-v016 '.assets[0].digest = "sha256:" + ("0" * 64)'
 audio_check true "$FULL_DESC"
 [ "$RC" = 1 ] && has 'digest'
 expect "공개된 팩의 digest ≠ 기술자 → 실패"
 
-mk_release audio-kokoro-v016 true true "$W/pack-full/teamradio56_kokoro_v016_1of1.zip"
+# 기술자 push 뒤 공개에서 멈춘 팩 — 읽기 토큰엔 초안이 '없음'으로 보이지만 새 팩(약 2시간)을 렌더하지 않는다
+mk_release audio-test-v016 true true "$W/pack-full/teamradio56_test_v016_1of1.zip"
 audio_check true "$FULL_DESC"
-[ "$RC" = 1 ] && has '초안'
-expect "기술자가 가리키는 초안 → 실패"
+[ "$RC" = 1 ] && has '없거나 초안' && has 'draft=false' && [ ! -s "$W/gho" ]
+expect "기술자가 가리키는 초안 → 새 ID로 렌더하지 않고 실패 (공개 방법 안내)"
 
 # ── publish-audio.sh (release가 부른 태그 실행: BRANCH=main, SHA=태그 커밋) ─
 echo "  · publish-audio.sh"
-AZ=$W/pack-full/teamradio56_kokoro_v016_1of1.zip
+AZ=$W/pack-full/teamradio56_test_v016_1of1.zip
 O=$W/origin.git
 WK=$W/work
 pa_origin() {      # 기술자가 옛 팩인 main 하나짜리 원격 → PSHA
@@ -485,13 +556,13 @@ pa_work() {        # 태그 커밋을 체크아웃한 작업 폴더 + pack 잡 �
     rm -rf "$WK"
     git clone -q "$O" "$WK"
     git -C "$WK" checkout -q --detach "$PSHA"
-    mkdir -p "$WK/dist/audio/kokoro-v016"
-    cp "$AZ" "$WK/dist/audio/kokoro-v016/"
+    mkdir -p "$WK/dist/audio/test-v016"
+    cp "$AZ" "$WK/dist/audio/test-v016/"
     cp "$FULL_DESC" "$WK/dist/audio/audio_pack.txt"
 }
 publish_audio() {
     RC=0
-    (cd "$WK" && env PACK=kokoro-v016 SHA="$PSHA" BRANCH=main RUN_URL=https://run.invalid/1 REPO=$REPO \
+    (cd "$WK" && env PACK=test-v016 SHA="$PSHA" BRANCH=main RUN_URL=https://run.invalid/1 REPO=$REPO GH_TOKEN=fake-write \
         GITHUB_STEP_SUMMARY="$W/sum" bash "$SCRIPTS/publish-audio.sh") > "$W/out" 2>&1 || RC=$?
 }
 main_desc_is() { git -C "$O" show main:voice_lines/audio_pack.txt | cmp -s - "$1"; }
@@ -503,19 +574,19 @@ pa_work
 publish_audio
 [ "$RC" = 0 ] && main_desc_is "$FULL_DESC" \
     && [ "$(git -C "$O" rev-parse main~1)" = "$PSHA" ] \
-    && git -C "$O" log -1 --format=%s main | grep -q '음성 팩 기술자 갱신: kokoro-v016' \
-    && [ "$(rel_field audio-kokoro-v016 .draft)" = false ] && [ "$(rel_field audio-kokoro-v016 .prerelease)" = true ] \
-    && [ "$(line_of '^release create audio-kokoro-v016 .*--draft')" -lt "$(line_of '^release edit audio-kokoro-v016 .*--draft=false')" ]
+    && git -C "$O" log -1 --format=%s main | grep -q '음성 팩 기술자 갱신: test-v016' \
+    && [ "$(rel_field audio-test-v016 .draft)" = false ] && [ "$(rel_field audio-test-v016 .prerelease)" = true ] \
+    && [ "$(line_of '^release create audio-test-v016 .*--draft')" -lt "$(line_of '^release edit audio-test-v016 .*--draft=false')" ]
 expect "팩 게시: 초안 → 기술자 커밋을 main에 push → 공개 (프리릴리스)"
 
 # 앞선 시도가 기술자를 push하고 공개에서 멈춤 → publish 잡 재실행은 초안을 다시 올리고 공개만
 pushed=$(git -C "$O" rev-parse main)
-set_release audio-kokoro-v016 '.draft = true'
+set_release audio-test-v016 '.draft = true'
 : > "$ST/calls.log"
 pa_work
 publish_audio
 [ "$RC" = 0 ] && [ "$(git -C "$O" rev-parse main)" = "$pushed" ] \
-    && called '^release delete audio-kokoro-v016' && [ "$(rel_field audio-kokoro-v016 .draft)" = false ]
+    && called '^release delete audio-test-v016' && [ "$(rel_field audio-test-v016 .draft)" = false ]
 expect "재실행: main에 같은 기술자가 있으면 커밋 없이 공개만"
 
 reset_state
@@ -525,7 +596,7 @@ git -C "$W/seed" -c user.name=t -c user.email=t@t.invalid commit -qam other
 git -C "$W/seed" push -q origin HEAD:refs/heads/main
 pa_work
 publish_audio
-[ "$RC" = 1 ] && has '바뀌었습니다' && [ "$(rel_field audio-kokoro-v016 .draft)" = true ] \
+[ "$RC" = 1 ] && has '바뀌었습니다' && [ "$(rel_field audio-test-v016 .draft)" = true ] \
     && [ "$(git -C "$O" rev-parse main)" = "$(git -C "$W/seed" rev-parse HEAD)" ]
 expect "태그 뒤 main 기술자가 바뀜 → 커밋 안 함, 초안은 남김"
 
@@ -541,8 +612,8 @@ printf 'PK fake plugin zip' > "$P/dist/ci/assets/$ZIPNAME"
     echo "tag=$TAG"
     echo "plugin_asset=$ZIPNAME"
     echo "plugin_sha256=$(sha256sum "$P/dist/ci/assets/$ZIPNAME" | cut -d' ' -f1)"
-    echo "audio_pack=kokoro-v016"
-    echo "audio_tag=audio-kokoro-v016"
+    echo "audio_pack=test-v016"
+    echo "audio_tag=audio-test-v016"
     echo "audio_assets=$(basename "$AZ")"
     echo "audio_sha256=$(sha256sum "$AZ" | cut -d' ' -f1)"
     echo "audio_size=$(stat -c %s "$AZ")"
@@ -552,13 +623,13 @@ printf 'teamradio56 %s\n\n생성한 본문\n' "$FULL" > "$P/dist/ci/meta/release
 
 publish() {        # <MODE>
     RC=0
-    (cd "$P" && env TAG=$TAG SHA=$SHA MODE="$1" REPO=$REPO GITHUB_STEP_SUMMARY="$W/sum" \
+    (cd "$P" && env TAG=$TAG SHA=$SHA MODE="$1" REPO=$REPO GITHUB_STEP_SUMMARY="$W/sum" GH_TOKEN=fake-write \
         bash "$SCRIPTS/publish-release.sh") > "$W/out" 2>&1 || RC=$?
 }
 pub_reset() {
     reset_state
     echo "$SHA" > "$ST/commits/$TAG"
-    mk_release audio-kokoro-v016 false true "$AZ"
+    mk_release audio-test-v016 false true "$AZ"
 }
 UP_ZIP="^release upload $TAG dist/ci/assets/$ZIPNAME"
 UP_MAN="^release upload $TAG dist/ci/assets/teamradio56-release.txt"
@@ -587,6 +658,26 @@ expect "이어받기: zip → 매니페스트 → edit --latest, create 없음"
     && jq -r .body "$ST/releases/$TAG.json" | grep -q '생성한 본문' \
     && jq -r .body "$ST/releases/$TAG.json" | grep -q '화면에서 쓴 설명'
 expect "이어받기: 자산 2개, 프리릴리스 해제, 화면 본문 보존"
+
+# 이어받는 빈 릴리스가 latest(latest 매니페스트 404)여도 공개된 플러그인 릴리스와 비교 — 올리기 전에 멈춘다
+pub_reset
+mk_plugin_release "$HI"
+mk_release "$TAG" false false
+echo "$TAG" > "$ST/latest"
+publish tag
+[ "$RC" = 1 ] && has "게시된 최신 $HI 보다 높지 않습니다" \
+    && ! called '^release (create|upload|edit|delete-asset)' \
+    && [ "$(jq '.assets | length' "$ST/releases/$TAG.json")" = 0 ]
+expect "이어받기: 더 높은 v$HI 플러그인 릴리스 있음 → 올리기 전에 실패"
+
+# 쓰기 토큰엔 초안이 목록에 보인다 — 초안·프리릴리스는 비교에서 뺀다
+pub_reset
+mk_plugin_release 0.0.1
+mk_plugin_release "$HI" true false
+mk_plugin_release 99.0.0 false true
+publish tag
+[ "$RC" = 0 ] && called "^release create $TAG "
+expect "새로 만들기: 낮은 v0.0.1만 비교 (초안 v$HI·프리릴리스 v99.0.0은 뺌)"
 
 pub_reset
 mk_release "$TAG" false false "$W/notes.txt"
