@@ -43,6 +43,7 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 # 기대지 않으니 등록해도 게이트가 그대로 돈다).
 KNOWN_NAME_SETS = {
     "kokoro-v015": "2062e3431c563f16b10425be7d3473401a1628096d97057e3ed9dbf24ebd5fda",
+    "kokoro-v016": "fb489f503c0a27b88927daddf68c06849d00c62b2a7db06399dc8cc73339c56c",
 }
 DEFAULT_TRACKS = "voice_lines/track_names_en.txt"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
