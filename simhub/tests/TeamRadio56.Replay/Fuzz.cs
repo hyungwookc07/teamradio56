@@ -9,9 +9,10 @@ using TeamRadio56.Core.Logic;
 namespace TeamRadio56.Replay
 {
     /// <summary>
-    /// tools/coverage_fuzz.py eval의 C# 미러 — 같은 케이스(JSONL)를 Core의 순수 조립 함수에
-    /// 넣고, 가상 음성 팩(기대 파일명 집합) 위의 VoiceRoute(kokoro).Plan으로 판정해
+    /// tools/coverage_fuzz.py eval --lang en의 C# 미러 — 같은 케이스(JSONL)를 Core의 순수
+    /// 조립 함수에 넣고, 가상 음성 팩(기대 파일명 집합) 위의 VoiceRoute.Plan으로 판정해
     /// 파이썬과 바이트 단위로 같은 TSV를 쓴다 (파이썬 전용 kind는 건너뛴다).
+    /// 플러그인 무전은 영어 고정이라 en만 (ko 퍼즈는 파이썬 단독).
     /// </summary>
     public static class Fuzz
     {
@@ -24,9 +25,8 @@ namespace TeamRadio56.Replay
         public static int Eval(string casesPath, string outPath, List<string> tracks)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            bool en = !Messages.IsKo;
             var pool = new PhrasePool(new Random(0));
-            VoiceRoute route = en ? VirtualPack(tracks) : null;
+            VoiceRoute route = VirtualPack(tracks);
             var memo = new Dictionary<string, string>(StringComparer.Ordinal);
             List<KeyValuePair<string, string>> fixedTexts =
                 new List<KeyValuePair<string, string>>(PregenTexts.ComposedWhole());
@@ -54,9 +54,7 @@ namespace TeamRadio56.Replay
                     {
                         tone = r[1];
                         text = r[2];
-                        if (!en)
-                            outcome = "-";
-                        else if (r[0] == "drop")
+                        if (r[0] == "drop")
                             outcome = "DROP:" + r[3];
                         else
                             outcome = Classify(route, memo, tone, text);
@@ -74,7 +72,7 @@ namespace TeamRadio56.Replay
                     n++;
                 }
             }
-            Console.WriteLine($"평가 {n}건 ({Messages.Lang}, {sw.Elapsed.TotalSeconds:F1}초) → {outPath}");
+            Console.WriteLine($"평가 {n}건 (en, {sw.Elapsed.TotalSeconds:F1}초) → {outPath}");
             return 0;
         }
 
@@ -82,24 +80,15 @@ namespace TeamRadio56.Replay
         private static VoiceRoute VirtualPack(List<string> tracks)
         {
             var names = new HashSet<string>(StringComparer.Ordinal);
-            var probe = new VoiceCache("pack", "en-GB-RyanNeural", 10, "bm_george", true, "kokoro");
             foreach (KeyValuePair<string, string> item in PregenTexts.Enumerate(new PhrasePool()))
-            {
-                foreach (string name in probe.CandidateFileNames(item.Value, item.Key))
-                {
-                    names.Add(Path.GetFileNameWithoutExtension(name) + "_rfx"
-                              + VoiceCache.RadioFxVersion + ".wav");
-                    break;   // 첫 후보가 kokoro
-                }
-            }
+                names.Add(VoiceCache.WholeFxFileName(item.Value, item.Key));
             foreach (KeyValuePair<string, string> item
                      in PregenSentences.Enumerate(PregenSentences.PackMaxTier, tracks))
                 names.Add(VoiceCache.SegmentFileName(item.Value, item.Key));
             foreach (string asset in RadioAssembler.AssetNames)
                 names.Add(asset);
-            var cache = new VoiceCache("pack", "en-GB-RyanNeural", 10, "bm_george", true, "kokoro",
-                                       p => names.Contains(Path.GetFileName(p)));
-            return new VoiceRoute(cache, VoiceKind.Kokoro, false);
+            var cache = new VoiceCache("pack", fileExists: p => names.Contains(Path.GetFileName(p)));
+            return new VoiceRoute(cache);
         }
 
         private static string Classify(VoiceRoute route, Dictionary<string, string> memo,

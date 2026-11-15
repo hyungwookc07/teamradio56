@@ -27,7 +27,7 @@ namespace TeamRadio56.SimHub
 
         private readonly TeamRadio56Plugin _plugin;
         // 화면을 다시 그릴 때마다 새로 만든다 — WPF는 이미 다른 패널에 붙은
-        // 요소를 새 패널에 붙이면 예외를 던져, 재조립(언어/모드 전환)이 실패한다
+        // 요소를 새 패널에 붙이면 예외를 던져, 재조립(언어 전환)이 실패한다
         private TextBlock _connection = new TextBlock();
         private TextBlock _status = new TextBlock();
         private TextBlock _recent = new TextBlock();
@@ -166,7 +166,6 @@ namespace TeamRadio56.SimHub
             BuildChatter(root);
             BuildTraffic(root);
             BuildReports(root);
-            // LLM 섹션은 C# 포팅 전까지 보류 — 기능이 준비되면 BuildLlm(root) 복원
             BuildBehaviour(root);
             BuildUpdate(root);
             RefreshUpdate();
@@ -229,70 +228,20 @@ namespace TeamRadio56.SimHub
             _engineState.Margin = new Thickness(0, 2, 0, 6);
             box.Children.Add(_engineState);
 
-            bool python = !string.Equals(S.EngineMode, "builtin",
-                                         StringComparison.OrdinalIgnoreCase);
-
-            Row(box, L("row_mode"), MakeCombo(PluginSettings.EngineChoices, S.EngineMode, v =>
+            // 음성 팩(오디오 캐시) 폴더 — 비우면 자동 탐색, [음성 팩 업데이트]도 같은 폴더에 설치
+            Row(box, L("row_cache_dir"), MakeText(S.AudioCacheDir, v =>
             {
-                if (string.Equals(S.EngineMode, v, StringComparison.OrdinalIgnoreCase))
-                    return;
-                S.EngineMode = v;
-                // 재시작은 프로세스 종료 대기 등으로 수 초 걸릴 수 있다 —
-                // UI 스레드에서 돌리면 화면 전체가 얼어붙으므로 백그라운드로
-                RebuildLater();            // 모드에 따라 보이는 항목이 달라진다
-                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
-                {
-                    try
-                    {
-                        _plugin.RestartEngine();   // 즉시 전환 (이전 모드 정리 → 새 모드 기동)
-                    }
-                    catch (Exception ex)
-                    {
-                        FileLog.Error("모드 전환 실패", ex);
-                    }
-                    Dispatcher.BeginInvoke(new Action(Refresh));
-                });
-            }, Choice("choice_")), L("hint_mode"));
-
-            // builtin 모드: 사전 생성 오디오 캐시 폴더 (비우면 자동 탐색)
-            if (!python)
-            {
-                Row(box, L("row_cache_dir"), MakeText(S.AudioCacheDir, v =>
-                {
-                    S.AudioCacheDir = v;
-                }), L("hint_cache_dir"));
-            }
-
-            // 실행 파일/추가 인자/시작·중지는 파이썬 엔진 모드에만 의미가 있다
-            if (python)
-            {
-                Row(box, L("row_exe"), MakeText(S.EngineExe, v =>
-                {
-                    S.EngineExe = v;
-                }), L("hint_exe"));
-
-                Row(box, L("row_args"), MakeText(S.EngineArgs, v =>
-                {
-                    S.EngineArgs = v;
-                }), L("hint_args"));
-            }
+                S.AudioCacheDir = v;
+            }), L("hint_cache_dir"));
 
             var buttons = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 6, 0, 0),
             };
-            if (python)
-            {
-                buttons.Children.Add(MakeButton(L("btn_engine_start"),
-                    () => InBackground(() => _plugin.StartEngine())));
-                buttons.Children.Add(MakeButton(L("btn_engine_stop"),
-                    () => InBackground(_plugin.StopEngine)));
-            }
+            // 재시작은 보이스 워커 정지(최대 10초)를 기다린다 — UI 스레드 밖에서
             buttons.Children.Add(MakeButton(L("btn_engine_restart"),
                 () => InBackground(_plugin.RestartEngine)));
-            if (python)
-                buttons.Children.Add(MakeButton(L("btn_engine_log"), () => OpenFile(_plugin.EngineLogPath)));
             box.Children.Add(buttons);
 
             box.Children.Add(Hint(L("engine_apply_hint")));
@@ -302,86 +251,11 @@ namespace TeamRadio56.SimHub
         {
             StackPanel box = Section(root, L("sec_voice"));
 
-            // 직관성 원칙: 지금 조합에서 의미 없는 항목은 아예 보여주지 않는다
-            bool builtin = string.Equals(S.EngineMode, "builtin",
-                                         StringComparison.OrdinalIgnoreCase);
-
-            // 조건부 줄들은 항상 만들어 두고 Visibility만 바꾼다 —
-            // 콤보 이벤트에서 화면 전체를 재조립하면 지연/씹힘이 생긴다.
-            // 보이스/말 속도는 edge 엔진이거나 멘트 언어가 ko일 때 의미가 있다
-            // (kokoro는 영어 전용이라 ko 멘트는 자동으로 edge 합성).
-            StackPanel voiceRow = null, rateRow = null;
-            Action syncVoiceRows = () =>
-            {
-                bool show = string.Equals(S.VoiceEngine, "edge",
-                                StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(S.VoiceLanguage, "ko",
-                                StringComparison.OrdinalIgnoreCase);
-                Visibility v = show ? Visibility.Visible : Visibility.Collapsed;
-                if (voiceRow != null)
-                    voiceRow.Visibility = v;
-                if (rateRow != null)
-                    rateRow.Visibility = v;
-            };
-
-            Row(box, L("row_voice_lang"),
-                MakeCombo(PluginSettings.VoiceLanguageChoices, S.VoiceLanguage, v =>
-                {
-                    S.VoiceLanguage = v;
-                    syncVoiceRows();
-                }, Choice("choice_lang_")), L("hint_voice_lang"));
-
+            // 목소리는 kokoro 음성 팩 하나뿐 — 고를 것은 출력 on/off뿐이다
             Row(box, L("row_voice_on"), MakeCheck(S.VoiceEnabled, v =>
             {
                 S.VoiceEnabled = v;
             }), L("hint_voice_on"));
-
-            Row(box, L("row_voice_engine"),
-                MakeCombo(PluginSettings.VoiceEngineChoices, S.VoiceEngine, v =>
-                {
-                    S.VoiceEngine = v;
-                    syncVoiceRows();
-                }, Choice("choice_")), L("hint_voice_engine"));
-
-            voiceRow = Row(box, L("row_voice"),
-                MakeCombo(PluginSettings.VoiceChoices, S.EdgeVoice, v =>
-                {
-                    S.EdgeVoice = v;
-                }, Choice("voice_")), L("hint_voice"));
-
-            rateRow = Row(box, L("row_rate"), MakeSlider(-20, 40, 5, S.SpeechRatePercent, v =>
-            {
-                S.SpeechRatePercent = (int)Math.Round(v);
-            }, "{0:+0;-0;0}%"));
-            syncVoiceRows();
-
-            // builtin 재생(SoundPlayer)은 볼륨/노이즈 조절이 없다 —
-            // 노이즈는 캐시에 이미 구워져 있고, 볼륨은 윈도우 믹서로
-            if (!builtin)
-            {
-                Row(box, L("row_volume"), MakeSlider(0.1, 1.0, 0.05, S.Volume, v =>
-                {
-                    S.Volume = v;
-                }, "{0:P0}"));
-            }
-
-            Row(box, L("row_radiofx"), MakeCheck(S.RadioFx, v =>
-            {
-                S.RadioFx = v;
-            }), L("hint_radiofx"));
-
-            Row(box, L("row_voice_fallback"), MakeCheck(S.AllowVoiceFallback, v =>
-            {
-                S.AllowVoiceFallback = v;
-            }), L("hint_voice_fallback"));
-
-            if (!builtin)
-            {
-                Row(box, L("row_noise"), MakeSlider(0.0, 0.02, 0.002, S.RadioNoise, v =>
-                {
-                    S.RadioNoise = v;
-                }, "{0:0.000}"), L("hint_noise"));
-            }
         }
 
         private void BuildChatter(StackPanel root)
@@ -435,34 +309,6 @@ namespace TeamRadio56.SimHub
             }, L("fmt_every_laps")), L("hint_status_report"));
         }
 
-        private void BuildLlm(StackPanel root)
-        {
-            StackPanel box = Section(root, L("sec_llm"));
-
-            // builtin 모드는 LLM 미지원 — 죽은 설정을 늘어놓는 대신 한 줄로 안내
-            if (string.Equals(S.EngineMode, "builtin", StringComparison.OrdinalIgnoreCase))
-            {
-                box.Children.Add(Hint(L("llm_builtin_note")));
-                return;
-            }
-            box.Children.Add(Hint(L("llm_hint")));
-
-            Row(box, L("row_llm_on"), MakeCheck(S.LlmEnabled, v =>
-            {
-                S.LlmEnabled = v;
-            }));
-
-            Row(box, L("row_api_key"), MakeText(S.LlmApiKey, v =>
-            {
-                S.LlmApiKey = v;
-            }), L("hint_api_key"));
-
-            Row(box, L("row_budget"), MakeSlider(0, 60, 5, S.LlmBudgetPerHour, v =>
-            {
-                S.LlmBudgetPerHour = (int)Math.Round(v);
-            }, L("fmt_calls")), L("hint_budget"));
-        }
-
         private void BuildBehaviour(StackPanel root)
         {
             StackPanel box = Section(root, L("sec_behaviour"));
@@ -471,15 +317,6 @@ namespace TeamRadio56.SimHub
             {
                 S.RequireRealtime = v;
             }), L("hint_realtime"));
-
-            // 발화 기록(JSONL)은 파이썬 엔진 전용 — builtin은 플러그인 로그에 항상 남는다
-            if (!string.Equals(S.EngineMode, "builtin", StringComparison.OrdinalIgnoreCase))
-            {
-                Row(box, L("row_speech_log"), MakeCheck(S.SpeechLog, v =>
-                {
-                    S.SpeechLog = v;
-                }), L("hint_speech_log"));
-            }
         }
 
 
@@ -580,8 +417,8 @@ namespace TeamRadio56.SimHub
         // -- 상태 갱신 -------------------------------------------------------
 
         /// <summary>
-        /// 엔진 시작/중지/재시작은 프로세스 종료 대기·WMI 검색·보이스 워커
-        /// 정지(최대 10초)를 포함한다 — UI 스레드에서 돌리면 SimHub 화면이 언다.
+        /// 엔진 재시작은 보이스 워커 정지(최대 10초)를 기다린다 — UI 스레드에서
+        /// 돌리면 SimHub 화면이 언다.
         /// </summary>
         private void InBackground(Action work)
         {
@@ -633,29 +470,13 @@ namespace TeamRadio56.SimHub
 
                 bool voiceWarn;
                 string voiceLines = VoiceLines(out voiceWarn);
-                if (_plugin.UsingPythonEngine)
-                {
-                    string error = _plugin.EngineError;
-                    if (!string.IsNullOrEmpty(error))
-                        SetText(_engineState, L("engine_error") + error, Off);
-                    else if (_plugin.EngineRunning)
-                        SetText(_engineState,
-                                L("engine_running") + _plugin.EngineExePath() + voiceLines,
-                                voiceWarn ? Off : Ok);
-                    else
-                        SetText(_engineState,
-                                L("engine_stopped") + _plugin.EngineExePath(), Dim);
-                }
-                else
-                {
-                    // 캐시 상태를 함께 — "코코로가 안 나온다" 진단의 첫 확인 지점
-                    string cache = _plugin.BuiltinCacheDir == null
-                        ? L("cache_missing")
-                        : string.Format(L("cache_status"),
-                            _plugin.BuiltinCacheCount, _plugin.BuiltinCacheDir);
-                    SetText(_engineState, L("engine_builtin") + "\n" + cache + voiceLines,
-                        _plugin.BuiltinCacheCount > 0 && !voiceWarn ? Dim : Off);
-                }
+                // 캐시 폴더를 함께 — "무전이 안 들린다" 진단의 첫 확인 지점
+                string cache = _plugin.BuiltinCacheDir == null
+                    ? L("cache_unknown")
+                    : string.Format(L("cache_status"),
+                        _plugin.BuiltinCacheCount, _plugin.BuiltinCacheDir);
+                SetText(_engineState, L("engine_builtin") + "\n" + cache + voiceLines,
+                    _plugin.BuiltinCacheCount > 0 && !voiceWarn ? Dim : Off);
 
                 RefreshUpdate();
 
@@ -675,8 +496,8 @@ namespace TeamRadio56.SimHub
         }
 
         /// <summary>
-        /// 세션 목소리 줄들 ("\n"으로 시작, 없으면 ""). 음성 팩에 없는 멘트가 있으면
-        /// warn — 상태 블록을 경고색으로.
+        /// 음성 팩 줄들 ("\n"으로 시작, 없으면 ""). 팩이 없거나 설치가 끊겼거나 팩에 없는
+        /// 멘트가 있으면 warn — 상태 블록을 경고색으로.
         /// </summary>
         private string VoiceLines(out bool warn)
         {
@@ -685,17 +506,18 @@ namespace TeamRadio56.SimHub
             if (info == null)
                 return "";
             var sb = new System.Text.StringBuilder();
-            if (info.Note == TeamRadio56Plugin.VoiceNoteEngineOutdated)
+            if (info.Note != null)
             {
-                // 옛 엔진은 세션 목소리를 알리지 않는다 — 목소리 줄 대신 경고만
+                // 팩 없음/설치 미완료 → 무음 세션 ([음성 팩 업데이트] 안내), 일부만 → 경고
                 warn = true;
-                return "\n" + L("voice_note_engine_outdated");
+                sb.Append("\n").Append(L("voice_note_" + info.Note.Replace('-', '_')));
             }
-            sb.Append("\n").Append(string.Format(L("voice_active"), info.Kind));
-            if (!string.IsNullOrEmpty(info.Note))
-                sb.Append(" — ").Append(L("voice_note_" + info.Note.Replace('-', '_')));
-            if (info.Note == VoicePolicy.NotePackPartial)
-                warn = true;
+            else if (info.InstalledPack != null)
+            {
+                // 표식 없는 개발 캐시(확인 문장만 있음)는 팩 이름 줄을 생략
+                sb.Append("\n").Append(string.Format(L("voice_pack_installed"),
+                    PackName(info.InstalledPack)));
+            }
             if (info.Dropped > 0)
                 sb.Append("\n").Append(string.Format(L("voice_dropped"), info.Dropped));
             if (info.Missing > 0)
@@ -703,9 +525,14 @@ namespace TeamRadio56.SimHub
                 warn = true;
                 sb.Append("\n").Append(string.Format(L("voice_pack_missing"), info.Missing));
             }
-            if (info.LlmOn == true && info.LlmVoice == false)
-                sb.Append("\n").Append(L("llm_unspeakable"));
             return sb.ToString();
+        }
+
+        /// <summary>음성 팩이 없어(또는 설치가 끊겨) 이번 세션이 무음인가 — 상단 배너용.</summary>
+        private bool PackMissing()
+        {
+            TeamRadio56Plugin.VoiceInfo info = _plugin.CurrentVoiceInfo();
+            return info != null && !info.PackUsable;
         }
 
         /// <summary>업데이트 작업 스레드의 알림 — 여러 번 와도 UI 갱신은 한 번만 예약.</summary>
@@ -762,7 +589,9 @@ namespace TeamRadio56.SimHub
                 SetText(_updStatus, L("upd_unavailable"), Off);
                 _btnUpdCheck.IsEnabled = _btnUpdPlugin.IsEnabled = _btnUpdAudio.IsEnabled = false;
                 _btnUpdCancel.Visibility = Visibility.Collapsed;
-                _updBanner.Visibility = Visibility.Collapsed;
+                bool noPack = PackMissing();
+                SetText(_updBanner, noPack ? L("pack_missing_banner") : "", Off);
+                _updBanner.Visibility = noPack ? Visibility.Visible : Visibility.Collapsed;
                 return;
             }
 
@@ -854,6 +683,12 @@ namespace TeamRadio56.SimHub
             {
                 banner = string.Format(L("upd_banner_restart"), st.RestartPendingVersion);
                 bannerBrush = Ok;
+            }
+            else if (st.Activity != UpdateActivity.InstallingAudio && PackMissing())
+            {
+                // 무음 세션 — 무엇을 눌러야 하는지 맨 위에서 바로 알린다
+                banner = L("pack_missing_banner");
+                bannerBrush = Off;
             }
             else if (check != null && check.PluginUpdateAvailable)
                 banner = string.Format(L("upd_banner_new"), check.Latest.Version);

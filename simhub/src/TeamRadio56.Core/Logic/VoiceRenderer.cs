@@ -8,7 +8,7 @@ namespace TeamRadio56.Core.Logic
     /// voice.py VoiceGenerator의 비-LLM 경로 포팅 — 이벤트 → 멘트 텍스트.
     ///
     /// 긴급 콜은 변형 풀에서 즉시, 비긴급은 템플릿 폴백을 쓴다.
-    /// (LLM 멘트/브리지는 아직 파이썬 엔진 담당 — 이식 마지막 단계.)
+    /// (LLM 멘트/브리지는 파이썬 단독 앱 전용 — 플러그인에는 없다.)
     /// </summary>
     public sealed class VoiceRenderer
     {
@@ -78,7 +78,7 @@ namespace TeamRadio56.Core.Logic
                     {
                         int h = m / 60;
                         return Messages.Get("milestone_hours", "h", h,
-                            "s", (h > 1 && !Messages.IsKo) ? "s" : "");
+                            "s", h > 1 ? "s" : "");
                     }
                     return Messages.Get("milestone_minutes", "m", m);
                 }
@@ -349,9 +349,7 @@ namespace TeamRadio56.Core.Logic
     {
         public static IEnumerable<KeyValuePair<string, string>> Enumerate(PhrasePool pool)
         {
-            string[] classes = Messages.IsKo
-                ? new[] { "하이퍼카", "엘엠피 투", "GT3", "GTE", "상위 클래스", "" }
-                : new[] { "Hypercar", "LMP2", "GT3", "GTE", "faster car", "" };
+            string[] classes = { "Hypercar", "LMP2", "GT3", "GTE", "faster car", "" };
 
             var slotValues = new List<KeyValuePair<string, List<Dictionary<string, string>>>>();
 
@@ -412,11 +410,8 @@ namespace TeamRadio56.Core.Logic
                     }
                 }
             }
-            if (!Messages.IsKo)
-            {
-                foreach (KeyValuePair<string, string> item in ComposedWhole())
-                    yield return item;
-            }
+            foreach (KeyValuePair<string, string> item in ComposedWhole())
+                yield return item;
         }
 
         // 페널티 콜 열거 — RaceControlAnalyzer.ParsePenalty가 내는 값 전체
@@ -431,12 +426,10 @@ namespace TeamRadio56.Core.Logic
 
         /// <summary>
         /// voice.py iter_composed_whole_texts 미러 — 분석기가 조립하는 문장 중
-        /// 경우의 수가 작은 것을 통째로 사전 생성 (en 전용, ko는 빈 열거).
+        /// 경우의 수가 작은 것을 통째로 사전 생성.
         /// </summary>
         public static IEnumerable<KeyValuePair<string, string>> ComposedWhole()
         {
-            if (Messages.IsKo)
-                yield break;
             for (int n = 0; n <= 40; n++)
                 yield return Casual(Messages.Get("pit_window", "n", Messages.LapsText(n)));
             foreach (string rel in new[] { "ahead", "behind" })
@@ -599,8 +592,6 @@ namespace TeamRadio56.Core.Logic
         public static IEnumerable<KeyValuePair<string, string>> Enumerate(
             int maxTier = PackMaxTier, IEnumerable<string> tracks = null)
         {
-            if (Messages.IsKo)
-                yield break;
             var seen = new HashSet<string>(StringComparer.Ordinal);
             if (maxTier >= 1)
             {

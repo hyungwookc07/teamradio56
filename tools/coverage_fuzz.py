@@ -6,16 +6,18 @@
     python tools/coverage_fuzz.py eval  --cases cases.jsonl --lang en --out py.tsv
     teamradio56-replay --fuzz-eval cases.jsonl --lang en --out cs.tsv   (C# 미러)
     python tools/coverage_fuzz.py check --py py.tsv --cs cs.tsv --lang en [--report-only-miss]
+    python tools/coverage_fuzz.py check --py py_ko.tsv --lang ko   (파이썬 단독 — C# 대조 없음)
 
 케이스 한 줄: {"id", "kind", "band": in|out|none, "args"} — band는 생성 시 도메인 술어로 정한다.
 결과 TSV: id, kind, band, tone, outcome, text (탭·줄바꿈 이스케이프).
 outcome: WHOLE | SEG | SUPPRESS:<규칙> | DROP:<정책> | MISS:<처음 빠진 문장> | NONE
-(ko는 음성 팩이 없으므로 발화 행의 outcome이 "-").
+(ko는 음성 팩이 없으므로 발화 행의 outcome이 "-". C# 플러그인 무전은 영어 고정이라
+ C# 미러는 en만 — ko는 --cs 없이 파이썬 규칙만 확인한다).
 
 게이트 (en):
   1) MISS 없음   2) band in → WHOLE|SEG
   3) band out → SUPPRESS, WHOLE/SEG(클램프), 허용 목록의 DROP만
-  4) band none → NONE   5) 공통 kind는 파이썬 TSV == C# TSV (en, ko)
+  4) band none → NONE   5) 공통 kind는 파이썬 TSV == C# TSV (--cs를 줬을 때, en)
   6) llm_gate: 임의 문장을 못 말하는 목소리면 템플릿 + 후속(브리지) 없음
 """
 
@@ -656,16 +658,18 @@ def _read_tsv(path: str) -> dict:
     return rows
 
 
-def check(py_path: str, cs_path: str, lang: str, report_only_miss: bool) -> int:
+def check(py_path: str, cs_path: str | None, lang: str, report_only_miss: bool) -> int:
     py = _read_tsv(py_path)
-    cs = _read_tsv(cs_path)
     fail = 0
 
-    # 5) 파이썬 ↔ C# — 공통 kind 행이 바이트 단위로 같아야 한다
+    # 5) 파이썬 ↔ C# — 공통 kind 행이 바이트 단위로 같아야 한다 (C# 미러는 en만)
     shared = {i: r for i, r in py.items() if r[1] not in PY_ONLY}
-    diff = [i for i in shared if cs.get(i) != shared[i]]
-    extra = [i for i in cs if i not in shared]
-    if diff or extra:
+    cs = _read_tsv(cs_path) if cs_path else None
+    diff = [i for i in shared if cs.get(i) != shared[i]] if cs is not None else []
+    extra = [i for i in cs if i not in shared] if cs is not None else []
+    if cs is None:
+        print(f"⏭  C# 대조 없음 — 파이썬 규칙만 ({lang}, {len(shared)}건)")
+    elif diff or extra:
         fail = 1
         print(f"❌ 파이썬 ↔ C# 불일치 {len(diff)}건, C#에만 {len(extra)}건 ({lang}):")
         for i in (diff + extra)[:10]:
@@ -753,7 +757,8 @@ def main() -> int:
     e.add_argument("--out", required=True)
     c = sub.add_parser("check")
     c.add_argument("--py", required=True)
-    c.add_argument("--cs", required=True)
+    c.add_argument("--cs", default=None,
+                   help="C# --fuzz-eval TSV (en). 없으면 파이썬 규칙만 확인")
     c.add_argument("--lang", default="en")
     c.add_argument("--report-only-miss", action="store_true")
     args = ap.parse_args()

@@ -16,8 +16,8 @@ namespace TeamRadio56.Core.Logic
     /// <summary>
     /// main.py CrewChiefApp의 판단 루프 포팅 — 스냅샷 하나를 받아 세션
     /// 전이/브리핑/분석기 틱/랩 완료 체인을 돌리고 이벤트 버스를 채운다.
-    /// 발화는 VoiceWorker가 버스에서 꺼내 처리한다 (LLM/브리지는 미이식 —
-    /// 해당 이벤트는 렌더러가 침묵 처리).
+    /// 발화는 VoiceWorker가 버스에서 꺼내 처리한다 (LLM/브리지 멘트는 파이썬 단독
+    /// 앱 전용 — 플러그인에서는 해당 이벤트를 렌더러가 침묵 처리).
     /// </summary>
     public sealed class CrewChiefEngine
     {
@@ -38,7 +38,7 @@ namespace TeamRadio56.Core.Logic
 
         private bool _wasInSession;
 
-        /// <summary>세션 목소리가 음성 팩만 말함 (kokoro, 섞임 비허용) — 브리핑이 목록 밖 트랙 이름을 뺀다.</summary>
+        /// <summary>음성 팩으로 말하는 세션 (음성 출력 켜짐) — 브리핑이 목록 밖 트랙 이름을 뺀다.</summary>
         public bool BriefingPackOnly
         {
             get { return _briefer.PackOnly; }

@@ -26,7 +26,8 @@ from voice import (PhrasePool, iter_pregen_sentences,         # noqa: E402
 
 
 def _cache_name_line(tone: str, text: str) -> str:
-    """C# VoiceCache.CandidateFileNames와 같은 순서·기본값으로 파일명 나열."""
+    """톤, kokoro 파일명, edge 파일명, 텍스트 — replay-check가 kokoro 열만 C#
+    VoiceCache.WholeFileName(--dump-cache-names)과 대조한다 (edge는 단독 앱 전용)."""
     from tts import EdgeTTSEngine, _cache_path
 
     kokoro = os.path.basename(

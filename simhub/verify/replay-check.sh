@@ -5,9 +5,12 @@
 #   1) 파이썬 기준값 생성 (tools/replay_calls.py)
 #   2) C# 러너 실행 (tests/TeamRadio56.Replay)
 #   3) 수락 이벤트 시퀀스 비교 (순서·타이밍·데이터·결정적 멘트 'say' 완전 일치 요구)
-#   4) 레이스 종료 오라클 — 남은 랩 트레이스(en) 파이썬 ↔ C# 일치, race_end_* 리플레이는
+#   4) 레이스 종료 오라클 — 남은 랩 트레이스 파이썬 ↔ C# 일치, race_end_* 리플레이는
 #      체커까지 가고 정답(.truth.json)과 마지막 랩·체커 콜까지 대조
 #      (tools/make_race_end_replays.py가 만들고 --check로 재생성 대조)
+#
+# C# 플러그인 무전은 영어 + kokoro 음성 팩 고정이라 파이썬 ↔ C# 대조는 en만 한다.
+# 파이썬 단독 앱의 한국어·edge 목소리는 파이썬 자체 검사(셀프테스트, ko 스모크)로만 돈다.
 #
 # 사용법:  bash simhub/verify/replay-check.sh
 #
@@ -40,28 +43,34 @@ skip_or_fail() {
     fi
 }
 
-for lang in en ko; do
-    echo
-    echo "▶ 멘트 풀 / 슬롯 포매팅 대조 ($lang, 사전 캐시 텍스트 전체 집합)"
-    python3 tools/dump_pregen.py --lang "$lang" --out "$OUT/py_pregen_$lang.txt"
-    "$RUNNER" --dump-pregen --lang "$lang" --out "$OUT/cs_pregen_$lang.txt"
-    if diff -q "$OUT/py_pregen_$lang.txt" "$OUT/cs_pregen_$lang.txt" > /dev/null; then
-        echo "✅ 일치 — $(wc -l < "$OUT/py_pregen_$lang.txt")개 텍스트 동일"
-    else
-        echo "❌ 멘트 풀 불일치 ($lang):"
-        diff "$OUT/py_pregen_$lang.txt" "$OUT/cs_pregen_$lang.txt" | head -20
-        fail=1
-    fi
-done
+echo
+echo "▶ C# 멘트 풀 생성물 최신 (tools/gen_csharp_phrases.py --check)"
+if ! python3 tools/gen_csharp_phrases.py --check; then
+    fail=1
+fi
 
 echo
-echo "▶ 오디오 캐시 파일명 규약 대조 (md5 앞 20자 등)"
-python3 tools/dump_pregen.py --cache-names --out "$OUT/py_names.txt"
+echo "▶ 멘트 풀 / 슬롯 포매팅 대조 (en, 사전 캐시 텍스트 전체 집합)"
+python3 tools/dump_pregen.py --lang en --out "$OUT/py_pregen.txt"
+"$RUNNER" --dump-pregen --out "$OUT/cs_pregen.txt"
+if [ -s "$OUT/py_pregen.txt" ] && diff -q "$OUT/py_pregen.txt" "$OUT/cs_pregen.txt" > /dev/null; then
+    echo "✅ 일치 — $(wc -l < "$OUT/py_pregen.txt")개 텍스트 동일"
+else
+    echo "❌ 멘트 풀 불일치 (또는 빈 출력):"
+    diff "$OUT/py_pregen.txt" "$OUT/cs_pregen.txt" | head -20
+    fail=1
+fi
+
+# 파이썬 덤프는 "톤 kokoro edge 텍스트" — edge 열은 파이썬 단독 앱 전용이라 C#과는 kokoro 열만
+echo
+echo "▶ 음성 팩 파일명 규약 대조 (kokoro md5 앞 20자 등)"
+python3 tools/dump_pregen.py --cache-names --out "$OUT/py_names_full.txt"
+cut -f1,2,4 "$OUT/py_names_full.txt" > "$OUT/py_names.txt"
 "$RUNNER" --dump-cache-names --out "$OUT/cs_names.txt"
-if diff -q "$OUT/py_names.txt" "$OUT/cs_names.txt" > /dev/null; then
+if [ -s "$OUT/py_names.txt" ] && diff -q "$OUT/py_names.txt" "$OUT/cs_names.txt" > /dev/null; then
     echo "✅ 일치 — $(wc -l < "$OUT/py_names.txt")개 파일명 동일"
 else
-    echo "❌ 캐시 파일명 불일치 — builtin이 배포 캐시를 못 찾게 됩니다:"
+    echo "❌ 캐시 파일명 불일치 (또는 빈 출력) — 플러그인이 음성 팩을 못 찾게 됩니다:"
     diff "$OUT/py_names.txt" "$OUT/cs_names.txt" | head -10
     fail=1
 fi
@@ -136,18 +145,16 @@ fi
 # 커버리지 퍼즈 — 순수 조립 함수에 도메인 안팎 값을 넣어 가상 음성 팩으로 판정.
 # 도메인 안 값은 통문장/조립으로, 밖은 억제·클램프·허용된 무음으로만 나가야 한다.
 echo
-echo "▶ 커버리지 퍼즈 (가상 음성 팩, 파이썬 ↔ C#)"
+echo "▶ 커버리지 퍼즈 (가상 음성 팩, 파이썬 ↔ C#, en)"
 python3 tools/coverage_fuzz.py gen --seed 56 --out "$OUT/fuzz_cases.jsonl"
-for lang in en ko; do
-    python3 tools/coverage_fuzz.py eval --cases "$OUT/fuzz_cases.jsonl" --lang "$lang" \
-        --out "$OUT/fuzz_py_$lang.tsv"
-    "$RUNNER" --lang "$lang" --fuzz-eval "$OUT/fuzz_cases.jsonl" \
-        ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --out "$OUT/fuzz_cs_$lang.tsv"
-    if ! python3 tools/coverage_fuzz.py check --py "$OUT/fuzz_py_$lang.tsv" \
-        --cs "$OUT/fuzz_cs_$lang.tsv" --lang "$lang"; then
-        fail=1
-    fi
-done
+python3 tools/coverage_fuzz.py eval --cases "$OUT/fuzz_cases.jsonl" --lang en \
+    --out "$OUT/fuzz_py_en.tsv"
+"$RUNNER" --fuzz-eval "$OUT/fuzz_cases.jsonl" \
+    ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --out "$OUT/fuzz_cs_en.tsv"
+if ! python3 tools/coverage_fuzz.py check --py "$OUT/fuzz_py_en.tsv" \
+    --cs "$OUT/fuzz_cs_en.tsv" --lang en; then
+    fail=1
+fi
 
 # 생성된 오디오 캐시가 로컬에 있으면 실제 Resolve까지 확인 (선택 게이트)
 if [ -d audio_cache ] && ls audio_cache/*_rfx3.wav > /dev/null 2>&1; then
@@ -184,32 +191,50 @@ if ! "$RUNNER" --update-selftest; then
     fail=1
 fi
 
-# 한 목소리 정책 — 세션 목소리로 낼 수 없는 콜은 다른 목소리로 새지 않고 무음(자막만)
+# 한 목소리 정책 — 플러그인 목소리는 kokoro 음성 팩 하나. 팩에 없는 콜, 팩이 없거나
+# 설치가 끊긴 세션의 콜은 다른 목소리로 새지 않고 무음(자막만)
 echo
-echo "▶ 한 목소리 정책 셀프테스트 (C#)"
+echo "▶ 한 목소리 정책 셀프테스트 (C#, kokoro 음성 팩 전용)"
 if ! "$RUNNER" --voice-selftest; then
     fail=1
 fi
 
 echo
-echo "▶ 한 목소리 정책 셀프테스트 (파이썬)"
+echo "▶ 한 목소리 정책 셀프테스트 (파이썬 — edge·ko·섞임 허용 포함, 단독 앱 정책)"
 if ! python3 tools/voice_policy_selftest.py; then
     fail=1
 fi
 
+# 파이썬 결정표(engine × lang × pack) 중 플러그인에 해당하는 kokoro·en 4행만 대조한다.
+# 파이썬 단독 앱이 팩 없이 edge로 대신 말하는 자리가 플러그인에선 무음(none)이어야 하고,
+# 사유(note)는 같은 문자열이어야 한다.
 echo
-echo "▶ 세션 목소리 결정표·팩 상태 대조"
-python3 tools/voice_policy_selftest.py --dump-table --out "$OUT/py_voice_table.tsv"
+echo "▶ 음성 팩 상태 결정표 대조 (파이썬 kokoro·en 행 ↔ C#)"
+python3 tools/voice_policy_selftest.py --dump-table --out "$OUT/py_voice_table_all.tsv"
+awk -F'\t' -v OFS='\t' '$1 == "kokoro" && $2 == "en" { v = ($4 == "edge") ? "none" : $4; print $3, v, $5 }' \
+    "$OUT/py_voice_table_all.tsv" > "$OUT/py_voice_table.tsv"
 "$RUNNER" --dump-voice-table --out "$OUT/cs_voice_table.tsv"
-if diff -q "$OUT/py_voice_table.tsv" "$OUT/cs_voice_table.tsv" > /dev/null; then
-    echo "✅ 일치 — 결정표 $(wc -l < "$OUT/py_voice_table.tsv")행 동일"
+if [ "$(wc -l < "$OUT/py_voice_table.tsv")" != 4 ]; then
+    echo "❌ 파이썬 결정표에서 kokoro·en 4행을 찾지 못함 (형식이 바뀌었나?):"
+    head -5 "$OUT/py_voice_table_all.tsv"
+    fail=1
+elif diff -q "$OUT/py_voice_table.tsv" "$OUT/cs_voice_table.tsv" > /dev/null; then
+    echo "✅ 일치 — 팩 상태 4종 (ok/partial → kokoro, incomplete/none → 무음) 사유까지 동일"
 else
-    echo "❌ 세션 목소리 결정표 불일치:"
+    echo "❌ 음성 팩 상태 결정표 불일치 (팩 상태 / 목소리 / 사유):"
     diff "$OUT/py_voice_table.tsv" "$OUT/cs_voice_table.tsv" | head -10
     fail=1
 fi
 if ! python3 tools/voice_policy_selftest.py --pack-fixtures "$OUT/packstate" \
     || ! "$RUNNER" --pack-state-check "$OUT/packstate"; then
+    fail=1
+fi
+
+# 설정 파일 호환 — 예전 버전의 키(EngineMode=python, EdgeVoice, VoiceLanguage=ko …)가
+# 남은 teamradio56.settings.txt를 오류 없이 읽고, 다음 저장 때 지운다
+echo
+echo "▶ 설정 파일 호환 셀프테스트 (옛 키 무시)"
+if ! "$RUNNER" --settings-selftest; then
     fail=1
 fi
 
@@ -387,24 +412,16 @@ python3 tools/make_race_end_replays.py --check || fail=1
 for replay in data/replays/*.jsonl.gz; do
     name=$(basename "$replay" .jsonl.gz)
     truth="data/replays/$name.truth.json"
-    for lang in en ko; do
-        echo
-        echo "▶ 리플레이: $name ($lang)"
-        PY_TRACE=()
-        CS_TRACE=()
-        if [ "$lang" = en ]; then
-            PY_TRACE=(--race-end-trace "$OUT/py_${name}_trace.jsonl")
-            CS_TRACE=(--race-end-trace "$OUT/cs_${name}_trace.jsonl")
-        fi
-        python3 tools/replay_calls.py --replay "$replay" --lang "$lang" \
-            --out "$OUT/py_${name}_$lang.jsonl" ${PY_TRACE[@]+"${PY_TRACE[@]}"}
-        "$RUNNER" --replay "$replay" --lang "$lang" --out "$OUT/cs_${name}_$lang.jsonl" \
-            ${CS_TRACE[@]+"${CS_TRACE[@]}"}
-        if ! python3 tools/compare_calls.py \
-            "$OUT/py_${name}_$lang.jsonl" "$OUT/cs_${name}_$lang.jsonl"; then
-            fail=1
-        fi
-    done
+    echo
+    echo "▶ 리플레이: $name (en)"
+    python3 tools/replay_calls.py --replay "$replay" --lang en \
+        --out "$OUT/py_${name}_en.jsonl" --race-end-trace "$OUT/py_${name}_trace.jsonl"
+    "$RUNNER" --replay "$replay" --out "$OUT/cs_${name}_en.jsonl" \
+        --race-end-trace "$OUT/cs_${name}_trace.jsonl"
+    if ! python3 tools/compare_calls.py \
+        "$OUT/py_${name}_en.jsonl" "$OUT/cs_${name}_en.jsonl"; then
+        fail=1
+    fi
 
     # 남은 랩 트레이스 파이썬 ↔ C#, 정답이 있으면 마지막 랩·체커 콜까지
     echo
@@ -423,7 +440,7 @@ for replay in data/replays/*.jsonl.gz; do
     echo
     echo "▶ 코코로 커버리지: $name (en, 통문장 + 문장 세그먼트, 기준 100%)"
     cov="$OUT/cov_$name.txt"
-    if "$RUNNER" --replay "$replay" --lang en --coverage --tier 3 \
+    if "$RUNNER" --replay "$replay" --coverage --tier 3 \
         ${TRACKS_ARGS[@]+"${TRACKS_ARGS[@]}"} --min 100 > "$cov"; then
         echo "✅ $(grep '^발화 ' "$cov")"
     else
@@ -433,6 +450,38 @@ for replay in data/replays/*.jsonl.gz; do
         fail=1
     fi
 done
+
+# 파이썬 단독 앱의 한국어 무전 — C#은 더 이상 대조하지 않지만, 파이썬 쪽이 깨지지 않게
+# 멘트 풀 덤프·퍼즈 규칙(band none → NONE)·리플레이 실행만 확인한다
+echo
+echo "▶ 파이썬 전용 ko 스모크 (멘트 풀 · 퍼즈 규칙 · 리플레이 실행, C# 대조 없음)"
+ko_ok=1
+python3 tools/dump_pregen.py --lang ko --out "$OUT/py_pregen_ko.txt" || ko_ok=0
+[ -s "$OUT/py_pregen_ko.txt" ] || ko_ok=0
+if python3 tools/coverage_fuzz.py eval --cases "$OUT/fuzz_cases.jsonl" --lang ko \
+    --out "$OUT/fuzz_py_ko.tsv" > "$OUT/fuzz_ko.log" 2>&1; then
+    python3 tools/coverage_fuzz.py check --py "$OUT/fuzz_py_ko.tsv" --lang ko \
+        >> "$OUT/fuzz_ko.log" 2>&1 || ko_ok=0
+else
+    ko_ok=0
+fi
+for replay in data/replays/*.jsonl.gz; do
+    name=$(basename "$replay" .jsonl.gz)
+    if ! python3 tools/replay_calls.py --replay "$replay" --lang ko \
+        --out "$OUT/py_${name}_ko.jsonl" 2> "$OUT/py_${name}_ko.log" \
+        || [ ! -s "$OUT/py_${name}_ko.jsonl" ]; then
+        echo "   ko 리플레이 실패: $name"
+        cat "$OUT/py_${name}_ko.log"
+        ko_ok=0
+    fi
+done
+if [ "$ko_ok" = 1 ]; then
+    echo "✅ 파이썬 ko — 멘트 $(wc -l < "$OUT/py_pregen_ko.txt")개, 퍼즈 규칙 통과, 리플레이 $(ls data/replays/*.jsonl.gz | wc -l)개 실행"
+else
+    echo "❌ 파이썬 ko 스모크 실패:"
+    cat "$OUT/fuzz_ko.log" 2> /dev/null | tail -20 || true
+    fail=1
+fi
 
 echo
 if [ "$fail" -ne 0 ]; then

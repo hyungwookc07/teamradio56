@@ -28,8 +28,6 @@ namespace TeamRadio56.Replay
             bool dumpPregen = false;
             bool dumpCacheNames = false;
             string checkCacheDir = null;
-            bool gec = false;
-            string synthText = null;
             bool coverage = false;
             bool dumpSentences = false;
             bool dumpSegNames = false;
@@ -48,7 +46,16 @@ namespace TeamRadio56.Replay
                 else if (args[i] == "--race-end-trace" && i + 1 < args.Length)
                     raceEndTracePath = args[++i];
                 else if (args[i] == "--lang" && i + 1 < args.Length)
-                    Messages.SetLanguage(args[++i]);   // 분석기/풀 생성 전에
+                {
+                    // 플러그인 무전은 영어 고정 — 옛 스크립트가 C# en을 파이썬 ko와 대조하지 않게 거부
+                    string lang = args[++i];
+                    if (lang != "en")
+                    {
+                        Console.Error.WriteLine("--lang " + lang + ": C# 엔진은 영어 무전만 — "
+                                                + "한국어 무전은 파이썬 단독 앱에만 있습니다");
+                        return 2;
+                    }
+                }
                 else if (args[i] == "--dump-pregen")
                     dumpPregen = true;
                 else if (args[i] == "--dump-cache-names")
@@ -65,18 +72,16 @@ namespace TeamRadio56.Replay
                     return VoiceSelfTest.DumpTable(FindOut(args));
                 else if (args[i] == "--pack-state-check" && i + 1 < args.Length)
                     return VoiceSelfTest.PackStateCheck(args[++i]);
+                else if (args[i] == "--settings-selftest")
+                    return SettingsSelfTest.Run();
                 else if (args[i] == "--release-check" && i + 1 < args.Length)
                     return ReleaseCheck.Run(args[++i],
                         ArgValue(args, "--plugin-source")
                             ?? "simhub/src/TeamRadio56.SimHub/TeamRadio56Plugin.cs",
                         ArgValue(args, "--manifest"),
                         ArgValue(args, "--audio-dir"));
-                else if (args[i] == "--gec")
-                    gec = true;
                 else if (args[i] == "--coverage")
                     coverage = true;
-                else if (args[i] == "--synth" && i + 1 < args.Length)
-                    synthText = args[++i];
                 else if (args[i] == "--dump-sentences")
                     dumpSentences = true;
                 else if (args[i] == "--dump-seg-names")
@@ -93,22 +98,6 @@ namespace TeamRadio56.Replay
                     checkTracks = args[++i];
                 else if (args[i] == "--min" && i + 1 < args.Length)
                     minPct = double.Parse(args[++i], CultureInfo.InvariantCulture);
-            }
-            if (gec)
-            {
-                // 파이썬 edge_tts.DRM.generate_sec_ms_gec와 대조용
-                Console.WriteLine(EdgeTtsClient.GenerateSecMsGec());
-                return 0;
-            }
-            if (synthText != null)
-            {
-                string dst = outPath ?? "synth_test.mp3";
-                bool ok = EdgeTtsClient.Synthesize(
-                    synthText, "en-GB-RyanNeural", "+10%", "-6Hz", dst);
-                Console.WriteLine(ok
-                    ? "OK " + new FileInfo(dst).Length + " bytes → " + dst
-                    : "FAIL: " + (EdgeTtsClient.LastError ?? "?"));
-                return ok ? 0 : 1;
             }
             if (dumpPregen)
                 return DumpPregen(outPath);
@@ -129,19 +118,19 @@ namespace TeamRadio56.Replay
             if (replayPath == null)
             {
                 Console.Error.WriteLine(
-                    "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl] [--lang en|ko]"
+                    "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl]"
                     + " [--race-end-trace trace.jsonl]"
                     + " | --dump-pregen [--out f] | --dump-cache-names [--out f]"
                     + " | --dump-sentences|--dump-seg-names [--tier N] [--tracks f] [--out f]"
                     + " | --replay <f> --coverage [--tier N] [--tracks f] [--min 퍼센트]"
                     + " | --check-cache <오디오캐시폴더> [--tier N] [--tracks f]"
                     + " | --assemble-check <폴더>"
-                    + " | --fuzz-eval <cases.jsonl> [--lang en|ko] [--tracks f] [--out f]"
+                    + " | --fuzz-eval <cases.jsonl> [--tracks f] [--out f]"
                     + " | --check-tracks <track_names_en.txt>"
-                    + " | --update-selftest | --voice-selftest"
+                    + " | --update-selftest | --voice-selftest | --settings-selftest"
                     + " | --dump-voice-table [--out f] | --pack-state-check <폴더>"
                     + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f [--audio-dir d]]"
-                    + " | --gec | --synth <텍스트>");
+                    + "  (무전은 영어 고정 — --lang은 en만 받는다)");
                 return 2;
             }
 
@@ -158,7 +147,7 @@ namespace TeamRadio56.Replay
             var strategy = new StrategyEngine();
             var reporter = new StatusReporter();
             var briefer = new SessionBriefer();   // StartSpotterSec 기본 45 = 파이썬 DEFAULTS
-            briefer.PackOnly = coverage;          // 커버리지는 kokoro 세션 기준 (목록 밖 트랙은 무전 체크)
+            briefer.PackOnly = coverage;          // 커버리지는 음성 팩 세션 기준 (목록 밖 트랙은 무전 체크)
 
             var lines = new List<string>();
             var accepted = new List<RadioEvent>();
@@ -351,21 +340,19 @@ namespace TeamRadio56.Replay
         }
 
         /// <summary>
-        /// 사전 캐시 전 항목의 캐시 파일명(kokoro/edge)을 덤프 —
-        /// 파이썬 dump_pregen.py --cache-names 출력과 diff해 파일명 규약
-        /// (md5 앞 20자 등)이 어긋나지 않았는지 검증한다.
-        /// 보이스/속도는 PluginSettings 기본값 고정.
+        /// 사전 캐시 전 항목의 kokoro 통문장 파일명을 "톤\t파일명\t텍스트"로 덤프 —
+        /// 파이썬 dump_pregen.py --cache-names 출력(kokoro 열)과 diff해 파일명 규약
+        /// (md5 앞 20자 등)이 어긋나지 않았는지 검증한다. 보이스는 bm_george 고정.
         /// </summary>
         private static int DumpCacheNames(string outPath)
         {
-            var cache = new VoiceCache("", "en-GB-RyanNeural", 10);
             var set = new SortedSet<string>(StringComparer.Ordinal);
             var pool = new TeamRadio56.Core.Logic.PhrasePool();
             foreach (KeyValuePair<string, string> item
                      in TeamRadio56.Core.Logic.PregenTexts.Enumerate(pool))
             {
-                var names = new List<string>(cache.CandidateFileNames(item.Value, item.Key));
-                set.Add(item.Key + "\t" + string.Join("\t", names) + "\t" + item.Value);
+                set.Add(item.Key + "\t" + VoiceCache.WholeFileName(item.Value, item.Key)
+                        + "\t" + item.Value);
             }
             TextWriter writer = outPath != null
                 ? new StreamWriter(outPath, false, new UTF8Encoding(false))
@@ -425,7 +412,7 @@ namespace TeamRadio56.Replay
             {
                 string[] f = rows[i].Split('\t');
                 // 런타임(AudioSink.TryAssemble)과 같은 경로 — 자산 확인 + 문장 조회 + 조립
-                var cache = new VoiceCache(Path.Combine(dir, f[0]), "en-GB-RyanNeural", 10);
+                var cache = new VoiceCache(Path.Combine(dir, f[0]));
                 string firstMissing;
                 string[] paths = cache.ResolveSegments(f[2], f[1], out firstMissing);
                 byte[] wav = paths != null ? RadioAssembler.Build(cache.CacheDir, f[1], paths) : null;
@@ -439,13 +426,13 @@ namespace TeamRadio56.Replay
         }
 
         /// <summary>
-        /// 실제 오디오 캐시 폴더에 대해 사전 캐시 전 항목을 Resolve하고, en이면
+        /// 실제 오디오 캐시 폴더에 대해 사전 캐시 전 항목을 Resolve하고,
         /// maxTier 이하 문장 세그먼트(_seg1.wav)와 조립 자산 4개도 요구한다 —
-        /// builtin 모드가 배포 캐시를 몇 개나 찾는지 확인하는 진단 도구.
+        /// 플러그인이 배포 캐시를 몇 개나 찾는지 확인하는 진단 도구.
         /// </summary>
         private static int CheckCache(string cacheDir, int maxTier, List<string> tracks)
         {
-            var cache = new VoiceCache(cacheDir, "en-GB-RyanNeural", 10);
+            var cache = new VoiceCache(cacheDir);
             if (!cache.Available)
             {
                 Console.Error.WriteLine("캐시 폴더가 없습니다: " + cacheDir);
@@ -461,7 +448,7 @@ namespace TeamRadio56.Replay
                 if (!seen.Add(item.Key + "\t" + item.Value))
                     continue;   // 파이썬 pregen과 같은 기준: (톤, 텍스트) 유일
                 total++;
-                // kokoro 통문장만 — edge mp3는 "팩에 있다"로 세지 않는다
+                // kokoro 통문장 (효과본 우선, 개발 캐시의 원본도 인정)
                 string path = cache.ResolveWholeFx(item.Value, item.Key)
                               ?? cache.ResolveWhole(item.Value, item.Key);
                 if (path == null)
@@ -483,7 +470,7 @@ namespace TeamRadio56.Replay
             }
             bool ok = hit == total;
 
-            // 문장 세그먼트 — ko는 열거가 비어 있어 자동으로 건너뜀
+            // 문장 세그먼트
             int segTotal = 0, segHit = 0;
             var segMisses = new List<string>();
             foreach (KeyValuePair<string, string> item

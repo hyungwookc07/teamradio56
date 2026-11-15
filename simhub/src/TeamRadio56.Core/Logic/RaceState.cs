@@ -30,7 +30,7 @@ namespace TeamRadio56.Core.Logic
     /// <summary>
     /// state.py SessionState 포팅 — 세션 상태 + 랩 히스토리.
     /// 분석기는 "지금 값"이 아니라 여기 축적된 추세를 본다.
-    /// (JSON 저장은 아직 파이썬 엔진 담당 — 이식 마지막 단계.)
+    /// (레이스 JSON 저장은 파이썬 단독 앱 전용 — 플러그인에는 없다.)
     /// </summary>
     public sealed class RaceState
     {

@@ -494,10 +494,12 @@ def _probe_clip_exists(cache_dir: str, voice: str, probe: Optional[str]) -> bool
 def resolve_voice_kind(engine: str, lang: str, pack_state: str,
                        runtime: bool = False, eleven_voice_id: str = ""
                        ) -> tuple[str, Optional[str]]:
-    """세션 목소리 (kind, note) — C# VoicePolicy.ResolveKind와 같은 규칙.
+    """세션 목소리 (kind, note) — 단독 앱 정책.
     ko는 kokoro가 없어 edge, edge는 edge, elevenlabs는 voice_id가 있을 때만,
     그 밖(kokoro)은 팩(또는 런타임)이 있으면 kokoro, 설치가 끊겼어도 클립이 남아 있으면
-    kokoro(note pack-partial), 없으면 세션 전체를 edge로."""
+    kokoro(note pack-partial), 없으면 세션 전체를 edge로.
+    C# 플러그인(VoicePolicy.PackNote/PackUsable)은 kokoro·en 행만 따르고, edge 자리는
+    무음이다 — note 문자열은 같아야 한다 (replay-check 결정표 대조)."""
     engine = str(engine or "").lower()
     ko = str(lang or "").lower().startswith("ko")
     if ko and engine != "elevenlabs":

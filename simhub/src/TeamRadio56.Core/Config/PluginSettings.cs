@@ -9,53 +9,32 @@ using TeamRadio56.Core.Diagnostics;
 namespace TeamRadio56.Core.Config
 {
     /// <summary>
-    /// 사용자 설정. 파이썬 config.yaml의 UI 노출 항목을 옮긴 것.
+    /// 사용자 설정 (SimHub 설정 화면에 보이는 항목).
     ///
     /// 모든 항목이 bool/int/double/string 이라 직렬화가 단순하다.
     /// (SettingsStore가 리플렉션으로 key=value 파일에 읽고 쓴다 —
     ///  외부 JSON 라이브러리 의존을 만들지 않기 위함.)
+    ///
+    /// 플러그인은 항상 C# 내장 엔진 + 영어 무전 + kokoro 음성 팩으로 돈다. 예전 버전이
+    /// 저장한 키(EngineMode, EngineExe/Args, VoiceLanguage, VoiceEngine, EdgeVoice,
+    /// SpeechRatePercent, RadioFx, RadioNoise, Volume, AllowVoiceFallback, Llm*, SpeechLog)는
+    /// 읽을 때 무시되고 다음 저장 때 파일에서 빠진다.
     /// </summary>
     public class PluginSettings
     {
-        // -- 엔진 --------------------------------------------------------
-        /// <summary>
-        /// builtin = C# 내장 (기본 — 설치 없음: 판단/콜·음성 팩·edge 합성·한국어).
-        /// python = 파이썬 엔진을 자식 프로세스로 실행 (LLM 멘트, 랩 후 섹터 피드백·트랙 기록,
-        /// 레이스 기록 저장까지 — 파이썬 또는 teamradio56.exe 필요).
-        /// 기본값은 설정 파일이 없을 때만 쓰인다 — 기존 설치는 저장된 모드를 그대로 쓴다.
-        /// </summary>
-        public string EngineMode { get; set; } = "builtin";
-        public string EngineExe { get; set; } = "";      // 비우면 기본 경로 사용
-        public string EngineArgs { get; set; } = "";     // 소스 실행 시 main.py 경로 등
-
         // -- 언어 --------------------------------------------------------
-        /// <summary>설정 화면 언어 (ko/en) — 플러그인 UI 전용.</summary>
+        /// <summary>설정 화면 언어 (ko/en) — 플러그인 UI 전용. 무전은 항상 영어.</summary>
         public string UiLanguage { get; set; } = "ko";
-        /// <summary>멘트(발화) 언어 (en/ko) — 엔진에 전달된다.</summary>
-        public string VoiceLanguage { get; set; } = "en";
 
         // -- 음성 --------------------------------------------------------
+        /// <summary>끄면 무전을 소리 없이 자막·최근 무전에만 낸다.</summary>
         public bool VoiceEnabled { get; set; } = true;
         /// <summary>
-        /// kokoro = 음성 팩만 (팩에 없는 멘트는 자막만), edge = edge 목소리만.
-        /// 엔진에도 전달된다 (tts.engine).
-        /// </summary>
-        public string VoiceEngine { get; set; } = "kokoro";
-        /// <summary>
-        /// 사전 생성 오디오 캐시 폴더 (builtin 모드용). 비우면 자동 탐색:
-        /// DLL 옆 → teamradio56-engine\ → 엔진 실행 파일/스크립트 옆.
+        /// 음성 팩(오디오 캐시) 폴더. 비우면 자동 탐색: DLL 옆 audio_cache →
+        /// teamradio56-engine\audio_cache. 어느 쪽도 없으면 DLL 옆 audio_cache
+        /// ([음성 팩 업데이트]가 거기에 설치한다).
         /// </summary>
         public string AudioCacheDir { get; set; } = "";
-        public double Volume { get; set; } = 0.9;
-        public string EdgeVoice { get; set; } = "en-GB-RyanNeural";
-        public int SpeechRatePercent { get; set; } = 10;      // edge-tts "+10%"
-        public bool RadioFx { get; set; } = true;             // 무전기 효과
-        public double RadioNoise { get; set; } = 0.004;       // 배경 지직임
-        /// <summary>
-        /// 켜면 세션 목소리로 낼 수 없는 멘트를 edge(영어는 그다음 Windows 음성)가
-        /// 대신 말한다 — 목소리가 섞인다. 기본 끔: 그런 멘트는 자막만 (tts.allow_fallback).
-        /// </summary>
-        public bool AllowVoiceFallback { get; set; } = false;
 
         // -- 수다스러움 --------------------------------------------------
         /// <summary>quiet | normal | chatty — 유형별 쿨다운에 배율로 적용.</summary>
@@ -71,14 +50,8 @@ namespace TeamRadio56.Core.Config
         public bool LapTimeEveryLap { get; set; } = false;
         public int StatusEveryLaps { get; set; } = 0;         // 0 = 끔
 
-        // -- LLM ---------------------------------------------------------
-        public bool LlmEnabled { get; set; } = true;
-        public string LlmApiKey { get; set; } = "";           // 비우면 환경변수 사용
-        public int LlmBudgetPerHour { get; set; } = 15;
-
         // -- 동작 --------------------------------------------------------
         public bool RequireRealtime { get; set; } = true;     // 모니터/메뉴에선 침묵
-        public bool SpeechLog { get; set; } = true;
 
         // -- 업데이트 ----------------------------------------------------
         /// <summary>시작 시 하루 한 번 새 버전 확인 (설치는 항상 사용자가 버튼으로).</summary>
@@ -100,26 +73,9 @@ namespace TeamRadio56.Core.Config
             }
         }
 
-        public static readonly string[] VoiceChoices =
-        {
-            "en-GB-RyanNeural",       // 영국 남성 — 레이스 엔지니어 톤 (기본)
-            "en-GB-ThomasNeural",     // 영국 남성, 차분함
-            "en-GB-SoniaNeural",      // 영국 여성
-            "en-US-GuyNeural",        // 미국 남성
-            "en-US-ChristopherNeural",// 미국 남성, 저음
-            "en-AU-WilliamNeural",    // 호주 남성
-            "ko-KR-InJoonNeural",     // 한국어 (멘트 풀은 영어 — 참고용)
-        };
-
         public static readonly string[] ChatterChoices = { "quiet", "normal", "chatty" };
 
-        public static readonly string[] VoiceEngineChoices = { "kokoro", "edge" };
-
-        public static readonly string[] VoiceLanguageChoices = { "en", "ko" };
-
         public static readonly string[] UiLanguageChoices = { "ko", "en" };
-
-        public static readonly string[] EngineChoices = { "builtin", "python" };
     }
 
     /// <summary>
@@ -127,6 +83,7 @@ namespace TeamRadio56.Core.Config
     ///
     /// 외부 직렬화 라이브러리에 의존하지 않으려고 key=value 형식을 쓴다.
     /// 리플렉션으로 프로퍼티를 순회하므로 항목을 추가해도 코드 수정이 없다.
+    /// 모르는 키(예전 버전의 설정)와 깨진 줄은 조용히 건너뛴다.
     /// </summary>
     public static class SettingsStore
     {
@@ -155,17 +112,23 @@ namespace TeamRadio56.Core.Config
 
         public static PluginSettings Load()
         {
+            return Load(Path);
+        }
+
+        /// <summary>지정한 파일에서 읽는다 (셀프테스트용 — 플러그인은 Load()).</summary>
+        public static PluginSettings Load(string path)
+        {
             var settings = new PluginSettings();
             try
             {
-                if (!File.Exists(Path))
+                if (!File.Exists(path))
                 {
-                    FileLog.Info("설정 파일 없음 — 기본값 사용 (" + Path + ")");
+                    FileLog.Info("설정 파일 없음 — 기본값 사용 (" + path + ")");
                     return settings;
                 }
 
                 var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (string line in File.ReadAllLines(Path, Encoding.UTF8))
+                foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
                 {
                     string trimmed = line.Trim();
                     if (trimmed.Length == 0 || trimmed.StartsWith("#"))
@@ -185,7 +148,7 @@ namespace TeamRadio56.Core.Config
                     if (parsed != null)
                         prop.SetValue(settings, parsed, null);
                 }
-                FileLog.Info("설정 로드: " + Path);
+                FileLog.Info("설정 로드: " + path);
             }
             catch (Exception ex)
             {
@@ -196,6 +159,12 @@ namespace TeamRadio56.Core.Config
 
         public static void Save(PluginSettings settings)
         {
+            Save(settings, Path);
+        }
+
+        /// <summary>지정한 파일에 쓴다 (셀프테스트용 — 플러그인은 Save(settings)).</summary>
+        public static void Save(PluginSettings settings, string path)
+        {
             try
             {
                 var sb = new StringBuilder();
@@ -205,7 +174,7 @@ namespace TeamRadio56.Core.Config
                     object value = prop.GetValue(settings, null);
                     sb.AppendLine(prop.Name + " = " + Format(value));
                 }
-                File.WriteAllText(Path, sb.ToString(), Encoding.UTF8);
+                File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
             }
             catch (Exception ex)
             {

@@ -8,16 +8,15 @@ using System.Text;
 namespace TeamRadio56.Core.Logic
 {
     /// <summary>
-    /// 파이썬 tts.py의 오디오 캐시 키 규약 포팅 — 사전 생성된 오디오 파일을
-    /// 텍스트+톤으로 찾는다. 합성은 하지 않는다 (합성/사전 생성은 파이썬 도구).
-    /// kokoro와 edge를 한 경로로 잇지 않는다 — 목소리 선택·순서는 VoiceRoute.
+    /// kokoro 음성 팩 파일 찾기 — 파이썬 tts.py의 오디오 캐시 키 규약 포팅.
+    /// 사전 생성된 오디오 파일을 텍스트+톤으로 찾는다. 합성은 하지 않는다
+    /// (합성/사전 생성은 파이썬 도구). 찾는 순서는 VoiceRoute.
     ///
     /// 키 규약 (tts.py _cache_path와 반드시 일치):
-    ///   edge   : md5("edge|{voice}|{rate}|{pitch}|{text}") .mp3
     ///   kokoro : md5("kokoro|{voice}|{tone}|{text}") .wav
-    ///   11labs : md5("11labs|{voice_id}|{tone}|{text}") .mp3
     /// 파일명은 md5 hex의 앞 20자만 쓴다 (hexdigest()[:20]).
-    /// 무전 효과 적용본은 같은 이름 + "_rfx{VERSION}.wav" (VERSION=3).
+    /// 무전 효과 적용본은 같은 이름 + "_rfx{VERSION}.wav" (VERSION=3) — 음성 팩은
+    /// 효과본과 세그먼트만 담으므로 효과는 항상 켠다.
     /// 문장 세그먼트는 kokoro 키(문장 단위) + SegSuffix — RadioAssembler가 조립.
     /// </summary>
     public sealed class VoiceCache
@@ -30,39 +29,22 @@ namespace TeamRadio56.Core.Logic
         /// </summary>
         public const string SegSuffix = "_seg1.wav";
 
-        // EdgeTTSEngine.TONE_DELIVERY와 일치 (기본 속도에 더할 %, 피치)
-        private static readonly Dictionary<string, KeyValuePair<int, string>> ToneDelivery =
-            new Dictionary<string, KeyValuePair<int, string>>
-            {
-                { "casual", new KeyValuePair<int, string>(0, "-6Hz") },
-                { "urgent", new KeyValuePair<int, string>(14, "+4Hz") },
-            };
+        public const string DefaultVoice = "bm_george";
 
         private readonly string _cacheDir;
-        private readonly string _edgeVoice;
-        private readonly int _edgeBaseRate;
         private readonly string _kokoroVoice;
-        private readonly bool _radioFx;
-        private readonly bool _edgeOnly;
         private volatile int _assetsState;   // 0 미확인, 1 있음, 2 없음
         private readonly Func<string, bool> _exists;
         private readonly bool _virtual;
 
-        public VoiceCache(string cacheDir, string edgeVoice, int edgeBaseRatePercent,
-                          string kokoroVoice = "bm_george", bool radioFx = true,
-                          string enginePref = "kokoro", Func<string, bool> fileExists = null)
+        public VoiceCache(string cacheDir, string kokoroVoice = DefaultVoice,
+                          Func<string, bool> fileExists = null)
         {
             // fileExists: 가상 팩 대조 (커버리지 퍼즈) — 주면 폴더 없이도 Available
             _exists = fileExists ?? File.Exists;
             _virtual = fileExists != null;
             _cacheDir = cacheDir;
-            _edgeVoice = edgeVoice;
-            _edgeBaseRate = edgeBaseRatePercent;
-            _kokoroVoice = kokoroVoice;
-            _radioFx = radioFx;
-            // 파이썬 build_engine과 같은 규칙: edge를 고르면 kokoro 캐시를 안 본다
-            _edgeOnly = string.Equals(enginePref, "edge",
-                                      StringComparison.OrdinalIgnoreCase);
+            _kokoroVoice = kokoroVoice ?? DefaultVoice;
         }
 
         public bool Available
@@ -75,50 +57,39 @@ namespace TeamRadio56.Core.Logic
             get { return _cacheDir; }
         }
 
-        /// <summary>kokoro 통문장 (_rfx3 우선, 원본). edge 전용이면 항상 null.</summary>
+        /// <summary>kokoro 통문장 (_rfx3 우선, 원본).</summary>
         public string ResolveWhole(string text, string tone)
         {
-            if (_edgeOnly || !Available || string.IsNullOrEmpty(text))
+            if (!Available || string.IsNullOrEmpty(text))
                 return null;
-            return ExistingVariant(KokoroBase(text, tone ?? "casual"));
+            string basePath = KokoroBase(text, tone ?? "casual");
+            string rfx = RfxPath(basePath);
+            if (_exists(rfx))
+                return rfx;
+            return _exists(basePath) ? basePath : null;
         }
 
         /// <summary>
-        /// 재생 1단계 통문장 — 무전 효과가 켜져 있으면 _rfx3만 본다. 효과 전 원본은
-        /// 세그먼트 조립 뒤에 ResolveWhole로 (파이썬 KokoroPackEngine → RadioFXEngine 순서).
-        /// 효과가 꺼져 있으면 ResolveWhole과 같다.
+        /// 재생 1단계 통문장 — _rfx3만 본다. 효과 전 원본은 세그먼트 조립 뒤에
+        /// ResolveWhole로 (파이썬 KokoroPackEngine → RadioFXEngine 순서).
         /// </summary>
         public string ResolveWholeFx(string text, string tone)
         {
-            if (!_radioFx)
-                return ResolveWhole(text, tone);
-            if (_edgeOnly || !Available || string.IsNullOrEmpty(text))
+            if (!Available || string.IsNullOrEmpty(text))
                 return null;
             string rfx = RfxPath(KokoroBase(text, tone ?? "casual"));
             return _exists(rfx) ? rfx : null;
         }
 
         /// <summary>
-        /// 이전 미스 때 저장된 edge mp3 (_rfx3 우선). 세그먼트 조립보다 뒤에 봐야
-        /// 한다 — 옛 edge 파일이 새로 배포된 세그먼트를 가리면 안 된다.
-        /// </summary>
-        public string ResolveEdgeCached(string text, string tone)
-        {
-            if (!Available || string.IsNullOrEmpty(text))
-                return null;
-            return ExistingVariant(EdgeBase(text, tone ?? "casual"));
-        }
-
-        /// <summary>
         /// 문장 세그먼트 경로 — 모든 문장이 있을 때만 (부분 히트는 미스, 한 콜에
         /// 목소리를 섞지 않는다). 미스면 처음 없는 문장을 firstMissing에.
-        /// edge 전용/무전 효과 꺼짐/조립 자산 없음이면 조용히 null (firstMissing도 null).
+        /// 조립 자산이 없으면 조용히 null (firstMissing도 null).
         /// </summary>
         public string[] ResolveSegments(string text, string tone, out string firstMissing)
         {
             firstMissing = null;
-            if (_edgeOnly || !_radioFx || !Available || string.IsNullOrEmpty(text)
-                || !SegmentAssetsPresent)
+            if (!Available || string.IsNullOrEmpty(text) || !SegmentAssetsPresent)
                 return null;
             List<string> paths = RadioAssembler.SegmentPaths(
                 _cacheDir, _kokoroVoice, tone ?? "casual", text, out firstMissing, _exists);
@@ -152,94 +123,36 @@ namespace TeamRadio56.Core.Logic
             }
         }
 
-        private string ExistingVariant(string basePath)
-        {
-            if (_radioFx)
-            {
-                string rfx = RfxPath(basePath);
-                if (_exists(rfx))
-                    return rfx;
-            }
-            return _exists(basePath) ? basePath : null;
-        }
-
         private static string RfxPath(string basePath)
         {
             return Path.ChangeExtension(basePath, null) + "_rfx" + RadioFxVersion + ".wav";
         }
 
-        /// <summary>
-        /// 런타임 edge 합성에 필요한 정보 — 결과를 저장할 캐시 경로(mp3)와
-        /// 톤이 반영된 전달 파라미터. 파이썬 EdgeTTSEngine과 같은 키라
-        /// 여기서 합성해 둔 파일은 파이썬 엔진에서도 캐시 히트한다.
-        /// </summary>
-        public bool EdgeSynthTarget(string text, string tone,
-                                    out string path, out string rate, out string pitch)
-        {
-            path = rate = pitch = null;
-            if (!Available || string.IsNullOrEmpty(text))
-                return false;
-            KeyValuePair<int, string> delivery;
-            if (!ToneDelivery.TryGetValue(tone ?? "casual", out delivery))
-                delivery = ToneDelivery["casual"];
-            rate = (_edgeBaseRate + delivery.Key)
-                .ToString("+0;-0", CultureInfo.InvariantCulture) + "%";
-            pitch = delivery.Value;
-            path = CachePath(
-                "edge|" + _edgeVoice + "|" + rate + "|" + pitch + "|" + text, "mp3");
-            return true;
-        }
-
-        public string EdgeVoice
-        {
-            get { return _edgeVoice; }
-        }
-
-        /// <summary>
-        /// (톤, 텍스트)가 찾게 될 캐시 파일명(원본 기준, 폴더 제외) —
-        /// 파이썬 _cache_path와의 파일명 규약 대조(replay-check)용.
-        /// </summary>
-        public IEnumerable<string> CandidateFileNames(string text, string tone)
-        {
-            foreach (string basePath in CandidateBases(text, tone ?? "casual"))
-                yield return Path.GetFileName(basePath);
-        }
-
-        private IEnumerable<string> CandidateBases(string text, string tone)
-        {
-            // 배포 캐시(kokoro) 우선 — ChainEngine [kokoro, edge]와 같은 순서
-            if (!_edgeOnly)
-                yield return KokoroBase(text, tone);
-            yield return EdgeBase(text, tone);
-        }
-
         private string KokoroBase(string text, string tone)
         {
-            return CachePath("kokoro|" + _kokoroVoice + "|" + tone + "|" + text, "wav");
+            return Path.Combine(_cacheDir ?? "", WholeFileName(text, tone, _kokoroVoice));
         }
 
-        private string EdgeBase(string text, string tone)
+        /// <summary>
+        /// 통문장 원본 파일명 (폴더 제외, 효과본은 확장자 앞에 "_rfx3") — 파이썬
+        /// _cache_path와의 파일명 규약 대조(replay-check --dump-cache-names)용.
+        /// </summary>
+        public static string WholeFileName(string text, string tone, string voice = DefaultVoice)
         {
-            KeyValuePair<int, string> delivery;
-            if (!ToneDelivery.TryGetValue(tone, out delivery))
-                delivery = ToneDelivery["casual"];
-            string rate = (_edgeBaseRate + delivery.Key)
-                .ToString("+0;-0", CultureInfo.InvariantCulture) + "%";
-            return CachePath(
-                "edge|" + _edgeVoice + "|" + rate + "|" + delivery.Value + "|" + text,
-                "mp3");
+            return Md5Prefix("kokoro|" + voice + "|" + (tone ?? "casual") + "|" + text) + ".wav";
+        }
+
+        /// <summary>통문장 효과본 파일명 — 음성 팩이 담는 그 이름.</summary>
+        public static string WholeFxFileName(string text, string tone, string voice = DefaultVoice)
+        {
+            return RfxPath(WholeFileName(text, tone, voice));
         }
 
         /// <summary>문장 세그먼트 파일명 — 통문장과 같은 kokoro 키에 접미사만 다르다.</summary>
         public static string SegmentFileName(string sentence, string tone,
-                                             string voice = "bm_george")
+                                             string voice = DefaultVoice)
         {
             return Md5Prefix("kokoro|" + voice + "|" + tone + "|" + sentence) + SegSuffix;
-        }
-
-        private string CachePath(string key, string ext)
-        {
-            return Path.Combine(_cacheDir, Md5Prefix(key) + "." + ext);
         }
 
         private static string Md5Prefix(string key)

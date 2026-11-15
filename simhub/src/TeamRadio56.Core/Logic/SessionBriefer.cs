@@ -16,7 +16,7 @@ namespace TeamRadio56.Core.Logic
         /// <summary>스타트 스포터 모드 길이(초) — 0이면 브리핑에서 예고 생략.</summary>
         public double StartSpotterSec = 45;
 
-        /// <summary>세션 목소리가 음성 팩만 말함 (kokoro, 섞임 비허용) — en은 목록에 없는 트랙 이름을 뺀다.</summary>
+        /// <summary>음성 팩으로 말하는 세션 (음성 출력 켜짐) — 목록에 없는 트랙 이름을 뺀다.</summary>
         public bool PackOnly;
 
         private bool _briefed;
@@ -127,17 +127,17 @@ namespace TeamRadio56.Core.Logic
             }, packOnly);
         }
 
-        /// <summary>음성 팩이 말할 수 없는 트랙 이름 — 목록은 en 전용.</summary>
+        /// <summary>음성 팩이 말할 수 없는 트랙 이름 (voice_lines/track_names_en.txt 밖).</summary>
         private static bool UnspeakableTrack(string track)
         {
-            return !Messages.IsKo && !SpeechDomain.KnownTrackEn(track);
+            return !SpeechDomain.KnownTrackEn(track);
         }
 
         /// <summary>
         /// 세션 종류/길이/그리드/날씨/연료 브리핑 — 순수 조립 (briefing.briefing_text 미러).
         /// 도메인 밖 숫자(100랩 넘는 세션, 그리드/순위/노면/연료 범위 밖)는 그 문장만 뺀다.
-        /// packOnly(세션 목소리가 음성 팩만 말하는 kokoro)면 en은 트랙 이름 목록에 없는
-        /// 트랙을 '{track}.' 대신 무전 체크로 연다 — edge는 어떤 이름이든 말하므로 그대로.
+        /// packOnly(음성 팩으로 말하는 세션)면 트랙 이름 목록에 없는 트랙을 '{track}.'
+        /// 대신 무전 체크로 연다 — 자막 전용(음성 출력 끔)이면 이름을 그대로 쓴다.
         /// </summary>
         public static string ComposeText(BriefingInputs b, bool packOnly = false)
         {

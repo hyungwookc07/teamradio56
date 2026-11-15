@@ -7,36 +7,21 @@ using System.Text.RegularExpressions;
 namespace TeamRadio56.Core.Logic
 {
     /// <summary>
-    /// messages.py 포팅 — 발화 문장 언어 테이블(en/ko)과 슬롯 헬퍼.
+    /// messages.py 포팅 — 발화 문장 테이블(en)과 슬롯 헬퍼.
     /// 멘트 풀(PhraseLines) 밖에서 분석기/브리핑/렌더러가 직접 조립하는
-    /// 모든 문장이 여기를 거친다.
+    /// 모든 문장이 여기를 거친다. 플러그인 무전은 영어 고정 — 한국어 테이블은
+    /// 파이썬 단독 앱(messages.py)에만 있다.
     ///
     /// 규칙 (messages.py와 동일):
-    ///   - 키가 ko에 없으면 en으로 폴백.
     ///   - 템플릿은 파이썬 포맷 자리표를 그대로 쓴다 ({mm:.0f} 등) —
     ///     테이블을 messages.py와 눈으로 diff할 수 있게 하기 위함.
-    ///   - 리플레이 회귀가 en/ko 양쪽을 파이썬과 대조하므로 문장을 바꾸면
-    ///     messages.py와 함께 바꿔야 한다.
+    ///   - 리플레이 회귀가 en 문장을 파이썬과 대조하므로 문장을 바꾸면
+    ///     messages.py와 함께 바꿔야 한다 (그리고 음성 팩을 다시 렌더한다).
+    ///   - 표시용 헬퍼(WheelDisplay 등)는 en에선 그대로 돌려주지만, 분석기 호출부가
+    ///     messages.py와 1:1로 보이게 남겨 둔다.
     /// </summary>
     public static class Messages
     {
-        public static string Lang = "en";
-
-        public static bool IsKo
-        {
-            get { return Lang == "ko"; }
-        }
-
-        public static void SetLanguage(string lang)
-        {
-            Lang = IsKoLanguage(lang) ? "ko" : "en";
-        }
-
-        /// <summary>멘트 언어 설정값이 한국어인가 ("ko", "ko-KR" …) — 파이썬 lang.startswith("ko").</summary>
-        public static bool IsKoLanguage(string lang)
-        {
-            return lang != null && lang.ToLowerInvariant().StartsWith("ko", StringComparison.Ordinal);
-        }
 
         public static string Get(string key)
         {
@@ -51,9 +36,6 @@ namespace TeamRadio56.Core.Logic
 
         private static string Template(string key)
         {
-            string tpl;
-            if (Lang == "ko" && Ko.TryGetValue(key, out tpl))
-                return tpl;
             return En[key];
         }
 
@@ -183,17 +165,6 @@ namespace TeamRadio56.Core.Logic
 
         private static readonly string[] WheelsEn =
             { "front left", "front right", "rear left", "rear right" };
-        private static readonly string[] WheelsKo =
-            { "왼쪽 앞", "오른쪽 앞", "왼쪽 뒤", "오른쪽 뒤" };
-
-        private static readonly Dictionary<string, string> ZonesKo =
-            new Dictionary<string, string>
-            {
-                { "front", "프론트" }, { "front right", "프론트 우측" },
-                { "right", "우측" }, { "rear right", "리어 우측" },
-                { "rear", "리어" }, { "rear left", "리어 좌측" },
-                { "left", "좌측" }, { "front left", "프론트 좌측" },
-            };
 
         // 순서 중요 — 파이썬 dict 순회 순서 그대로 (부분 문자열 매칭)
         private static readonly KeyValuePair<string, string>[] ClassEn =
@@ -206,134 +177,80 @@ namespace TeamRadio56.Core.Logic
             new KeyValuePair<string, string>("gt3", "GT3"),
             new KeyValuePair<string, string>("gte", "GTE"),
         };
-        private static readonly KeyValuePair<string, string>[] ClassKo =
-        {
-            new KeyValuePair<string, string>("hypercar", "하이퍼카"),
-            new KeyValuePair<string, string>("lmh", "하이퍼카"),
-            new KeyValuePair<string, string>("lmdh", "하이퍼카"),
-            new KeyValuePair<string, string>("lmp2", "엘엠피 투"),
-            new KeyValuePair<string, string>("lmgt3", "GT3"),
-            new KeyValuePair<string, string>("gt3", "GT3"),
-            new KeyValuePair<string, string>("gte", "GTE"),
-        };
-
-        private static readonly Dictionary<string, string> PenaltyKindKo =
-            new Dictionary<string, string>
-            {
-                { "drive-through", "드라이브 스루" }, { "stop-and-go", "스탑고" },
-                { "time penalty", "타임 페널티" }, { "penalty", "페널티" },
-            };
-        private static readonly Dictionary<string, string> PenaltyReasonKo =
-            new Dictionary<string, string>
-            {
-                { "pit lane speeding", "피트레인 과속" },
-                { "track limits", "트랙 리미트" },
-                { "yellow flag infringement", "옐로 무시" },
-                { "start infringement", "스타트 반칙" },
-                { "contact", "접촉" }, { "blocking", "블로킹" },
-                { "unsafe rejoin", "위험 복귀" },
-            };
 
         public static string WheelName(int i)
         {
-            return (IsKo ? WheelsKo : WheelsEn)[i];
+            return WheelsEn[i];
         }
 
-        /// <summary>내부(영문) 휠 이름 → 표시 이름. 데이터엔 항상 영문 저장.</summary>
+        /// <summary>내부(영문) 휠 이름 → 표시 이름 (en은 그대로). 데이터엔 항상 영문 저장.</summary>
         public static string WheelDisplay(string nameEn)
         {
-            if (!IsKo)
-                return nameEn;
-            int idx = Array.IndexOf(WheelsEn, nameEn);
-            return idx >= 0 ? WheelsKo[idx] : nameEn;
+            return nameEn;
         }
 
         public static string ZoneDisplay(string zone)
         {
-            string ko;
-            if (IsKo && ZonesKo.TryGetValue(zone, out ko))
-                return ko;
             return zone;
         }
 
         public static string ClassDisplay(string cls)
         {
             string c = (cls ?? "").ToLowerInvariant();
-            KeyValuePair<string, string>[] table = IsKo ? ClassKo : ClassEn;
-            foreach (KeyValuePair<string, string> entry in table)
+            foreach (KeyValuePair<string, string> entry in ClassEn)
             {
                 if (c.Contains(entry.Key))
                     return entry.Value;
             }
-            return IsKo ? "상위 클래스" : "faster car";
+            return "faster car";
         }
 
-        /// <summary>traffic_approach 풀의 {gap} 슬롯 — en "N second(s)", ko 숫자.</summary>
+        /// <summary>traffic_approach 풀의 {gap} 슬롯 — "N second(s)".</summary>
         public static string GapSlot(int gapSec)
         {
-            if (IsKo)
-                return gapSec.ToString(CultureInfo.InvariantCulture);
             return gapSec + " second" + (gapSec > 1 ? "s" : "");
         }
 
         /// <summary>side_clear 풀의 {side} 슬롯.</summary>
         public static string SideSlot(string side)
         {
-            if (!IsKo)
-                return side;
-            if (side == "left")
-                return "왼쪽";
-            if (side == "right")
-                return "오른쪽";
             return side;
         }
 
         public static string PenaltyKindDisplay(string kind)
         {
-            string ko;
-            if (IsKo && kind != null && PenaltyKindKo.TryGetValue(kind, out ko))
-                return ko;
             return kind;
         }
 
         public static string PenaltyReasonDisplay(string reason)
         {
-            string ko;
-            if (IsKo && reason != null && PenaltyReasonKo.TryGetValue(reason, out ko))
-                return ko;
             return reason;
         }
 
-        /// <summary>messages.py laps_text — "1 lap"/"3 laps"/"3랩".</summary>
+        /// <summary>messages.py laps_text — "1 lap"/"3 laps".</summary>
         public static string LapsText(double n)
         {
             int i = (int)Math.Round(n, MidpointRounding.ToEven);
-            if (IsKo)
-                return i.ToString(CultureInfo.InvariantCulture) + "랩";
             return i + " lap" + (i != 1 ? "s" : "");
         }
 
-        /// <summary>연료 풀의 {fuel_laps} 슬롯 — en 단위 포함, ko 숫자만.</summary>
+        /// <summary>연료 풀의 {fuel_laps} 슬롯 — 단위 포함.</summary>
         public static string FuelSlot(int n)
         {
-            if (IsKo)
-                return n.ToString(CultureInfo.InvariantCulture);
             return LapsText(n);
         }
 
-        /// <summary>messages.py seconds_text — "2.4 seconds"/"1 second"/"2.4초".</summary>
+        /// <summary>messages.py seconds_text — "2.4 seconds"/"1 second".</summary>
         public static string SecondsText(double sec)
         {
             string v = sec < 10 ? PyFixed(sec, 1) : PyFixed(sec, 0);
             if (v.EndsWith(".0"))
                 v = v.Substring(0, v.Length - 2);
-            if (IsKo)
-                return v + "초";
             return v == "1" ? "1 second" : v + " seconds";
         }
 
         /// <summary>
-        /// messages.py fmt_laptime — "2 oh 1.8" / "2분 1.8초". 0.1초로 먼저 반올림한 뒤
+        /// messages.py fmt_laptime — "2 oh 1.8". 0.1초로 먼저 반올림한 뒤
         /// 분/초로 나눈다 (59.96초가 "1 60.0"이 되지 않게).
         /// </summary>
         public static string FmtLaptime(double sec)
@@ -344,8 +261,6 @@ namespace TeamRadio56.Core.Logic
             string sTxt = (r / 10).ToString(CultureInfo.InvariantCulture) + "."
                           + (r % 10).ToString(CultureInfo.InvariantCulture);
             string mTxt = m.ToString(CultureInfo.InvariantCulture);
-            if (IsKo)
-                return m >= 1 ? mTxt + "분 " + sTxt + "초" : sTxt + "초";
             if (m >= 1)
             {
                 // "2 01.8"은 TTS가 201.8로 읽는다 — 엔지니어식 "two oh one point eight"
@@ -382,21 +297,19 @@ namespace TeamRadio56.Core.Logic
             return result;
         }
 
-        /// <summary>messages.py and_list — en "a and b"/"a, b and c", ko 기존 "a/b".</summary>
+        /// <summary>messages.py and_list — "a and b"/"a, b and c".</summary>
         public static string AndList(IList<string> items)
         {
-            if (IsKo || items.Count < 2)
+            if (items.Count < 2)
                 return string.Join("/", items);
             var head = new List<string>(items);
             head.RemoveAt(head.Count - 1);
             return string.Join(", ", head) + " and " + items[items.Count - 1];
         }
 
-        /// <summary>messages.py join_problems — en 문제당 한 문장(첫 글자 대문자), ko ", ".</summary>
+        /// <summary>messages.py join_problems — 문제당 한 문장(첫 글자 대문자).</summary>
         public static string JoinProblems(IList<string> problems)
         {
-            if (IsKo)
-                return string.Join(", ", problems);
             var parts = new List<string>(problems.Count);
             foreach (string p in problems)
             {
@@ -602,116 +515,6 @@ namespace TeamRadio56.Core.Logic
             { "coach_quicker_best", "Sector {n}, {d:.1f} quicker, session best. Keep that feel." },
             { "coach_quicker", "Sector {n}, {d:.1f} quicker. Keep that feel." },
             { "coach_losing", "Losing {d:.1f} in sector {n}. Get it back next lap." },
-        };
-
-        private static readonly Dictionary<string, string> Ko =
-            new Dictionary<string, string>
-        {
-            { "stopped_hazard", "전방 정지 차량. 라인 미리 바꿔." },
-            { "multi_alongside_left", "왼쪽에 {cls} 나란히" },
-            { "multi_alongside_right", "오른쪽에 {cls} 나란히" },
-            { "multi_alongside", "옆에 {cls} 나란히" },
-            { "multi_behind", "뒤에 {names} 붙는다" },
-            { "multi_closing", "{names} 접근 중" },
-            { "multi_ahead_clear", " 앞은 여유." },
-            { "multi_behind_many", "뒤에 여러 대 붙는다" },
-            { "multi_closing_many", "여러 대 접근 중" },
-            { "multi_one", "{name} 하나" },
-            { "multi_two", "{name} 두 대 줄지어" },
-            { "multi_n", "{name} {n}대" },
-            { "sector_yellow", "섹터{n} 옐로. 추월 금지, 감속 준비." },
-            { "pen_clear", "페널티 클리어. 다시 니 레이스." },
-            { "final_lap", "마지막 랩. 이대로 가져오자." },
-            { "penalty_head", "페널티 — {kind}" },
-            { "penalty_advice_drive-through", "다음 랩 피트 통과. 리미터 주의." },
-            { "penalty_advice_stop-and-go", "박스 정지 시간 준수. 침착하게." },
-            { "penalty_advice_time penalty", "결과에 가산. 페이스로 만회." },
-            { "penalty_advice_default", "처리 타이밍은 내가 불러줄게." },
-            { "wheel_gone", "{wheel} 휠 나갔어! 스핀 조심. 천천히 피트로." },
-            { "part_detached_rear", "리어 쪽 보디 떨어졌어. 리어 윙일 수 있다. "
-                                    + "다음 코너 조심. 리어 흐르면 바로 박스." },
-            { "part_detached", "보디 파츠 탈락. 에어로 손실 가능성. 데이터 확인 중." },
-            { "wing_down", "프론트 에어로 {mm:.0f}밀리 하락. 스플리터 손상. "
-                           + "고속 코너 조심. 수리는 페이스 보고 판단." },
-            { "align_severe", "얼라인 심각. 직선에서도 조향 잡아야 하는 수준. 박스에서 수리하자." },
-            { "align_mild", "직선에서 핸들 쏠림. 충격으로 얼라인 틀어진 듯. "
-                            + "타이어 편마모 주의. 수리는 페이스 보고 판단." },
-            { "rear_instab", "리어 불안정 반복. 데미지 영향 같아. 무리 금지, 박스 권장." },
-            { "slow_puncture", "{wheel} 공기압 하락 중. 슬로우 펑처. 다음 피트에서 교체." },
-            { "engine_warn", "{what} 상승 중. 슬립스트림에서 나와서 공기 먹이자." },
-            { "engine_what_water", "수온" },
-            { "engine_what_oil", "유온" },
-            { "engine_what_engine", "엔진 온도" },
-            { "brake_warn", "브레이크 평균 {t:.0f}도. 브레이킹 한 템포 일찍, 식히자." },
-            { "repair_cost", "데미지로 랩당 {delta:.1f}초 손실. 다음 피트에 수리. 그게 이득." },
-            { "repair_cost_big", "데미지로 손실이 커. 다음 피트에 수리. 그게 이득." },
-            { "dmg_no_effect", "아까 접촉, 페이스 영향 없음. 신경 꺼도 돼." },
-            { "report_problems", "체크 결과. {problems}. {advice}" },
-            { "report_advice_box", "박스 준비." },
-            { "report_advice_keep", "페이스 보면서 가자. 수리 판단은 내가." },
-            { "report_marks", "체크 완료. 가벼운 자국뿐. 휠, 타이어, 공기압 정상. 그대로 가." },
-            { "report_clean", "체크 완료. 데미지 없음, 차 깨끗해. 그대로 가." },
-            { "item_wheel_damage", "{names} 휠 손상" },
-            { "item_puncture", "{names} 펑크" },
-            { "item_losing_pressure", "{name} 공기압 빠지는 중" },
-            { "item_heavy_body", "{zones} 보디 손상 심각" },
-            { "item_heavy_body_all", "보디 전체 손상 심각" },
-            { "puncture_now", "{wheel} 펑크! 바로 박스. 무리하지 마." },
-            { "fuel_save", "노피트 목표 랩당 {target:.1f}리터. "
-                           + "{delta:.1f}리터씩 세이브 — 리프트 앤 코스트, 숏시프트." },
-            { "last_lap_report", "이번 랩 {t}." },
-            { "best_lap_suffix", " 베스트." },
-            { "status_pos", "P{p}." },
-            { "status_gap_ahead", "앞 {g:.1f}초" },
-            { "status_gap_behind", "뒤 {g:.1f}초" },
-            { "status_gaps", "{gaps}." },
-            { "status_gap_join", ", " },
-            { "status_fuel", "연료 {n}." },
-            { "status_tyres", "타이어 {n}." },
-            { "status_tyres_good", "타이어 아직 좋아." },
-            { "kind_race", "레이스" }, { "kind_warmup", "웜업" },
-            { "kind_quali", "퀄리" }, { "kind_practice", "연습" },
-            { "brief_track", "{track}, {kind} 세션이야." },
-            { "brief_radio", "무전 체크. {kind} 세션이야." },
-            { "brief_hours", "{h}시간" },
-            { "brief_hours_plural", "{h}시간" },
-            { "brief_hours_half", "{h}시간 반" },
-            { "brief_minute", "1분" },
-            { "brief_minutes", "{m}분" },
-            { "brief_len_remaining", "남은 시간 {length}." },
-            { "brief_len_long", "{length}짜리." },
-            { "brief_lap", "1랩짜리." },
-            { "brief_laps", "{n}랩짜리." },
-            { "brief_grid", "우리 클래스 {n}대 중 P{cp} 스타트." },
-            { "brief_grid_mid", "우리 클래스 {n}대 중 P{cp}." },
-            { "brief_rain", "비 오고 있어, 노면 조심." },
-            { "brief_temp", "노면 {t:.0f}도." },
-            { "brief_fuel", "연료 {f:.0f}리터." },
-            { "brief_formation", "포메이션 랩 — 자리 지키고, 그린은 내가 부른다." },
-            { "brief_start_spotter", "스타트 구간은 좌우 콜 위주로 간다." },
-            { "brief_carry_on", "이대로 간다." },
-            { "brief_calm", "첫 랩 침착하게." },
-            { "brief_out", "준비되면 나가자." },
-            { "milestone_hours", "남은 시간 {h}시간{s}. 계획대로." },
-            { "milestone_minutes", "{m}분 남았어. 연료, 타이어 재계산 중." },
-            { "pit_window", "피트 윈도우 오픈. 늦어도 {n} 안에 박스." },
-            { "stint_brief", "새 스틴트야. 첫 랩은 타이어 아끼고, 리듬부터 찾자." },
-            { "rival_pit_base", "클래스 {rel} P{p} 차, 방금 피트 들어갔어." },
-            { "rival_rel_ahead", "앞" }, { "rival_rel_behind", "뒤" },
-            { "rival_pit_undercut", " 언더컷 노리는 거야. 우리 타이밍도 앞당길지 판단할게." },
-            { "rival_pit_gap", " 나오면 갭 다시 계산해서 불러줄게." },
-            { "rival_catch", "클래스 앞차, 랩당 {diff:.1f}초 느림. {laps} 안에 잡는다." },
-            { "rival_defend", "클래스 뒤차, 랩당 {diff:.1f}초 빠름. {laps} 뒤 도착. 준비." },
-            { "tyre_hot", "{wheel} 타이어 {delta:.0f}도 높음. 그쪽 코너 아껴." },
-            { "tyre_wear", "{wheel} 타이어 수명 {laps}. 피트 계획 반영." },
-            { "pace_lost", "방금 랩 {delta:.1f}초 손실. 원인 체크." },
-            { "pace_quick", "{delta:.1f}초 빠름. 리듬 유지." },
-            { "gap_behind_closing", "뒤차 랩당 {rate:.1f}초씩 접근. 갭 {gap}. 실수만 줄이자." },
-            { "gap_behind_opening", "뒤차 갭 {gap}. 벌어지는 중, 좋아." },
-            { "gap_behind_holding", "뒤차 {gap}. 유지 중. 리듬 좋아." },
-            { "gap_ahead_closing", "앞차 갭 {gap}. 랩당 {rate:.1f}초씩 접근 중. 갈 수 있어." },
-            { "gap_ahead_opening", "앞차 {gap}. 벌어지는 중. 무리 금지." },
-            { "gap_ahead_holding", "앞차 {gap}. 갭 유지. 리듬 그대로." },
         };
     }
 }

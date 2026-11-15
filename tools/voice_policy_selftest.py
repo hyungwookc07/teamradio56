@@ -9,7 +9,8 @@ kokoro_onnx.Kokoro를 sys.modules에 끼우고, 임시 폴더(가짜 models/ 포
 사용법:
   python tools/voice_policy_selftest.py                  # 셀프테스트
   python tools/voice_policy_selftest.py --dump-table --out f
-      세션 목소리 결정표 (engine lang pack kind note) — C# --dump-voice-table과 diff
+      세션 목소리 결정표 (engine lang pack kind note) — replay-check가 kokoro·en 4행을
+      C# --dump-voice-table(팩 상태 / kokoro|none / note)과 대조 (edge 자리 = C# 무음)
   python tools/voice_policy_selftest.py --pack-fixtures DIR
       팩 상태 픽스처 폴더들 + expected.tsv — C# --pack-state-check DIR로 대조
 

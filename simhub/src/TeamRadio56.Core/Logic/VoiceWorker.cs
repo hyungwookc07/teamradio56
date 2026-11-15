@@ -5,14 +5,14 @@ using TeamRadio56.Core.Diagnostics;
 
 namespace TeamRadio56.Core.Logic
 {
-    /// <summary>발화 출력 계층 — RadioVoice (세션 목소리 하나로 재생, 없으면 무음).</summary>
+    /// <summary>발화 출력 계층 — RadioVoice (kokoro 음성 팩으로 재생, 없으면 무음).</summary>
     public interface IVoiceSink
     {
         /// <summary>완성된 멘트를 소리로 낸다. 블로킹해도 된다 (전용 스레드).</summary>
         SpeakResult Speak(string text, string tone, bool urgent);
     }
 
-    /// <summary>최근 무전 한 줄 — Dropped면 목소리를 섞지 않으려고 자막으로만 낸 콜.</summary>
+    /// <summary>최근 무전 한 줄 — Dropped면 음성 팩에 없어 자막으로만 낸 콜.</summary>
     public sealed class RecentCall
     {
         public RecentCall(string time, string text)
@@ -21,7 +21,7 @@ namespace TeamRadio56.Core.Logic
             Text = text ?? "";
         }
 
-        /// <summary>"HH:mm:ss" (상태 파일에서 못 읽으면 빈 문자열).</summary>
+        /// <summary>"HH:mm:ss".</summary>
         public string Time { get; private set; }
         public string Text { get; private set; }
         public volatile bool Dropped;
@@ -31,17 +31,6 @@ namespace TeamRadio56.Core.Logic
             get { return Time.Length > 0 ? Time + "  " + Text : Text; }
         }
 
-        /// <summary>"HH:mm:ss  텍스트" 한 줄을 나눈다 (상태 파일·이전 형식).</summary>
-        public static RecentCall Parse(string line, bool dropped = false)
-        {
-            string raw = line ?? "";
-            int sep = raw.IndexOf("  ", StringComparison.Ordinal);
-            RecentCall call = sep > 0
-                ? new RecentCall(raw.Substring(0, sep), raw.Substring(sep + 2))
-                : new RecentCall("", raw);
-            call.Dropped = dropped;
-            return call;
-        }
     }
 
     /// <summary>
@@ -149,7 +138,7 @@ namespace TeamRadio56.Core.Logic
 
         /// <summary>
         /// 워커를 멈춘다. 재생 중인 문장이 끝날 때까지 기다려야 새 엔진의 첫
-        /// 콜과 겹치지 않는다 — 싱크를 먼저 Stop()하면 wav/mp3는 즉시 끊긴다.
+        /// 콜과 겹치지 않는다 — 싱크를 먼저 Stop()하면 wav는 즉시 끊긴다.
         /// </summary>
         public void Dispose()
         {
