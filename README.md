@@ -52,7 +52,10 @@ the template line is used and no API call is made.
 
 See [docs/INSTALL.md](docs/INSTALL.md) for full installation (including the
 shared-memory plugin). For the SimHub plugin, see
-[simhub/README.md](simhub/README.md).
+[simhub/README.md](simhub/README.md). The plugin runs on its built-in C# engine
+by default (no Python needed: calls, voice pack, Korean); switch the engine mode
+to `python` only for LLM lines, post-lap sector feedback / track history and race
+log saving. Existing installs keep the mode saved in their settings file.
 
 **Updating the SimHub plugin**: from 0.16 the plugin updates itself from
 [GitHub Releases](https://github.com/hyungwookc07/teamradio56/releases) —

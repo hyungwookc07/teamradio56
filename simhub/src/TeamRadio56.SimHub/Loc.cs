@@ -37,9 +37,9 @@ namespace TeamRadio56.SimHub
             { "btn_engine_stop", "엔진 중지" },
             { "btn_engine_restart", "엔진 재시작" },
             { "btn_engine_log", "엔진 로그" },
-            { "engine_hint", "python = 검증된 파이썬 엔진을 플러그인이 자식 프로세스로 띄웁니다 "
-                             + "(전체 기능). builtin = C# 내장 — 판단/콜·캐시 음성·edge 합성·"
-                             + "한국어까지 이식 완료, LLM 멘트만 python 모드에서." },
+            { "engine_hint", "builtin(기본) = C# 내장 — 설치 없이 판단/콜·음성 팩·edge 합성·한국어. "
+                             + "python = 파이썬 엔진을 자식 프로세스로 띄웁니다 — LLM 멘트, 랩 후 섹터 "
+                             + "피드백·트랙 기록, 레이스 기록 저장이 필요할 때만 (파이썬 또는 teamradio56.exe 필요)." },
             { "engine_apply_hint", "설정을 바꾸면 [엔진 재시작]을 눌러야 엔진에 반영됩니다." },
             { "row_mode", "모드" },
             { "hint_mode", "바꾸면 즉시 전환됩니다" },
@@ -59,8 +59,8 @@ namespace TeamRadio56.SimHub
             { "row_voice", "보이스" },
             { "hint_voice", "멘트 언어와 안 맞으면 자동 보정합니다" },
             // 콤보 선택지 표시명 — 저장값은 그대로, 화면에만 설명을 붙인다
-            { "choice_python", "python — 전체 기능 (LLM 멘트는 edge 목소리에서만)" },
-            { "choice_builtin", "builtin — 간편 (설치 없음, 캐시 음성)" },
+            { "choice_python", "python — 파이썬 엔진 (LLM·섹터 피드백·트랙 기록, 설치 필요)" },
+            { "choice_builtin", "builtin — 기본 (설치 없음, 음성 팩)" },
             { "choice_kokoro", "kokoro — 동봉 엔지니어 음성 (권장)" },
             { "choice_edge", "edge — 온라인 TTS (아래 보이스 선택)" },
             { "choice_quiet", "quiet — 조용히 (중요한 콜만)" },
@@ -119,8 +119,8 @@ namespace TeamRadio56.SimHub
             { "engine_error", "엔진 오류 — " },
             { "engine_running", "엔진 실행 중 · " },
             { "engine_stopped", "엔진 중지됨 · " },
-            { "engine_builtin", "내장(C#) 엔진 동작 중 — 판단/콜·음성·한국어 이식 완료 "
-                                + "(LLM 멘트만 python 모드)" },
+            { "engine_builtin", "내장(C#) 엔진 동작 중 — 판단/콜·음성·한국어 "
+                                + "(LLM 멘트·섹터 피드백·트랙 기록은 python 모드)" },
             { "cache_status", "오디오 캐시(무전 효과본) {0}개 — {1}" },
             { "cache_missing", "오디오 캐시 없음 — edge 목소리로만 말합니다 (오프라인이면 자막만)" },
             { "recent_dropped", "(무음)" },
@@ -219,9 +219,10 @@ namespace TeamRadio56.SimHub
             { "btn_engine_stop", "Stop engine" },
             { "btn_engine_restart", "Restart engine" },
             { "btn_engine_log", "Engine log" },
-            { "engine_hint", "python = the plugin runs the proven Python engine as a child "
-                             + "process (full features). builtin = native C# — calls, cached voice, "
-                             + "edge synthesis and Korean are ported; only LLM lines need python." },
+            { "engine_hint", "builtin (default) = native C# — calls, voice pack, edge synthesis and "
+                             + "Korean with nothing to install. python = the plugin runs the Python engine "
+                             + "as a child process — only needed for LLM lines, post-lap sector feedback / "
+                             + "track history and race log saving (needs Python or teamradio56.exe)." },
             { "engine_apply_hint", "After changing settings, press [Restart engine] to apply." },
             { "row_mode", "Mode" },
             { "hint_mode", "switches immediately" },
@@ -240,8 +241,8 @@ namespace TeamRadio56.SimHub
             { "hint_voice_engine", "kokoro speaks only lines in the voice pack, the rest as text — voices never mix. Then [Restart engine]" },
             { "row_voice", "Voice" },
             { "hint_voice", "auto-corrected if it doesn't match the radio language" },
-            { "choice_python", "python — full features (LLM lines only with the edge voice)" },
-            { "choice_builtin", "builtin — simple (no install, cached voice)" },
+            { "choice_python", "python — Python engine (LLM, sector feedback, track history; install needed)" },
+            { "choice_builtin", "builtin — default (no install, voice pack)" },
             { "choice_kokoro", "kokoro — bundled engineer voice (recommended)" },
             { "choice_edge", "edge — online TTS (pick a voice below)" },
             { "choice_quiet", "quiet — essentials only" },
@@ -300,8 +301,8 @@ namespace TeamRadio56.SimHub
             { "engine_error", "Engine error — " },
             { "engine_running", "Engine running · " },
             { "engine_stopped", "Engine stopped · " },
-            { "engine_builtin", "Built-in C# engine running — calls, voice and Korean ported "
-                                + "(only LLM lines need python mode)" },
+            { "engine_builtin", "Built-in C# engine running — calls, voice and Korean "
+                                + "(LLM lines, sector feedback and track history need python mode)" },
                         { "cache_status", "audio cache (radio-fx) {0} files — {1}" },
             { "cache_missing", "no audio cache — edge voice only (text only when offline)" },
             { "recent_dropped", "(not spoken)" },

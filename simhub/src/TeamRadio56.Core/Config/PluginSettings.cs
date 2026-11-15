@@ -19,10 +19,12 @@ namespace TeamRadio56.Core.Config
     {
         // -- 엔진 --------------------------------------------------------
         /// <summary>
-        /// python = 파이썬 엔진을 자식 프로세스로 실행 (전체 기능, 현재 권장).
-        /// builtin = C# 내장 (이식 진행 중 — 아직 콜을 내지 않는다).
+        /// builtin = C# 내장 (기본 — 설치 없음: 판단/콜·음성 팩·edge 합성·한국어).
+        /// python = 파이썬 엔진을 자식 프로세스로 실행 (LLM 멘트, 랩 후 섹터 피드백·트랙 기록,
+        /// 레이스 기록 저장까지 — 파이썬 또는 teamradio56.exe 필요).
+        /// 기본값은 설정 파일이 없을 때만 쓰인다 — 기존 설치는 저장된 모드를 그대로 쓴다.
         /// </summary>
-        public string EngineMode { get; set; } = "python";
+        public string EngineMode { get; set; } = "builtin";
         public string EngineExe { get; set; } = "";      // 비우면 기본 경로 사용
         public string EngineArgs { get; set; } = "";     // 소스 실행 시 main.py 경로 등
 
@@ -117,7 +119,7 @@ namespace TeamRadio56.Core.Config
 
         public static readonly string[] UiLanguageChoices = { "ko", "en" };
 
-        public static readonly string[] EngineChoices = { "python", "builtin" };
+        public static readonly string[] EngineChoices = { "builtin", "python" };
     }
 
     /// <summary>

@@ -113,7 +113,7 @@ namespace TeamRadio56.SimHub
         // Tick이 반대 분기로 새는 것을 막는다.
         private string _activeMode;
 
-        /// <summary>파이썬 엔진 모드로 동작 중인가 (C# 이식 완료 전 기본값).</summary>
+        /// <summary>파이썬 엔진 모드로 동작 중인가 (기본은 builtin — "builtin"이 아닌 값은 python).</summary>
         public bool UsingPythonEngine
         {
             get

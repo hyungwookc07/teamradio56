@@ -42,7 +42,10 @@ Kokoro 런타임이 있을 때)만 요청하고, 아니면 API를 부르지 않�
 ## 빠른 시작
 
 설치(플러그인 포함)는 [docs/INSTALL.md](docs/INSTALL.md) 참고. SimHub 플러그인은
-[simhub/README.md](simhub/README.md) 참고.
+[simhub/README.md](simhub/README.md) 참고. 플러그인은 기본으로 C# 내장 엔진(builtin)으로
+돌아 파이썬이 필요 없습니다 (판단/콜·음성 팩·한국어). LLM 멘트, 랩 후 섹터 피드백·트랙 기록,
+레이스 기록 저장이 필요할 때만 엔진 모드를 `python`으로 바꿉니다. 이미 쓰던 설치는 설정 파일에
+저장된 모드를 그대로 씁니다.
 
 **SimHub 플러그인 업데이트**: 0.16부터 플러그인이
 [GitHub 릴리스](https://github.com/hyungwookc07/teamradio56/releases)에서 직접
