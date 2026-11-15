@@ -1,9 +1,10 @@
 # teamradio56 🏁🎙️
 
 **Voice race-engineer radio for Le Mans Ultimate.** Reads telemetry in real
-time, judges what matters, and calls it to you as team radio — in English or
-Korean. Runs as a SimHub plugin (recommended) or a standalone Windows app.
-(The name comes from Le Mans' iconic Garage 56.)
+time, judges what matters, and calls it to you as team radio in English.
+Runs as a lightweight SimHub plugin — no Python, nothing else to install. The
+Python app in this repository is the reference implementation and the tool that
+renders the voice pack. (The name comes from Le Mans' iconic Garage 56.)
 
 한국어 문서: [README.ko.md](README.ko.md)
 
@@ -24,38 +25,34 @@ it means — not a stream of raw numbers.
   phrase pools with a pre-rendered voice pack (Kokoro), so nothing is
   synthesised mid-corner. Every safety call (spotter, flags, damage, box,
   critical fuel) is in the pack
-- **One voice per session** — the radio never mixes voices. With Kokoro, a
-  line that isn't in the voice pack is shown as a subtitle (and in recent
-  radio) instead of being spoken in another voice; with the edge voice, a
-  line that can't be synthesised (offline, not cached) is likewise text
-  only. Korean radio always uses edge. An opt-in setting, *Allow mixed
-  voices* (off by default), brings back the old edge / Windows speech
-  fallback
+- **One voice, never mixed** — the plugin speaks only with the Kokoro voice
+  pack. A line that isn't in the pack is shown as a subtitle (and in recent
+  radio) instead of being read in another voice. With no voice pack
+  installed every call is subtitle-only, and the settings screen tells you to
+  press *Update voice pack*
 - **Radio effect** — bandpass, saturation, band-limited noise and squelch
   for a real team-radio texture
-- **English or Korean** radio, and a bilingual settings UI
+- **English radio** with a bilingual (Korean/English) settings UI
 - **Multiclass aware** — faster-class approach warnings, in-class positions
 - **Protects game performance** — 5 Hz polling, audio on its own thread, no
   GPU-based TTS
 - **One-way voice output** — no speech recognition or conversation
 
-LLM-generated lines (free-form strategy/briefing commentary via the
-Anthropic API) exist as an **experimental, opt-in** feature of the Python
-engine and need your own API key. They are hidden in the SimHub UI until the
-feature is finished; everything above works without them. Because the Kokoro
-voice pack can't say free text, LLM lines are only requested when the session
-voice can speak them (edge, or Kokoro with a local Kokoro runtime installed);
-otherwise
-the template line is used and no API call is made.
+The SimHub plugin is deliberately lean (0.18 "lite"): it has no Python engine
+mode, no online (edge) or Windows voices, no voice mixing, no LLM settings and
+no Korean radio. Those experiments — LLM-generated lines via the Anthropic API
+(your own key), Korean radio, edge/ElevenLabs voices, post-lap sector feedback
+— live only in the Python app, which is kept for development and for rendering
+the voice pack. Old plugin settings for them are ignored.
 
 ## Quick start
 
 See [docs/INSTALL.md](docs/INSTALL.md) for full installation (including the
 shared-memory plugin). For the SimHub plugin, see
-[simhub/README.md](simhub/README.md). The plugin runs on its built-in C# engine
-by default (no Python needed: calls, voice pack, Korean); switch the engine mode
-to `python` only for LLM lines, post-lap sector feedback / track history and race
-log saving. Existing installs keep the mode saved in their settings file.
+[simhub/README.md](simhub/README.md). The plugin always runs its built-in C#
+engine (no Python needed); after installing, press *Update voice pack* once —
+until a voice pack is installed the radio is subtitles only. Don't run the
+Python app at the same time as the plugin.
 
 **Updating the SimHub plugin**: from 0.16 the plugin updates itself from
 [GitHub Releases](https://github.com/hyungwookc07/teamradio56/releases) —
@@ -64,13 +61,14 @@ then *Update plugin* (restart SimHub afterwards) or *Update voice pack*.
 Nothing installs without a click. If your plugin has no **Updates** section
 yet (0.15 or older, or a source build), install the latest release (0.17 or
 newer) once by hand (copy the two DLLs from the release zip into the SimHub
-folder). 0.17 uses a new voice pack (`kokoro-v016`, about 175 MB): when a
-hand-installed 0.17 finds an older audio cache, it offers *Update voice pack* —
-run it; until then, lines that exist only in the new pack are shown as
-subtitles instead of being spoken. In Python engine mode the in-app update
-replaces only the plugin DLLs, so update the engine too (`update.bat` or the new
-`teamradio56.exe`); the settings screen warns while the engine is older than 0.17.
-Building from source still works with a double-click on `update.bat`
+folder). 0.17 uses a new voice pack (`kokoro-v016`, about 175 MB): when the
+plugin finds no pack or an older one, it offers *Update voice pack* — run it;
+the engine restarts by itself and uses the new pack right away. Until then,
+lines that aren't in the installed pack are shown as subtitles instead of being
+spoken (with no pack at all, everything is). From 0.18 the plugin no longer
+looks for an audio cache next to a Python engine; if you used one, let *Update
+voice pack* install a fresh copy next to the DLLs or point *Voice pack folder*
+at it. Building from source still works with a double-click on `update.bat`
 (pull + build + copy DLLs).
 
 Releases (plugin zip + `teamradio56-release.txt` manifest) are made in one
@@ -91,6 +89,9 @@ tag, then create the release again). A voice pack that was already published
 is not rendered again. Right now `v0.17.0` is an empty release created by hand;
 0.17.1 is the first real one. Maintainers: see the release section of
 [simhub/README.md](simhub/README.md).
+
+The Python app (development, reference implementation and voice-pack tools —
+not needed for the plugin):
 
 ```bat
 python -m venv venv
@@ -181,7 +182,7 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   `reports` settings give per-lap laptime calls + a position/gap/fuel/tyre
   report every N laps. Off by default
 
-### SimHub plugin & C# port (v0.8–v0.13)
+### SimHub plugin & C# port (v0.8–v0.18)
 
 - [x] SimHub plugin with a bilingual (한국어/English) settings UI; runs the
   Python engine as a child process, or the **built-in C# engine** — all nine
@@ -189,6 +190,13 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   edge synthesis for the edge voice, Korean radio. Verified against the Python engine
   by a replay regression (identical accepted events, en/ko, down to the
   sentence text). Only the experimental LLM lines still require Python mode.
+- [x] v0.18 "lite" — the plugin keeps only the built-in engine, English radio
+  and the Kokoro voice pack (plus the in-app updater, overlay and bilingual
+  settings UI). Python engine mode, edge/Windows voices, voice mixing, LLM
+  settings and Korean radio were removed from the plugin (they remain in the
+  Python app); with no voice pack the radio is subtitles only and the settings
+  screen points to *Update voice pack*. The replay regression now compares
+  English only.
 
 Items not in shared memory (virtual energy, weather forecast, pit strategy)
 will be supplemented from LMU's built-in REST API (the localhost server the
@@ -217,7 +225,7 @@ Future ideas: two-way radio via STT, multi-stint fuel-plan optimisation.
 ## Requirements
 
 - Windows 10/11 (shared-memory mode) — replay mode is OS-independent
-- Python 3.11+ (not needed for the SimHub builtin engine)
+- Python 3.11+ — only for the Python app and the voice-pack tools, not for the SimHub plugin
 - LMU + [rF2 Shared Memory Map Plugin](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin) (The Iron Wolf)
 
 ## Credits
