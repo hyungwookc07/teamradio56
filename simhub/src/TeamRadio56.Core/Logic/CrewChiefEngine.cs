@@ -38,7 +38,7 @@ namespace TeamRadio56.Core.Logic
 
         private bool _wasInSession;
 
-        /// <summary>음성 팩으로 말하는 세션 (음성 출력 켜짐) — 브리핑이 목록 밖 트랙 이름을 뺀다.</summary>
+        /// <summary>음성 팩으로 말하는 세션 (음성 출력 켜짐 + 쓸 수 있는 팩) — 브리핑이 목록 밖 트랙 이름을 뺀다.</summary>
         public bool BriefingPackOnly
         {
             get { return _briefer.PackOnly; }

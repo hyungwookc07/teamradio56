@@ -27,7 +27,8 @@ namespace TeamRadio56.Core.Logic
     /// kokoro 음성 팩 하나로만 소리를 찾는다:
     ///   효과 통문장 → 문장 세그먼트 조립 → 원본 통문장 → (없으면 무음, 자막만)
     /// 다른 목소리로 대신 말하지 않는다. 파이썬 tts.VoiceChain(kokoro)과 같은 순서.
-    /// 사유: 음성 팩 폴더가 없으면 "no-pack", 팩에 없는 멘트는 "kokoro-miss".
+    /// 사유: 음성 팩 폴더가 없거나 쓸 수 없는 팩(none/incomplete — 남은 클립이 있어도)이면
+    /// "no-pack", 팩에 없는 멘트는 "kokoro-miss".
     /// </summary>
     public sealed class VoiceRoute
     {
@@ -37,15 +38,28 @@ namespace TeamRadio56.Core.Logic
         private const int SegMissLogLimit = 20;
 
         private readonly VoiceCache _cache;
+        private readonly bool _packUsable;
         // 세그먼트 미스는 같은 문장이 계속 반복되므로 (톤, 문장) 첫 20종만 기록
         private readonly HashSet<string> _segMissLogged = new HashSet<string>(StringComparer.Ordinal);
 
-        public VoiceRoute(VoiceCache cache)
+        public VoiceRoute(VoiceCache cache) : this(cache, true)
+        {
+        }
+
+        /// <param name="packUsable">
+        /// false면 폴더에 클립이 남아 있어도 모든 콜이 무음(no-pack) — 설치가 끊겼거나
+        /// 팩이 아닌 폴더(VoicePolicy.PackUsable). 캐시는 경로·로그용으로 그대로 둔다.
+        /// </param>
+        public VoiceRoute(VoiceCache cache, bool packUsable)
         {
             _cache = cache;
+            _packUsable = packUsable;
         }
 
         public VoiceCache Cache { get { return _cache; } }
+
+        /// <summary>이 발화 경로가 팩 클립을 재생하는가 (false면 세션 전체 무음).</summary>
+        public bool PackUsable { get { return _packUsable; } }
 
         /// <summary>재생 계획 (파일 확인만, 로그 없음).</summary>
         public VoicePlan Plan(string text, string tone)
@@ -93,7 +107,7 @@ namespace TeamRadio56.Core.Logic
                                    out string firstMissing)
         {
             firstMissing = null;
-            if (_cache == null || !_cache.Available || string.IsNullOrEmpty(text))
+            if (!_packUsable || _cache == null || !_cache.Available || string.IsNullOrEmpty(text))
                 return new VoicePlan { Source = VoiceSource.None, Reason = ReasonNoPack };
 
             if (!afterAssembly)

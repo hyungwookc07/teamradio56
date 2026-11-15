@@ -27,6 +27,7 @@ namespace TeamRadio56.Replay
         private const string TextC = "Charlie raw only.";              // 원본 kokoro wav
         private const string TextD = "Delta edge only.";               // 옛 edge mp3만 (예전 설치 잔여물)
         private const string TextE = "Echo nothing here.";             // 아무것도 없음
+        private const string TextF = "Foxtrot fx only.";               // 확인 문장이 아닌 _rfx3 통문장 (남은 클립)
 
         public static int Run()
         {
@@ -63,15 +64,21 @@ namespace TeamRadio56.Replay
         /// <summary>
         /// 팩 상태별 결정표 "pack\tvoice\tnote" (voice = kokoro | none). replay-check가 파이썬
         /// --dump-table의 kokoro·en 행(파이썬이 edge로 대신 말하는 자리는 none)과 diff한다.
+        /// voice는 정책 함수가 아니라 실제 발화 경로의 결과 — 모든 클립이 있는 가상 폴더에
+        /// 그 팩 상태로 만든 경로가 확인 문장을 재생하면 kokoro, 막으면 none.
         /// </summary>
         public static int DumpTable(string outPath)
         {
+            var everything = new VoiceCache("pack", fileExists: _ => true);
+            string probe = VoicePolicy.ProbeText();
             var sb = new StringBuilder();
             foreach (string pack in new[] { VoicePolicy.PackOk, VoicePolicy.PackPartial,
                                             VoicePolicy.PackIncomplete, VoicePolicy.PackNone })
             {
+                bool speaks = VoicePolicy.RouteFor(everything, pack).Plan(probe, "casual").Source
+                              != VoiceSource.None;
                 sb.Append(pack).Append('\t')
-                  .Append(VoicePolicy.PackUsable(pack) ? "kokoro" : "none").Append('\t')
+                  .Append(speaks ? "kokoro" : "none").Append('\t')
                   .Append(VoicePolicy.PackNote(pack) ?? "").Append('\n');
             }
             if (outPath == null)
@@ -131,6 +138,23 @@ namespace TeamRadio56.Replay
             WriteWav(Path.Combine(dir, VoiceCache.WholeFileName(TextC, "casual")), 600);
             WriteLegacyEdgeMp3(dir, TextD);
             return dir;
+        }
+
+        /// <summary>
+        /// 팩이 아닌(또는 설치가 끊긴) 폴더에 남은 kokoro 클립 — 확인 문장이 아닌 _rfx3
+        /// 통문장(F)과 원본 통문장(C), withSegments면 B의 세그먼트와 조립 자산도.
+        /// 확인 문장(A)은 넣지 않는다.
+        /// </summary>
+        private static void WriteLeftovers(string dir, bool withSegments)
+        {
+            WriteWav(Path.Combine(dir, VoiceCache.WholeFxFileName(TextF, "casual")), 500);
+            WriteWav(Path.Combine(dir, VoiceCache.WholeFileName(TextC, "casual")), 600);
+            if (!withSegments)
+                return;
+            foreach (string s in Messages.SplitSentences(TextB))
+                WriteWav(Path.Combine(dir, VoiceCache.SegmentFileName(s, "casual")), 400);
+            foreach (string asset in RadioAssembler.AssetNames)
+                WriteWav(Path.Combine(dir, asset), 80);
         }
 
         /// <summary>
@@ -219,10 +243,17 @@ namespace TeamRadio56.Replay
             public void Stop() { }
         }
 
-        /// <summary>플러그인 CreateRadio와 같은 조립.</summary>
+        /// <summary>플러그인 CreateRadio와 같은 조립 (팩 상태로 경로를 막거나 연다).</summary>
         private static RadioVoice Radio(string dir, FakePlayer player)
         {
-            return new RadioVoice(VoicePolicy.CreateRoute(dir), player);
+            string packState;
+            return new RadioVoice(VoicePolicy.CreateRoute(dir, out packState), player);
+        }
+
+        /// <summary>팩 상태와 무관하게 폴더의 클립을 찾는 경로 — 픽스처가 비어 있지 않은지 확인용.</summary>
+        private static VoiceSource Unblocked(string dir, string text)
+        {
+            return new VoiceRoute(new VoiceCache(dir)).Plan(text, "casual").Source;
         }
 
         private static string PackStateOf(string dir)
@@ -282,8 +313,8 @@ namespace TeamRadio56.Replay
             var p1 = new FakePlayer();
             RadioVoice r1 = Radio(empty, p1);
             Check(PackStateOf(empty) == VoicePolicy.PackNone, "빈 폴더 → none");
-            Check(r1.Speak(TextA, "casual", false) == SpeakResult.Dropped && r1.LastReason == VoiceRoute.ReasonMiss
-                  && p1.Calls == 0, "빈 폴더: 무음 kokoro-miss, 재생기 0회");
+            Check(r1.Speak(TextA, "casual", false) == SpeakResult.Dropped && r1.LastReason == VoiceRoute.ReasonNoPack
+                  && p1.Calls == 0, "빈 폴더: 무음 no-pack, 재생기 0회");
 
             // 옛 edge mp3만 남은 폴더 (예전 버전이 edge로 말하던 설치) — 팩이 아니다
             string legacy = NewDir();
@@ -305,6 +336,34 @@ namespace TeamRadio56.Replay
                   "설치 끊김 + 클립 없음 → incomplete (pack-incomplete), 사용 불가");
             Check(r3.Speak(TextE, "urgent", true) == SpeakResult.Dropped && p3.Calls == 0 && r3.Drops.Count == 1,
                   "설치 끊김: 긴급 콜도 무음, 재생기 0회");
+
+            // 설치가 끊긴 표식 + 확인 문장은 없지만 다른 클립이 남음 (풀기 도중 중단·디스크 가득)
+            // → incomplete. 남은 클립도 재생하지 않는다 — 설정 화면·로그의 '무음' 안내와 같게
+            string cut = NewDir();
+            AudioPack.WriteMarker(cut, AudioPack.IncompletePrefix + "kokoro-v016");
+            WriteLeftovers(cut, true);
+            Check(Unblocked(cut, TextF) == VoiceSource.KokoroFx && Unblocked(cut, TextB) == VoiceSource.KokoroSeg
+                  && Unblocked(cut, TextC) == VoiceSource.KokoroRaw, "설치 끊김 픽스처: 남은 클립이 실제로 있다");
+            var p4 = new FakePlayer();
+            RadioVoice r4 = Radio(cut, p4);
+            Check(PackStateOf(cut) == VoicePolicy.PackIncomplete, "설치 끊김 + 확인 문장 없음 + 다른 클립 남음 → incomplete");
+            foreach (string t in new[] { TextF, TextB, TextC })
+                Check(r4.Speak(t, "casual", false) == SpeakResult.Dropped && r4.LastReason == VoiceRoute.ReasonNoPack,
+                      "설치 끊김: 남은 클립 " + t + " → 무음 no-pack");
+            Check(p4.Calls == 0 && r4.Drops.Count == 3, "설치 끊김: 남은 클립이 있어도 재생기 0회");
+
+            // 표식 없음 + 확인 문장 없음 + 다른 kokoro 클립 남음 (팩이 아닌 폴더) → none, 무음 세션
+            string stray = NewDir();
+            WriteLeftovers(stray, false);
+            Check(Unblocked(stray, TextF) == VoiceSource.KokoroFx && Unblocked(stray, TextC) == VoiceSource.KokoroRaw,
+                  "팩 아닌 폴더 픽스처: 남은 클립이 실제로 있다");
+            var p5 = new FakePlayer();
+            RadioVoice r5 = Radio(stray, p5);
+            Check(PackStateOf(stray) == VoicePolicy.PackNone, "표식·확인 문장 없음 + 다른 클립 남음 → none");
+            foreach (string t in new[] { TextF, TextC })
+                Check(r5.Speak(t, "casual", false) == SpeakResult.Dropped && r5.LastReason == VoiceRoute.ReasonNoPack,
+                      "팩 아닌 폴더: 남은 클립 " + t + " → 무음 no-pack");
+            Check(p5.Calls == 0, "팩 아닌 폴더: 재생기 0회");
         }
 
         private static void PackTable()

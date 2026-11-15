@@ -18,6 +18,7 @@ using EngineSettings = TeamRadio56.Core.Logic.EngineSettings;
 using VoiceWorker = TeamRadio56.Core.Logic.VoiceWorker;
 using VoiceCache = TeamRadio56.Core.Logic.VoiceCache;
 using VoicePolicy = TeamRadio56.Core.Logic.VoicePolicy;
+using VoiceRoute = TeamRadio56.Core.Logic.VoiceRoute;
 using PregenSentences = TeamRadio56.Core.Logic.PregenSentences;
 using PhraseLines = TeamRadio56.Core.Logic.PhraseLines;
 using RadioVoice = TeamRadio56.Core.Logic.RadioVoice;
@@ -406,7 +407,7 @@ namespace TeamRadio56.SimHub
             cfg.Traffic.SideInvert = Settings.SideInvert;
             cfg.Traffic.RaceOnly = Settings.TrafficRaceOnly;
 
-            _chief = new CrewChiefEngine(cfg,
+            var chief = new CrewChiefEngine(cfg,
                 Settings.LapTimeEveryLap, Settings.StatusEveryLaps);
 
             string packState;
@@ -415,10 +416,14 @@ namespace TeamRadio56.SimHub
             _player = player;
             _packState = packState;
             _voiceMissing = -1;
-            _voice = new VoiceWorker(_chief.Bus, _radio);
+            _voice = new VoiceWorker(chief.Bus, _radio);
             _voice.Enabled = Settings.VoiceEnabled;
             _voice.Start();
             ClaimVoice(true);
+            // 팩 상태가 정해진 뒤에 엔진을 공개한다 — Tick이 새 엔진의 첫 브리핑을
+            // 옛 팩 상태(예: 팩 설치 직후 재시작)로 조립하지 않게
+            chief.BriefingPackOnly = Settings.VoiceEnabled && VoicePolicy.PackUsable(packState);
+            _chief = chief;
 
             VoiceCache cache = _radio.Route.Cache;
             string cacheDir = cache.CacheDir;
@@ -478,17 +483,19 @@ namespace TeamRadio56.SimHub
 
         /// <summary>
         /// kokoro 음성 팩으로 말하는 발화기를 만든다 — 팩 상태는 엔진 시작 때 한 번 정한다.
-        /// 팩이 없어도 만든다: 모든 콜이 무음(자막·최근 무전만)으로 기록된다.
+        /// 팩이 없어도 만든다: 모든 콜이 무음(자막·최근 무전만)으로 기록된다. 쓸 수 없는
+        /// 팩(none/incomplete)이면 폴더에 남은 클립도 재생하지 않는다 (VoicePolicy.CreateRoute).
         /// </summary>
         private RadioVoice CreateRadio(out AudioSink player, out string packState)
         {
             string cacheDir = ResolveCacheDir(true);
-            packState = VoicePolicy.KokoroPackState(cacheDir, new VoiceCache(cacheDir));
+            VoiceRoute route = VoicePolicy.CreateRoute(cacheDir, out packState);
             string note = VoicePolicy.PackNote(packState);
             FileLog.Info("목소리: kokoro 음성 팩 (상태 " + packState
-                         + (note != null ? " — " + note : "") + ")");
+                         + (note != null ? " — " + note : "")
+                         + (route.PackUsable ? "" : ", 이번 세션 무음") + ")");
             player = new AudioSink();
-            return new RadioVoice(VoicePolicy.CreateRoute(cacheDir), player);
+            return new RadioVoice(route, player);
         }
 
         public void End(PluginManager pluginManager)
@@ -719,9 +726,10 @@ namespace TeamRadio56.SimHub
             if (voice != null && Settings != null)
             {
                 voice.Enabled = Settings.VoiceEnabled;
-                // 음성 팩으로 말하는 세션이면 목록 밖 트랙 이름을 뺀다 — 음성을 끈 자막
-                // 전용이면 뺄 이유가 없다 (파이썬 voice.enabled와 같다)
-                chief.BriefingPackOnly = Settings.VoiceEnabled;
+                // 음성 팩으로 말하는 세션이면 목록 밖 트랙 이름을 뺀다 — 음성을 껐거나
+                // 쓸 수 있는 팩이 없는 자막 전용 세션이면 뺄 이유가 없다 (파이썬
+                // pack_only = voice.enabled and not free_text와 같다)
+                chief.BriefingPackOnly = Settings.VoiceEnabled && VoicePolicy.PackUsable(_packState);
             }
             chief.OnPoll(snap, _reader.Connected);
             StatusText = chief.StatusText;

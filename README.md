@@ -2,9 +2,10 @@
 
 **Voice race-engineer radio for Le Mans Ultimate.** Reads telemetry in real
 time, judges what matters, and calls it to you as team radio in English.
-Runs as a lightweight SimHub plugin — no Python, nothing else to install. The
-Python app in this repository is the reference implementation and the tool that
-renders the voice pack. (The name comes from Le Mans' iconic Garage 56.)
+Runs as a lightweight SimHub plugin — no Python needed (it requires the rF2
+Shared Memory Map Plugin, and the voice pack installs from the settings screen).
+The Python app in this repository is the reference implementation and the tool
+that renders the voice pack. (The name comes from Le Mans' iconic Garage 56.)
 
 한국어 문서: [README.ko.md](README.ko.md)
 
@@ -184,12 +185,12 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
 
 ### SimHub plugin & C# port (v0.8–v0.18)
 
-- [x] SimHub plugin with a bilingual (한국어/English) settings UI; runs the
-  Python engine as a child process, or the **built-in C# engine** — all nine
-  analyzers, session briefing, phrase pools, cached audio (Kokoro), runtime
-  edge synthesis for the edge voice, Korean radio. Verified against the Python engine
-  by a replay regression (identical accepted events, en/ko, down to the
-  sentence text). Only the experimental LLM lines still require Python mode.
+- [x] v0.8–v0.17 — SimHub plugin with a bilingual (한국어/English) settings UI;
+  it ran the Python engine as a child process, or the **built-in C# engine** —
+  all nine analyzers, session briefing, phrase pools, cached audio (Kokoro),
+  runtime edge synthesis for the edge voice, Korean radio. Verified against the
+  Python engine by a replay regression (identical accepted events, en/ko, down
+  to the sentence text). The experimental LLM lines required Python mode.
 - [x] v0.18 "lite" — the plugin keeps only the built-in engine, English radio
   and the Kokoro voice pack (plus the in-app updater, overlay and bilingual
   settings UI). Python engine mode, edge/Windows voices, voice mixing, LLM

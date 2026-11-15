@@ -16,7 +16,7 @@ namespace TeamRadio56.Core.Logic
         /// <summary>스타트 스포터 모드 길이(초) — 0이면 브리핑에서 예고 생략.</summary>
         public double StartSpotterSec = 45;
 
-        /// <summary>음성 팩으로 말하는 세션 (음성 출력 켜짐) — 목록에 없는 트랙 이름을 뺀다.</summary>
+        /// <summary>음성 팩으로 말하는 세션 (음성 출력 켜짐 + 쓸 수 있는 팩) — 목록에 없는 트랙 이름을 뺀다.</summary>
         public bool PackOnly;
 
         private bool _briefed;
@@ -137,7 +137,8 @@ namespace TeamRadio56.Core.Logic
         /// 세션 종류/길이/그리드/날씨/연료 브리핑 — 순수 조립 (briefing.briefing_text 미러).
         /// 도메인 밖 숫자(100랩 넘는 세션, 그리드/순위/노면/연료 범위 밖)는 그 문장만 뺀다.
         /// packOnly(음성 팩으로 말하는 세션)면 트랙 이름 목록에 없는 트랙을 '{track}.'
-        /// 대신 무전 체크로 연다 — 자막 전용(음성 출력 끔)이면 이름을 그대로 쓴다.
+        /// 대신 무전 체크로 연다 — 자막 전용(음성 출력 끔, 또는 팩 없음/설치 미완료로
+        /// 무음인 세션)이면 이름을 그대로 쓴다.
         /// </summary>
         public static string ComposeText(BriefingInputs b, bool packOnly = false)
         {

@@ -94,17 +94,32 @@ namespace TeamRadio56.Core.Logic
 
         /// <summary>
         /// 이 팩으로 말할 수 있는가 — ok, 또는 설치가 끊겼어도 클립이 남은 partial.
-        /// 아니면(none/incomplete) 이번 세션은 전부 무음(자막만)이다.
+        /// 아니면(none/incomplete) 이번 세션은 전부 무음(자막만)이다 — 폴더에 클립이
+        /// 남아 있어도 재생하지 않는다 (RouteFor가 경로를 막는다).
         /// </summary>
         public static bool PackUsable(string packState)
         {
             return packState == PackOk || packState == PackPartial;
         }
 
-        /// <summary>플러그인 CreateRadio와 같은 조립 — 셀프테스트가 같은 경로를 탄다.</summary>
-        public static VoiceRoute CreateRoute(string cacheDir)
+        /// <summary>
+        /// 팩 상태에 맞는 발화 경로 — 쓸 수 없는 팩(none/incomplete)이면 남은 클립이
+        /// 있어도 모든 콜이 무음(no-pack). 파이썬이 그 자리에서 kokoro를 쓰지 않는 것과 같다.
+        /// </summary>
+        public static VoiceRoute RouteFor(VoiceCache cache, string packState)
         {
-            return new VoiceRoute(new VoiceCache(cacheDir));
+            return new VoiceRoute(cache, PackUsable(packState));
+        }
+
+        /// <summary>
+        /// 플러그인 CreateRadio와 같은 조립 — 팩 상태를 정하고 그 상태로 경로를 막거나 연다.
+        /// 셀프테스트가 같은 경로를 탄다.
+        /// </summary>
+        public static VoiceRoute CreateRoute(string cacheDir, out string packState)
+        {
+            var cache = new VoiceCache(cacheDir);
+            packState = KokoroPackState(cacheDir, cache);
+            return RouteFor(cache, packState);
         }
 
         /// <summary>
