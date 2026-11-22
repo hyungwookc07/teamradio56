@@ -44,6 +44,7 @@ SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 KNOWN_NAME_SETS = {
     "kokoro-v015": "2062e3431c563f16b10425be7d3473401a1628096d97057e3ed9dbf24ebd5fda",
     "kokoro-v016": "fb489f503c0a27b88927daddf68c06849d00c62b2a7db06399dc8cc73339c56c",
+    "kokoro-v017": "efd4f7c51830ecc2d726edf5b5679b180243170adac5eb56cb2f26b71d294855",
 }
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
