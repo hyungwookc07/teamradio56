@@ -147,11 +147,15 @@ def generate(seed: int) -> list:
 
     # -- 라이벌 피트 --
     for their in range(1, 71):
-        for off in (-2, -1, 1, 2):
+        for off in (-2, -1, 0, 1, 2):
             my = their + off
             if my < 1:
                 continue
-            add("rival_pit", "in" if sd.rival_pit_ok(their) else "out", their=their, my=my)
+            # 같은 순위는 앞/뒤를 말할 수 없다 (팩에 "뒤차 + 갭 안내" 문장도 없다) — 억제
+            band = "in" if off != 0 and sd.rival_pit_ok(their) else "out"
+            add("rival_pit", band, their=their, my=my)
+    for their, my in ((0, 1), (2, 0), (0, 0)):
+        add("rival_pit", "out", their=their, my=my)     # 순위 없음(0) — 억제
 
     # -- 타이어 --
     for i in range(0, 12001):
