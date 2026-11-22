@@ -10,7 +10,7 @@ namespace TeamRadio56.Core.Logic
     /// analyzers/health.py 포팅 — 차량 컨디션 (파손/온도).
     ///
     /// 충격 감지 → 8초 뒤 자동 점검 리포트 → 페이스 관찰로 수리 판단.
-    /// 상시: 휠 탈락, 슬로우 펑처, 프론트 윙 EMA, 얼라인 오프셋,
+    /// 상시: 휠 탈락, 슬로우 펑처, 프론트 윙 높이(속도 구간별), 얼라인 오프셋,
     /// 리어 불안정(드라이버 기준선 대비 빈도).
     /// </summary>
     public sealed class HealthAnalyzer
@@ -32,9 +32,17 @@ namespace TeamRadio56.Core.Logic
         private const double ImpactPressureDropKpa = 12.0;
         private const double SlowPunctureDropKpa = 25.0;
 
+        // 프론트 윙 — 제동이 아닌 고속 샘플의 높이를 속도 구간별로 충격 전후 비교.
+        // 근거와 규칙은 analyzers/health.py WING_* 주석.
         private const double WingSampleSpeedKmh = 150.0;
+        private const double WingBinKmh = 10.0;          // 속도 구간 폭
         private const double WingDropM = 0.010;
-        private const double WingEmaAlpha = 0.03;
+        private const double WingDecelMax = 4.9;         // m/s² (0.5g) — 직전 두 틱 구간 감속 상한
+        private const double WingTickGapMax = 0.5;       // 초 — 이보다 긴 틱 간격은 감속 아님
+        private const int WingBaseSamples = 301;         // 충격 전 기준 버퍼 (~1랩)
+        private const int WingPostSamples = 301;         // 충격 후 판정 버퍼 상한
+        private const int WingBinMin = 5;                // 구간 하나에 필요한 샘플 (기준·충격 후 각각)
+        private const int WingMinBins = 3;               // 판정에 필요한 맞춘 구간 수
 
         // 얼라인 — 곧게 가는(요레이트·횡속도 작은) 고속 샘플의 조향 중앙값을 충격 전후 비교.
         // 근거와 규칙은 analyzers/health.py STEER_* 주석.
@@ -71,8 +79,16 @@ namespace TeamRadio56.Core.Logic
         private readonly double[] _pressureMax = new double[4];
         private readonly HashSet<int> _punctureWarned = new HashSet<int>();
         private bool _wasInPitlane;
-        private double? _wingEma;
-        private double? _preImpactWing;
+        private double? _wingPrevT;               // 직전 틱 (시각, 속도) — 감속 계산
+        private double _wingPrevV;
+        private bool _wingPrevCalm;               // 직전 틱 구간이 제동이 아니었나
+        private readonly List<KeyValuePair<int, double>> _wingPre = new List<KeyValuePair<int, double>>();
+        private Dictionary<int, List<double>> _wingBase;   // 굳힌 기준 (구간 → 높이 목록)
+        private int _wingBaseN;
+        private List<KeyValuePair<int, double>> _wingPost; // 충격 후 판정 버퍼 (null = 판정 대기 없음)
+        private double _wingImpactMag;
+        private double? _wingPending;             // 판정 끝난 콜의 하락(m) — 쿨다운 재시도
+        private bool _wingTyreLogged;
         private bool _wingWarned;
         private readonly List<double> _steerPre = new List<double>();   // 기준 전 직선 조향
         private double? _preImpactSteer;          // 기준 중앙값
@@ -114,9 +130,10 @@ namespace TeamRadio56.Core.Logic
                 _pressureMax[i] = 0.0;
             _punctureWarned.Clear();
             _wasInPitlane = false;
-            _wingEma = null;
-            _preImpactWing = null;
-            _wingWarned = false;
+            _wingPrevT = null;
+            _wingPrevV = 0.0;
+            _wingPrevCalm = false;
+            ResetWing();
             ResetAlignment();
             _lastImpactZone = null;
             _instabUntil = 0.0;
@@ -156,9 +173,7 @@ namespace TeamRadio56.Core.Logic
                         _pressureMax[i] = 0.0;
                     _punctureWarned.Clear();
                     _wheelDetachedWarned.Clear();
-                    _wingEma = null;
-                    _preImpactWing = null;
-                    _wingWarned = false;
+                    ResetWing();
                     ResetAlignment();
                     _instabUntil = 0.0;
                     _instabRequired = InstabMinCount;
@@ -173,7 +188,7 @@ namespace TeamRadio56.Core.Logic
 
             if (!over)
             {
-                TrackWing(p, state, bus);
+                TrackWing(p, snap.T, state, bus);
                 TrackAlignment(p, state, bus);
             }
 
@@ -190,8 +205,7 @@ namespace TeamRadio56.Core.Logic
                     _prePressures = new double[nw];
                     for (int i = 0; i < nw; i++)
                         _prePressures[i] = wheels[i].Pressure;
-                    if (!_preImpactWing.HasValue)      // 다중 충격 시 최초 기준 유지
-                        _preImpactWing = _wingEma;
+                    WingOnImpact(mag);
                     AlignOnImpact(mag);
                     _reportDue = snap.T + ReportDelaySec;
                     OnImpact(mag, prevDents, snap.T, state, bus);
@@ -426,45 +440,240 @@ namespace TeamRadio56.Core.Logic
             state.AddNarrative("(점검) " + message);
         }
 
-        private void TrackWing(PlayerInfo p, RaceState state, EventBus bus)
+        /// <summary>정렬한 목록의 (Count−1)/2 번째 (짝수면 아래쪽 가운데) — 파이썬 low_median.</summary>
+        internal static double LowMedian(List<double> samples)
         {
-            double h = p.FrontWingHeight;
-            if (h <= 0 || p.InPitLane || p.SpeedKmh < WingSampleSpeedKmh)
-                return;
-            if (!_wingEma.HasValue)
-            {
-                _wingEma = h;
-                return;
-            }
-            _wingEma = (1 - WingEmaAlpha) * _wingEma.Value + WingEmaAlpha * h;
+            var sorted = new List<double>(samples);
+            sorted.Sort();
+            return sorted[(sorted.Count - 1) / 2];
+        }
 
-            if (_wingWarned || !_preImpactWing.HasValue)
-                return;
-            double drop = _preImpactWing.Value - _wingEma.Value;
-            if (drop >= WingDropM)
+        /// <summary>윙 높이 속도 구간 — floor((v − 150) / 10). 파이썬 wing_bin.</summary>
+        internal static int WingBin(double speedKmh)
+        {
+            return (int)Math.Floor((speedKmh - WingSampleSpeedKmh) / WingBinKmh);
+        }
+
+        private static Dictionary<int, List<double>> WingBins(List<KeyValuePair<int, double>> samples)
+        {
+            var outp = new Dictionary<int, List<double>>();
+            foreach (var kv in samples)
             {
-                string text = WingMessage(drop);
-                // 100mm 넘는 하락은 말하지 않지만 이슈·서사는 남기고 한 번만 판정한다
-                if (text != null)
+                List<double> hs;
+                if (!outp.TryGetValue(kv.Key, out hs))
                 {
-                    // push가 쿨다운으로 거절되면 다음 틱에 재시도
-                    bool accepted = bus.Push(new RadioEvent
-                    {
-                        Type = EventTypes.DamageReport,
-                        Priority = Priority.High,
-                        Message = text,
-                        DedupKey = "wing_damage",
-                        Ttl = 20.0,
-                        Tone = "casual",
-                    });
-                    if (!accepted)
-                        return;
+                    hs = new List<double>();
+                    outp[kv.Key] = hs;
                 }
-                _wingWarned = true;
-                state.SetIssue("damage", "프론트 윙 손상 (높이 -"
-                    + (drop * 1000).ToString("F0", CultureInfo.InvariantCulture) + "mm)");
-                state.AddNarrative("(점검) 프론트 윙 손상 감지");
+                hs.Add(kv.Value);
             }
+            return outp;
+        }
+
+        private static int WingFullBins(Dictionary<int, List<double>> bins)
+        {
+            int n = 0;
+            foreach (var kv in bins)
+            {
+                if (kv.Value.Count >= WingBinMin)
+                    n++;
+            }
+            return n;
+        }
+
+        /// <summary>
+        /// 기준(구간별 높이) ↔ 충격 후 (구간, 높이) 목록 — 양쪽 다 WingBinMin개 이상인 구간이
+        /// WingMinBins개 이상이면 하락(m)과 맞춘 구간(오름차순), 아니면 null. 파이썬 wing_compare.
+        /// </summary>
+        internal static double? WingCompare(Dictionary<int, List<double>> baseBins,
+                                            List<KeyValuePair<int, double>> post,
+                                            out List<int> matched)
+        {
+            Dictionary<int, List<double>> byPost = WingBins(post);
+            matched = new List<int>();
+            foreach (var kv in byPost)
+            {
+                List<double> pre;
+                if (kv.Value.Count >= WingBinMin && baseBins.TryGetValue(kv.Key, out pre)
+                    && pre.Count >= WingBinMin)
+                {
+                    matched.Add(kv.Key);
+                }
+            }
+            if (matched.Count < WingMinBins)
+                return null;
+            matched.Sort();
+            var drops = new List<double>();
+            foreach (int b in matched)
+                drops.Add(LowMedian(baseBins[b]) - LowMedian(byPost[b]));
+            return LowMedian(drops);
+        }
+
+        private void ResetWing()
+        {
+            _wingPre.Clear();
+            _wingBase = null;
+            _wingBaseN = 0;
+            _wingPost = null;
+            _wingImpactMag = 0.0;
+            _wingPending = null;
+            _wingTyreLogged = false;
+            _wingWarned = false;
+        }
+
+        /// <summary>
+        /// 기준 임계 이상 충격 — 기준이 아직 없으면 굳히고, 판정 버퍼를 새로 연다.
+        /// 기준이 모자라면(5샘플 이상 구간 3개 미만) 이 충격만 판정하지 않고 기준 버퍼를 이 충격
+        /// 뒤부터 새로 모은다 (다음 충격이 기준을 굳힐 수 있게 — 스틴트 전체를 끄지 않는다).
+        /// </summary>
+        private void WingOnImpact(double mag)
+        {
+            if (_wingBase == null)
+            {
+                Dictionary<int, List<double>> bins = WingBins(_wingPre);
+                int full = WingFullBins(bins);
+                if (full < WingMinBins)
+                {
+                    FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                        "윙 판정 (충격 {0:F0}): 기준 없음 — 충격 전 고속 샘플 {1}개, {2}샘플 이상 "
+                        + "구간 {3}개 < {4} → no-baseline (이 충격만, 기준 다시 모음)",
+                        mag, _wingPre.Count, WingBinMin, full, WingMinBins));
+                    _wingPre.Clear();
+                    return;
+                }
+                _wingBase = bins;                    // 다중 충격 시 최초 기준 유지
+                _wingBaseN = _wingPre.Count;
+            }
+            if (_wingWarned || _wingPending.HasValue)
+                return;
+            _wingPost = new List<KeyValuePair<int, double>>();   // 충격마다 새 버퍼
+            _wingImpactMag = mag;
+            _wingTyreLogged = false;
+        }
+
+        /// <summary>
+        /// 직전 두 틱 구간 모두 감속 ≤ 0.5g(틱 간격 0~0.5초)인가 — 제동 다이브와 그 복원을 뺀다.
+        /// 매 틱(체커 전) 갱신한다. 파이썬 _wing_calm.
+        /// </summary>
+        private bool WingCalm(double now, double speed)
+        {
+            bool calm = false;
+            if (_wingPrevT.HasValue)
+            {
+                double dt = now - _wingPrevT.Value;
+                if (dt > 0.0 && dt <= WingTickGapMax)
+                    calm = (_wingPrevV - speed) / 3.6 / dt <= WingDecelMax;
+            }
+            bool steady = calm && _wingPrevCalm;
+            _wingPrevT = now;
+            _wingPrevV = speed;
+            _wingPrevCalm = calm;
+            return steady;
+        }
+
+        private static string SignedMm(double m)
+        {
+            double mm = m * 1000;
+            return (mm >= 0 ? "+" : "") + mm.ToString("F1", CultureInfo.InvariantCulture);
+        }
+
+        private void TrackWing(PlayerInfo p, double now, RaceState state, EventBus bus)
+        {
+            double speed = p.SpeedKmh;
+            bool steady = WingCalm(now, speed);
+            if (_wingPending.HasValue)
+            {
+                // push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+                PushWing(_wingPending.Value, state, bus);
+                return;
+            }
+            double h = p.FrontWingHeight;
+            if (double.IsNaN(h) || double.IsInfinity(h) || h <= 0 || p.InPitLane
+                || speed < WingSampleSpeedKmh || !steady)
+            {
+                return;
+            }
+            var sample = new KeyValuePair<int, double>(WingBin(speed), h);
+            if (_wingBase == null)
+            {
+                _wingPre.Add(sample);                // 기준 전 — 건강한 기준 샘플
+                if (_wingPre.Count > WingBaseSamples)
+                    _wingPre.RemoveAt(0);
+                return;
+            }
+            if (_wingPost == null || _wingWarned)
+                return;
+            _wingPost.Add(sample);
+            if (_wingPost.Count > WingPostSamples)
+                _wingPost.RemoveAt(0);
+            if (_reportDue.HasValue)
+                return;    // 그 충격의 점검 리포트가 먼저 (같은 쿨다운 — 윙 콜이 리포트를 밀어내지 않게)
+            List<int> matched;
+            double? res = WingCompare(_wingBase, _wingPost, out matched);
+            if (!res.HasValue)
+                return;
+            double drop = res.Value;
+            var names = new List<string>();
+            foreach (int b in matched)
+                names.Add(((int)(WingSampleSpeedKmh + b * WingBinKmh)).ToString(CultureInfo.InvariantCulture));
+            string bins = string.Join(",", names);
+            bool tyre = _punctureWarned.Count > 0;
+            WheelInfo[] wheels = p.Wheels ?? new WheelInfo[0];
+            for (int i = 0; i < Math.Min(wheels.Length, 4); i++)
+            {
+                if (wheels[i].Flat || wheels[i].Detached)
+                    tyre = true;
+            }
+            if (tyre)
+            {
+                // 높이 하락은 타이어 탓 — 슬로우 펑처/점검 리포트가 부른다. 샘플은 계속 모은다.
+                if (!_wingTyreLogged)
+                {
+                    _wingTyreLogged = true;
+                    FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                        "윙 판정 (충격 {0:F0}): 맞춘 속도 구간 {1}개 [{2}]km/h · 기준 {3}샘플 · "
+                        + "충격 후 {4}샘플 · 하락 {5}mm → hold-tyre (펑크/휠/공기압 누출)",
+                        _wingImpactMag, matched.Count, bins, _wingBaseN, _wingPost.Count, SignedMm(drop)));
+                }
+                return;
+            }
+            bool call = drop >= WingDropM;
+            FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                "윙 판정 (충격 {0:F0}): 맞춘 속도 구간 {1}개 [{2}]km/h · 기준 {3}샘플 · "
+                + "충격 후 {4}샘플 · 하락 {5}mm → {6}",
+                _wingImpactMag, matched.Count, bins, _wingBaseN, _wingPost.Count, SignedMm(drop),
+                call ? "call" : "ok"));
+            _wingPost = null;                        // 이 충격의 판정은 끝 (다음 충격이 다시 연다)
+            if (!call)
+                return;
+            _wingPending = drop;
+            PushWing(drop, state, bus);
+        }
+
+        /// <summary>판정된 윙 콜 — 쿨다운으로 거절되면 대기로 남아 다음 틱에 다시 민다.</summary>
+        private void PushWing(double drop, RaceState state, EventBus bus)
+        {
+            string text = WingMessage(drop);
+            // 100mm 넘는 하락은 말하지 않지만 이슈·서사는 남기고 한 번만 판정한다
+            if (text != null)
+            {
+                bool accepted = bus.Push(new RadioEvent
+                {
+                    Type = EventTypes.DamageReport,
+                    Priority = Priority.High,
+                    Message = text,
+                    DedupKey = "wing_damage",
+                    Ttl = 20.0,
+                    Tone = "casual",
+                });
+                if (!accepted)
+                    return;
+            }
+            _wingWarned = true;
+            _wingPending = null;
+            state.SetIssue("damage", "프론트 윙 손상 (높이 -"
+                + (drop * 1000).ToString("F0", CultureInfo.InvariantCulture) + "mm)");
+            state.AddNarrative("(점검) 프론트 윙 손상 감지");
         }
 
         /// <summary>정렬한 목록의 Count/2 번째 — 파이썬 steer_median과 같은 정의.</summary>

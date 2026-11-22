@@ -49,14 +49,54 @@ IMPACT_PRESSURE_DROP_KPA = 12.0   # 충격 전후 이 이상 빠지면 누출로
 # ±10~20kPa를 넘는 값으로 설정해 오탐 방지)
 SLOW_PUNCTURE_DROP_KPA = 25.0
 
-# 프론트 윙 감시 — mFrontWingHeight의 충격 전후 지속적 변화 = 윙 손상.
-# 고속(직선)에서만 샘플링해 코너 자세/연료에 의한 자연 변동을 배제한다.
-# LMU 스포츠카(스플리터)에서 이 필드가 유효한지는 실차 검증 필요 —
-# 정적이면 이 감지는 조용히 비활성. 리어 윙은 전용 필드가 없어
-# 리어 존 덴트 + 부품 탈락 + 페이스 관찰로 커버한다.
+# 프론트 윙 감시 — mFrontWingHeight(m)가 충격 뒤 같은 속도에서 지속적으로 낮아졌으면 스플리터/
+# 윙 손상. LMU 스포츠카에서 이 필드가 동적으로 채워지는지는 실차 검증 필요 — 정적(상수)이면
+# 충격 전후가 같아 하락 0으로 판정이 끝나고, 0/없음이면 샘플이 아니라 조용히 쉰다. 리어 윙은
+# 전용 필드가 없어 리어 존 덴트 + 부품 탈락 + 페이스 관찰로 커버한다.
+#
+# 같은 것끼리 비교한다: 예전 감지는 150km/h 이상 샘플 전부의 EMA를 첫 충격 순간에 얼려 그 뒤 매
+# 틱 비교했다. 스플리터 높이는 공력 하중으로 속도² 에 비례해 눌리고(LMH 근사 170km/h ~6mm,
+# 300~330km/h ~19~23mm) 고속 제동에선 브레이크 다이브(~3mm/g, 공력 포함 2~4g)가 더해져, 건강한
+# 차의 높이가 150km/h 이상 대역 안에서만 15mm 넘게 움직인다 — 임계값(10mm)보다 크다. 중속
+# 구간(~200km/h)에서 가볍게 닿은 뒤 긴 직선을 달리면 기준(중속 높이)과 EMA(고속 높이) 차이를
+# 손상으로 읽어 멀쩡한 차에 "Front aero down 10 millimetres" 오탐 (리뷰 재현).
+#
+#   · 속도 구간: bin = floor((v − 150) / 10) — 10km/h 폭. 같은 구간 안 공력 압축 차이는 330km/h
+#     · 압축 23mm@300 기준으로도 ~1.7mm(d/dv C·(v/300)² = 2·23mm·330/300² × 10km/h)라 임계값의
+#     1/6 — 게다가 구간 중앙값끼리라 보통은 그보다 훨씬 작다.
+#   · 제동·큰 과도 제외: 연속 틱 속도 차로 감속을 구한다 — (직전 속도 − 지금 속도)/3.6/dt.
+#     직전 두 구간(틱 n−2→n−1, n−1→n) 모두 ≤ 4.9m/s²(0.5g)이고 각 dt가 0초 초과 0.5초 이하여야
+#     샘플이다. 0.5g는 고속 리프트오프(공력 저항+엔진 브레이크 ~0.4~0.5g, 다이브 ≤ 1.5mm)까지는
+#     넣고 실제 제동(1~4g, 다이브 3~12mm)은 빼는 경계. 두 구간을 보는 건 제동이 끝난 다음 틱에
+#     아직 남은 피치 복원(~0.2초)을 빼려고. 틱 간격이 0.5초(5Hz의 2.5배)를 넘으면 그 속도 차는
+#     감속이 아니다(일시정지·순간이동) — 다음 두 틱이 지나야 다시 샘플.
+#     강한 제동은 10km/h 구간을 1~2틱에 지나가 구간 중앙값이 이미 이겨내지만, 긴 트레일 브레이킹
+#     이나 제동 뒤 피치 흔들림이 한 구간에 몰리는 경우를 막는 방어다.
+#     (텔레메트리에 종가속도 필드를 따로 매핑하지 않는다 — 파이썬 스냅샷·C# PlayerInfo·리플레이
+#     로더가 같은 속도 필드로 같은 산술을 하니 두 엔진이 바이트까지 같고, 옛 리플레이도 돈다.)
+#   · 피트레인 · 높이 없음/비유한/≤0 · 150km/h 미만은 샘플이 아니다.
+#   · 기준 = 첫 충격 직전까지 모은 최근 301샘플(5Hz 고속 ~60초 — 보통 트랙 한 랩의 150km/h 이상
+#     구간)의 구간별 묶음. 5샘플 이상인 구간이 3개 미만이면 기준 없음 → 그 충격만 판정하지 않고
+#     기준 버퍼를 그 충격 뒤부터 새로 모은다 (얼라인 a48cf98과 같은 규칙 — 스틴트를 끄지 않는다).
+#   · 판정 = 충격 뒤 새로 모은 샘플(최근 301개)에서 충격 후 5샘플 이상 · 기준 5샘플 이상인 구간이
+#     3개가 되는 첫 틱에 한 번. 하락 = 맞춘 구간별 (기준 중앙값 − 충격 후 중앙값)의 중앙값 ≥ 10mm면
+#     콜. 5샘플 = 1초(노이즈 ±0.5mm의 중앙값), 3구간 = 한 구간이 튀어도 중앙값이 버틴다.
+#     중앙값은 정렬한 목록의 (len−1)//2 번째(짝수면 아래쪽 가운데 — 하락은 작은 쪽으로, C# 같은 정의).
+#   · 그 충격의 점검 리포트(+8초)가 나가기 전엔 판정하지 않는다 — 같은 damage_report 쿨다운이라
+#     윙 콜이 먼저 수락되면 리포트(펑크·휠 결과)가 버려진다. 판정 뒤 쿨다운으로 거절되면 대기로
+#     남아 다음 틱에 다시 민다. 타이어 펑크/탈락·공기압 누출이 잡혔으면 높이 하락은 타이어 탓이라
+#     콜하지 않는다 (판정만 미루고 샘플은 계속 모은다).
+#   · 다중 충격은 최초 기준을 유지하고 충격마다 판정 버퍼를 새로 연다 (판정은 충격당 한 번).
+#   · 횡가속은 보지 않는다 — 같은 속도면 공력 하중이 같고, 롤은 중앙 높이를 거의 바꾸지 않는다.
 WING_SAMPLE_SPEED_KMH = 150.0
-WING_DROP_M = 0.010          # 10mm 이상 지속 하락이면 윙 손상 의심
-WING_EMA_ALPHA = 0.03        # 5Hz 기준 ~7초 시정수
+WING_BIN_KMH = 10.0          # 속도 구간 폭
+WING_DROP_M = 0.010          # 같은 속도에서 10mm 이상 하락이면 윙 손상 의심
+WING_DECEL_MAX = 4.9         # m/s² (0.5g) — 직전 두 틱 구간 감속 상한 (제동 다이브 제외)
+WING_TICK_GAP_MAX = 0.5      # 초 — 이보다 긴 틱 간격의 속도 차는 감속으로 보지 않는다
+WING_BASE_SAMPLES = 301      # 충격 전 기준 버퍼 (최근 고속 샘플 ~1랩)
+WING_POST_SAMPLES = 301      # 충격 후 판정 버퍼 상한
+WING_BIN_MIN = 5             # 구간 하나에 필요한 샘플 (기준·충격 후 각각)
+WING_MIN_BINS = 3            # 판정에 필요한 맞춘 구간 수
 
 # 얼라인(조향 쏠림) 감시 — 서스펜션/스티어링 지오메트리가 틀어지면 직선에서도
 # 조향을 한쪽으로 유지해야 차가 곧게 간다. '차가 실제로 곧게 가는' 샘플의 조향만
@@ -181,6 +221,44 @@ def steer_median(samples: list) -> float:
     return sorted(samples)[len(samples) // 2]
 
 
+def low_median(samples: list) -> float:
+    """정렬한 목록의 (len−1)//2 번째 (짝수면 아래쪽 가운데) — C# HealthAnalyzer.LowMedian."""
+    return sorted(samples)[(len(samples) - 1) // 2]
+
+
+def wing_bin(speed_kmh: float) -> int:
+    """윙 높이 속도 구간 — floor((v − 150) / 10). C# HealthAnalyzer.WingBin."""
+    return int(math.floor((speed_kmh - WING_SAMPLE_SPEED_KMH) / WING_BIN_KMH))
+
+
+def wing_bins(samples: list) -> dict:
+    """(구간, 높이) 목록 → 구간별 높이 목록."""
+    out: dict = {}
+    for b, h in samples:
+        out.setdefault(b, []).append(h)
+    return out
+
+
+def wing_compare(base: dict, post: list) -> Optional[tuple]:
+    """
+    기준(구간별 높이) ↔ 충격 후 (구간, 높이) 목록 — 양쪽 다 WING_BIN_MIN개 이상인 구간이
+    WING_MIN_BINS개 이상이면 (하락 m, 맞춘 구간 목록), 아니면 None. C# HealthAnalyzer.WingCompare.
+    하락 = 구간별 (기준 중앙값 − 충격 후 중앙값)의 중앙값 (구간 오름차순, low_median).
+    """
+    by_post = wing_bins(post)
+    matched = sorted(b for b, hs in by_post.items()
+                     if len(hs) >= WING_BIN_MIN and len(base.get(b, ())) >= WING_BIN_MIN)
+    if len(matched) < WING_MIN_BINS:
+        return None
+    drops = [low_median(base[b]) - low_median(by_post[b]) for b in matched]
+    return low_median(drops), matched
+
+
+def wing_base_ok(base: dict) -> bool:
+    """기준으로 쓸 수 있나 — WING_BIN_MIN개 이상인 구간이 WING_MIN_BINS개 이상."""
+    return sum(1 for hs in base.values() if len(hs) >= WING_BIN_MIN) >= WING_MIN_BINS
+
+
 class HealthAnalyzer:
     def __init__(self, cfg):
         self.water_warn = cfg.get("thresholds.water_temp_warn", 105.0)
@@ -201,9 +279,10 @@ class HealthAnalyzer:
         self._pressure_max = [0.0, 0.0, 0.0, 0.0]   # 세션/스틴트 중 최고 공기압
         self._puncture_warned: set[int] = set()
         self._was_in_pitlane = False
-        self._wing_ema: Optional[float] = None      # 고속 구간 프론트 윙 높이 EMA
-        self._pre_impact_wing: Optional[float] = None
-        self._wing_warned = False
+        self._wing_prev_t: Optional[float] = None   # 직전 틱 (시각, 속도) — 감속 계산
+        self._wing_prev_v = 0.0
+        self._wing_prev_calm = False                # 직전 틱 구간이 제동이 아니었나
+        self._reset_wing()
         self._reset_alignment()
         self._last_impact_zone: Optional[str] = None
         self._instab_until = 0.0                    # 리어 불안정 감시 종료 시각
@@ -229,9 +308,7 @@ class HealthAnalyzer:
                 self._pressure_max = [0.0] * 4
                 self._puncture_warned.clear()
                 self._wheel_detached_warned.clear()
-                self._wing_ema = None
-                self._pre_impact_wing = None
-                self._wing_warned = False
+                self._reset_wing()
                 self._reset_alignment()
                 self._instab_until = 0.0
                 self._instab_required = INSTAB_MIN_COUNT
@@ -241,7 +318,7 @@ class HealthAnalyzer:
             self._was_in_pitlane = False
 
         if not over:
-            self._track_wing(p, state, bus)
+            self._track_wing(p, snap.t, state, bus)
             self._track_alignment(p, state, bus)
 
         impact_et = p.get("last_impact_et", 0.0)
@@ -252,8 +329,7 @@ class HealthAnalyzer:
             mag = p.get("last_impact_mag", 0.0)
             if mag >= self.impact_mag and not over:
                 self._pre_pressures = [w.get("pressure", 0.0) for w in wheels[:4]]
-                if self._pre_impact_wing is None:    # 다중 충격 시 최초 기준 유지
-                    self._pre_impact_wing = self._wing_ema
+                self._wing_on_impact(mag)
                 self._align_on_impact(mag)
                 self._report_due = snap.t + REPORT_DELAY_SEC
                 self._on_impact(mag, prev_dents, snap.t, state, bus)
@@ -356,40 +432,126 @@ class HealthAnalyzer:
         ))
         state.add_narrative(f"(점검) {message}")
 
-    def _track_wing(self, p: dict, state: SessionState, bus: EventBus) -> None:
-        """
-        프론트 윙 높이 감시 — 고속 직선에서만 EMA를 갱신하고, 충격 후
-        같은 조건에서 기준 대비 지속적으로 낮아졌으면 윙 손상으로 특정한다.
-        (연료 소모/코너 자세에 의한 자연 변동은 고속 한정 샘플링 + 10mm
-        임계값으로 배제. 서스펜션 손상은 필드가 없어 페이스 관찰로 판단.)
-        """
-        h = p.get("front_wing_height")
-        if not h or h <= 0 or p.get("in_pitlane") \
-                or (p.get("speed_kmh", 0.0) or 0.0) < WING_SAMPLE_SPEED_KMH:
-            return
-        if self._wing_ema is None:
-            self._wing_ema = h
-            return
-        self._wing_ema = (1 - WING_EMA_ALPHA) * self._wing_ema + WING_EMA_ALPHA * h
+    def _reset_wing(self) -> None:
+        """윙 감시 상태 — 세션 리셋과 피트레인 진입(수리 가능)에서 처음부터."""
+        self._wing_pre: list[tuple[int, float]] = []    # 기준 전 (구간, 높이) — 최근 301개
+        self._wing_base: Optional[dict] = None          # 굳힌 기준 (구간 → 높이 목록)
+        self._wing_base_n = 0                           # 기준에 쓴 샘플 수
+        self._wing_post: Optional[list] = None          # 충격 후 판정 버퍼 (None = 판정 대기 없음)
+        self._wing_impact_mag = 0.0                     # 판정 중인 충격 크기 (로그용)
+        self._wing_pending: Optional[float] = None      # 판정 끝난 콜의 하락(m) — 쿨다운 재시도
+        self._wing_tyre_logged = False
+        self._wing_warned = False
 
-        if self._wing_warned or self._pre_impact_wing is None:
+    def _wing_on_impact(self, mag: float) -> None:
+        """
+        기준 임계 이상 충격 — 기준이 아직 없으면 굳히고, 판정 버퍼를 새로 연다.
+        기준이 모자라면(5샘플 이상 구간 3개 미만) 이 충격만 판정하지 않고 기준 버퍼를 이 충격
+        뒤부터 새로 모은다 (다음 충격이 기준을 굳힐 수 있게 — 스틴트 전체를 끄지 않는다).
+        """
+        if self._wing_base is None:
+            base = wing_bins(self._wing_pre)
+            if not wing_base_ok(base):
+                log.info("윙 판정 (충격 %.0f): 기준 없음 — 충격 전 고속 샘플 %d개, %d샘플 이상 "
+                         "구간 %d개 < %d → no-baseline (이 충격만, 기준 다시 모음)",
+                         mag, len(self._wing_pre), WING_BIN_MIN,
+                         sum(1 for hs in base.values() if len(hs) >= WING_BIN_MIN), WING_MIN_BINS)
+                self._wing_pre = []
+                return
+            self._wing_base = base                  # 다중 충격 시 최초 기준 유지
+            self._wing_base_n = len(self._wing_pre)
+        if self._wing_warned or self._wing_pending is not None:
             return
-        drop = self._pre_impact_wing - self._wing_ema
-        if drop >= WING_DROP_M:
-            text = wing_message(drop)
-            # 100mm 넘는 하락은 말하지 않지만 이슈·서사는 남기고 한 번만 판정한다
-            if text is not None:
-                # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
-                accepted = bus.push(Event(
-                    type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
-                    message=text,
-                    dedup_key="wing_damage", ttl=20.0, tone="casual",
-                ))
-                if not accepted:
-                    return
-            self._wing_warned = True
-            state.set_issue("damage", f"프론트 윙 손상 (높이 -{drop * 1000:.0f}mm)")
-            state.add_narrative("(점검) 프론트 윙 손상 감지")
+        self._wing_post = []                        # 충격마다 새 버퍼 — 마지막 충격 뒤 상태로 판정
+        self._wing_impact_mag = mag
+        self._wing_tyre_logged = False
+
+    def _wing_calm(self, now: float, speed: float) -> bool:
+        """
+        직전 두 틱 구간 모두 감속 ≤ 0.5g(틱 간격 0~0.5초)인가 — 제동 다이브와 그 복원을 뺀다.
+        매 틱(체커 전) 갱신한다. C# HealthAnalyzer.WingCalm.
+        """
+        calm = False
+        if self._wing_prev_t is not None:
+            dt = now - self._wing_prev_t
+            if 0.0 < dt <= WING_TICK_GAP_MAX:
+                calm = (self._wing_prev_v - speed) / 3.6 / dt <= WING_DECEL_MAX
+        steady = calm and self._wing_prev_calm
+        self._wing_prev_t = now
+        self._wing_prev_v = speed
+        self._wing_prev_calm = calm
+        return steady
+
+    def _track_wing(self, p: dict, now: float, state: SessionState, bus: EventBus) -> None:
+        """
+        프론트 윙 높이 감시 — 제동이 아닌 고속 샘플을 속도 구간별로 모아, 충격 뒤 같은 속도
+        구간의 높이 중앙값이 충격 전보다 10mm 이상 낮으면 윙(스플리터) 손상으로 특정한다.
+        규칙과 근거는 WING_* 주석.
+        """
+        speed = p.get("speed_kmh", 0.0) or 0.0
+        steady = self._wing_calm(now, speed)
+        if self._wing_pending is not None:
+            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+            self._push_wing(self._wing_pending, state, bus)
+            return
+        h = p.get("front_wing_height")
+        if h is None or not math.isfinite(h) or h <= 0 or p.get("in_pitlane") \
+                or speed < WING_SAMPLE_SPEED_KMH or not steady:
+            return
+        sample = (wing_bin(speed), h)
+        if self._wing_base is None:
+            self._wing_pre.append(sample)           # 기준 전 — 건강한 기준 샘플
+            if len(self._wing_pre) > WING_BASE_SAMPLES:
+                del self._wing_pre[0]
+            return
+        if self._wing_post is None or self._wing_warned:
+            return
+        self._wing_post.append(sample)
+        if len(self._wing_post) > WING_POST_SAMPLES:
+            del self._wing_post[0]
+        if self._report_due is not None:
+            return    # 그 충격의 점검 리포트가 먼저 (같은 쿨다운 — 윙 콜이 리포트를 밀어내지 않게)
+        res = wing_compare(self._wing_base, self._wing_post)
+        if res is None:
+            return
+        drop, matched = res
+        bins = ",".join(str(int(WING_SAMPLE_SPEED_KMH + b * WING_BIN_KMH)) for b in matched)
+        wheels = (p.get("wheels") or [])[:4]
+        if self._puncture_warned or any(w.get("flat") or w.get("detached") for w in wheels):
+            # 높이 하락은 타이어 탓 — 슬로우 펑처/점검 리포트가 부른다. 샘플은 계속 모은다.
+            if not self._wing_tyre_logged:
+                self._wing_tyre_logged = True
+                log.info("윙 판정 (충격 %.0f): 맞춘 속도 구간 %d개 [%s]km/h · 기준 %d샘플 · "
+                         "충격 후 %d샘플 · 하락 %+.1fmm → hold-tyre (펑크/휠/공기압 누출)",
+                         self._wing_impact_mag, len(matched), bins, self._wing_base_n,
+                         len(self._wing_post), drop * 1000)
+            return
+        call = drop >= WING_DROP_M
+        log.info("윙 판정 (충격 %.0f): 맞춘 속도 구간 %d개 [%s]km/h · 기준 %d샘플 · "
+                 "충격 후 %d샘플 · 하락 %+.1fmm → %s", self._wing_impact_mag, len(matched), bins,
+                 self._wing_base_n, len(self._wing_post), drop * 1000, "call" if call else "ok")
+        self._wing_post = None                      # 이 충격의 판정은 끝 (다음 충격이 다시 연다)
+        if not call:
+            return
+        self._wing_pending = drop
+        self._push_wing(drop, state, bus)
+
+    def _push_wing(self, drop: float, state: SessionState, bus: EventBus) -> None:
+        """판정된 윙 콜 — 쿨다운으로 거절되면 대기로 남아 다음 틱에 다시 민다."""
+        text = wing_message(drop)
+        # 100mm 넘는 하락은 말하지 않지만 이슈·서사는 남기고 한 번만 판정한다
+        if text is not None:
+            accepted = bus.push(Event(
+                type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
+                message=text,
+                dedup_key="wing_damage", ttl=20.0, tone="casual",
+            ))
+            if not accepted:
+                return
+        self._wing_warned = True
+        self._wing_pending = None
+        state.set_issue("damage", f"프론트 윙 손상 (높이 -{drop * 1000:.0f}mm)")
+        state.add_narrative("(점검) 프론트 윙 손상 감지")
 
     def _reset_alignment(self) -> None:
         """얼라인 감시 상태 — 세션 리셋과 피트레인 진입(수리 가능)에서 처음부터."""
