@@ -71,13 +71,21 @@ WING_EMA_ALPHA = 0.03        # 5Hz 기준 ~7초 시정수
 #     어떤 것이든 8m/s² 이상이고, 1.5m/s²는 250km/h에서 반경 3km — 사실상 직선이다.
 #     직선의 미세 수정·노면 요철은 이 안에 든다. 손상된 차도 드라이버가 오프셋을 잡고
 #     곧게 가므로 요레이트는 0 근처 — 오프셋이 그대로 측정된다.
-#   · |횡속도| ≤ 1.0m/s: 정상 코너링 1~2m/s, 슬라이드 4m/s+보다 작고, 틀어진 토로
-#     차가 비스듬히 가는 정도(250km/h에서 0.8°)는 허용한다.
+#   · |횡속도| ≤ 3.0m/s: 슬라이드(4m/s+, INSTAB_LAT_SLIP_MS)만 뺀다. 코너링은 위
+#     요레이트 조건이 이미 뺀다. 리어 토가 틀어지면 차는 요레이트 0으로 비스듬히(차체
+#     슬립각 β ≈ 리어 토) 곧게 가고 드라이버는 같은 각만큼 조향을 잡는다 — 횡속도 =
+#     속도 × sin β. 락 ~17.5°에서 오프셋 0.05는 β 0.9°(290km/h에서 1.2m/s), 0.10은
+#     β 1.75°(2.5m/s), 300km/h에서 β 2°도 2.9m/s — 이 '게걸음' 샘플이 바로 재야 할
+#     오프셋이라 빠지면 안 된다 (1.0m/s였을 땐 리어 손상의 고속 샘플이 전부 빠져 판정
+#     버퍼가 차지 않았다).
 #   · |조향| ≤ 0.20은 센서 튐 방지용 상한으로만 남긴다.
 # 요레이트/횡속도/조향 중 하나라도 없으면 샘플이 아니다 (감지가 조용히 쉬고, 콜은 없다).
 #
 # 기준 = 첫 충격 직전까지 모은 직선 샘플 최근 101개의 중앙값 (25개 = 직선 5초 미만이면
-# 기준 없음 → 그 충격으로는 콜하지 않는다). 판정 = 충격 뒤 새로 모은 직선 샘플 51개의
+# 기준 없음 → 그 충격으로는 콜하지 않는다). 기준 없는 충격(1랩 T1 접촉·피트 아웃 직후·
+# 피트레인 안 접촉·세션 중간 합류의 묵은 충격 기록)은 그 충격만 판정하지 않고, 기준
+# 버퍼를 그 충격 뒤부터 새로 모은다 — 다음 충격이 25개 이상이면 기준을 굳히고 판정한다
+# (그 충격이 이미 얼라인을 틀었다면 기준에 섞여 콜이 없다 — 오탐보다 나은 쪽). 판정 = 충격 뒤 새로 모은 직선 샘플 51개의
 # 중앙값을 버퍼가 찼을 때 한 번. 중앙값은 정렬한 목록의 len//2 번째 (C#과 같은 정의 —
 # 크기가 홀수라 가운데 원소). 같은 위치 비교가 아니어도 직선끼리라 트랙 배치가 섞이지 않는다.
 # 타이어가 펑크/탈락이거나 공기압 누출이 잡혔으면 쏠림은 타이어 탓이라 콜하지 않는다
@@ -85,7 +93,7 @@ WING_EMA_ALPHA = 0.03        # 5Hz 기준 ~7초 시정수
 STEER_SAMPLE_SPEED_KMH = 150.0
 STEER_SAMPLE_MAX = 0.20      # 센서 튐 상한 (직선 판정은 아래 두 값)
 STEER_LAT_ACC_MAX = 1.5      # m/s² — |요레이트|×속도가 이 이하일 때만 '곧게 가는 중'
-STEER_LAT_VEL_MAX = 1.0      # m/s — |횡속도| 이 이하 (미끄러지는 중 아님)
+STEER_LAT_VEL_MAX = 3.0      # m/s — |횡속도| 이 이하 (슬라이드 아님, 리어 토 게걸음은 포함)
 STEER_SHIFT_MIN = 0.03       # 락 대비 3% 이상 오프셋 변화면 얼라인 손상 의심
 STEER_SHIFT_SEVERE = 0.08    # 이 이상이면 주행 자체가 힘든 수준 → 즉시 박스 권고
 STEER_BASE_SAMPLES = 101     # 충격 전 기준 버퍼 (최근 직선 샘플, 홀수)
@@ -385,10 +393,9 @@ class HealthAnalyzer:
 
     def _reset_alignment(self) -> None:
         """얼라인 감시 상태 — 세션 리셋과 피트레인 진입(수리 가능)에서 처음부터."""
-        self._steer_pre: list[float] = []           # 첫 충격 전 직선 조향 (최근 101개)
+        self._steer_pre: list[float] = []           # 기준 전 직선 조향 (최근 101개)
         self._pre_impact_steer: Optional[float] = None   # 기준 중앙값
         self._steer_base_n = 0                      # 기준에 쓴 샘플 수
-        self._steer_no_base = False                 # 첫 충격 때 기준 부족 → 피트까지 판정 없음
         self._steer_post: Optional[list[float]] = None   # 충격 후 판정 버퍼 (None = 판정 대기 없음)
         self._align_impact_mag = 0.0                # 판정 중인 충격 크기 (로그용)
         self._align_pending: Optional[str] = None   # 판정 끝난 콜 ("mild"/"severe") — 쿨다운 재시도
@@ -396,17 +403,20 @@ class HealthAnalyzer:
         self._align_warned = False
 
     def _align_on_impact(self, mag: float) -> None:
-        """기준 임계 이상 충격 — 첫 충격이면 기준을 굳히고, 판정 버퍼를 새로 연다."""
-        if self._pre_impact_steer is None and not self._steer_no_base:
-            if len(self._steer_pre) >= STEER_BASE_MIN:   # 다중 충격 시 최초 기준 유지
-                self._pre_impact_steer = steer_median(self._steer_pre)
-                self._steer_base_n = len(self._steer_pre)
-            else:
-                self._steer_no_base = True
-        if self._steer_no_base:
-            log.info("얼라인 판정 (충격 %.0f): 기준 없음 — 충격 전 직선 샘플 %d개 < %d → no-baseline",
-                     mag, len(self._steer_pre), STEER_BASE_MIN)
-            return
+        """
+        기준 임계 이상 충격 — 기준이 아직 없으면 굳히고, 판정 버퍼를 새로 연다.
+        기준 샘플이 모자라면 이 충격만 판정하지 않고 기준 버퍼를 이 충격 뒤부터 새로
+        모은다 (다음 충격이 기준을 굳힐 수 있게 — 스틴트 전체를 끄지 않는다).
+        """
+        if self._pre_impact_steer is None:
+            if len(self._steer_pre) < STEER_BASE_MIN:
+                log.info("얼라인 판정 (충격 %.0f): 기준 없음 — 충격 전 직선 샘플 %d개 < %d → "
+                         "no-baseline (이 충격만, 기준 다시 모음)",
+                         mag, len(self._steer_pre), STEER_BASE_MIN)
+                self._steer_pre = []
+                return
+            self._pre_impact_steer = steer_median(self._steer_pre)   # 다중 충격 시 최초 기준 유지
+            self._steer_base_n = len(self._steer_pre)
         if self._align_warned or self._align_pending is not None:
             return
         self._steer_post = []                       # 충격마다 새 버퍼 — 마지막 충격 뒤 상태로 판정
@@ -436,8 +446,8 @@ class HealthAnalyzer:
                 or abs(lat_vel) > STEER_LAT_VEL_MAX:
             return    # 코너·슬라이드 — 곧게 가는 중이 아니다
 
-        if self._pre_impact_steer is None and not self._steer_no_base:
-            self._steer_pre.append(steer)           # 첫 충격 전 — 건강한 기준 샘플
+        if self._pre_impact_steer is None:
+            self._steer_pre.append(steer)           # 기준 전 — 건강한 기준 샘플
             if len(self._steer_pre) > STEER_BASE_SAMPLES:
                 del self._steer_pre[0]
             return

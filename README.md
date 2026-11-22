@@ -196,9 +196,11 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   "losing pressure, prepare to box"). Instant call on wheel loss; continuous
   slow-puncture watch — the tool does the checking, not the driver. Alignment
   ("steering pull on the straights") compares the median steering of samples
-  where the car is really going straight (low yaw rate and lateral slip, so fast
-  sweepers never count) before the first impact and after it; no call without a
-  pre-impact baseline or while a tyre is flat
+  where the car is really going straight (low yaw rate and not sliding, so fast
+  sweepers never count, while a car crabbing straight on bent rear toe still does)
+  before the first impact and after it; an impact without a pre-impact baseline is
+  not judged (the baseline restarts, so a later impact still is), and there is no
+  call while a tyre is flat
 - [x] Fuel-save coaching — target-burn delta guidance in no-stop borderline
   situations
 - [x] Wet/dry crossover — tyre-switch decision trigger from track wetness

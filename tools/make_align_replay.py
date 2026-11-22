@@ -8,15 +8,24 @@ EMA가 충격 지점과 15초 뒤 지점의 코너 구성(좌우 비율) 차이�
 스위퍼 구간 직전 가벼운 접촉 하나로 멀쩡한 차에 콜. 녹화 리플레이에는 조향·요레이트·횡속도
 필드가 아예 없어서(race_full 등) 이 감지는 한 번도 재생된 적이 없다.
 
-여기서는 한 레이스에 경우를 모두 넣고(경우 사이는 피트 진입 = 얼라인 상태 리셋), 어떤 콜이
-몇 초에 나와야 하는지를 data/replays/align.expect.json에 같이 쓴다 (tools/expect_calls.py가
-파이썬·C# 둘 다 대조 — align_damage/align_severe 키만).
+여기서는 레이스 몇 개에 경우를 나눠 넣고(경우 사이는 피트 진입 = 얼라인 상태 리셋), 어떤 콜이
+몇 초에 나와야 하는지를 data/replays/<이름>.expect.json에 같이 쓴다 (tools/expect_calls.py가
+파이썬·C# 둘 다 대조 — align_damage/align_severe 키만). 리플레이 하니스는 버스를 비우지 않아
+같은 키 콜이 리플레이마다 한 번만 수락되므로 경미·심각 콜이 각각 하나씩 넘지 않게 나눈다:
+  · align — 스위퍼 직전 접촉(침묵) · 피트 아웃 직후 기준 없음(침묵) · 펑크(침묵) · 경미 · 심각
+  · align_rebase — 1랩 첫 직선의 기준 없는 접촉 뒤 한 랩 더 달리고 실제 손상 → 경미
+    (6e8bc8e는 기준 없는 충격 하나가 피트까지 감지를 꺼서 침묵)
+  · align_crab — 리어 토 손상으로 비스듬히 곧게 감(직선 횡속도 1~2.5m/s) → 경미 · 심각
+    (6e8bc8e는 횡속도 1.0m/s 상한이 고속 직선 샘플을 버려 판정 버퍼가 차지 않아 침묵)
+생성기는 새 경우가 직전 규칙(6e8bc8e)에선 콜이 안 나는 모양이라는 것도 확인한다.
 
 규칙 (기대값의 근거, analyzers/health.py STEER_* · C# HealthAnalyzer와 같은 값):
-  · 샘플 = 피트레인 밖 · 150km/h 이상 · |요레이트|×속도 ≤ 1.5m/s² · |횡속도| ≤ 1.0m/s ·
+  · 샘플 = 피트레인 밖 · 150km/h 이상 · |요레이트|×속도 ≤ 1.5m/s² · |횡속도| ≤ 3.0m/s ·
     |조향| ≤ 0.20 — 차가 실제로 곧게 가는 순간만 (스위퍼 안은 빠지고, 스위퍼 사이 짧은
-    직선·코너 시작 틱은 들어간다)
-  · 기준 = 첫 충격 전 최근 101샘플 중앙값, 25샘플 미만이면 기준 없음 → 그 스틴트는 콜 없음
+    직선·코너 시작 틱은 들어간다). 리어 토가 틀어져 비스듬히 곧게 가는 '게걸음'(횡속도
+    1~2.5m/s, 요레이트 0)도 샘플이다
+  · 기준 = 첫 충격 전 최근 101샘플 중앙값, 25샘플 미만이면 기준 없음 → 그 충격만 콜 없음,
+    기준 버퍼는 그 충격 뒤부터 새로 모아 다음 충격이 기준을 굳힌다
   · 판정 = 충격 뒤 새 버퍼 51샘플이 찼을 때 중앙값 − 기준: ≥ 0.03 경미, ≥ 0.08 심각
   · 타이어 펑크/탈락·공기압 누출 중엔 콜하지 않는다 (쏠림은 타이어 탓)
   · 판정 시각은 점검 리포트(충격 +8초)의 damage_report 쿨다운 20초 밖 — 재시도 없이 그 틱
@@ -25,7 +34,9 @@ EMA가 충격 지점과 15초 뒤 지점의 코너 구성(좌우 비율) 차이�
 구간 F(200km/h, 오른쪽 위주 4코너, 조향 최대 0.17) · 중속 코너(130) · 직선 S3(270) · 헤어핀(80).
 구간 안은 등속이고 코너는 반 사인 곡률. 조향 = 오프셋 + GAIN × 곡률 + 손떨림, 요레이트 = 속도 ×
 곡률, 횡속도 = 0.06 × 횡가속 + 작은 흔들림 — 손상된 차도 드라이버가 오프셋을 잡고 곧게 가므로
-직선의 요레이트는 0 근처. 피트 랩은 S1 자리를 피트레인(~78km/h, 12초 정지)으로 달린다. 구간 경계는 전부 틱 위라 코너 첫 틱은
+직선의 요레이트는 0 근처. 리어 손상(crab) 경우는 차체 슬립각 β = 오프셋 × 락(17.5°)으로
+비스듬히 달려 횡속도에 속도 × sin β가 더해진다. 피트 랩은 S1 자리를 피트레인(~78km/h,
+12초 정지)으로 달린다. 구간 경계는 전부 틱 위라 코너 첫 틱은
 곡률 0(곧게 감), 다음 틱부터 확실히 코너다.
 위치·시각은 구간 표에서 해석적으로 구한다 (dt 누적 없음 — 재생성 결과가 머신과 무관하게 같다).
 
@@ -50,7 +61,6 @@ import math
 import os
 import tempfile
 
-NAME = "align"
 HZ = 5
 INT_MAX = 2147483647
 END_ET = 3000.0             # 시간제 50분 — 리플레이(~19분) 안에 하프·남은 시간 안내가 없다
@@ -65,7 +75,7 @@ REPORT_COOLDOWN = 20.0      # config cooldowns.damage_report
 SPEED_MIN = 150.0
 STEER_MAX = 0.20
 LAT_ACC_MAX = 1.5
-LAT_VEL_MAX = 1.0
+LAT_VEL_MAX = 3.0
 SHIFT_MIN = 0.03
 SHIFT_SEVERE = 0.08
 BASE_N = 101
@@ -74,6 +84,10 @@ JUDGE_N = 51
 # 예전 감지 (EMA) — 경우 (a)가 예전 코드에서 콜이 나는 모양인지 확인용
 OLD_ALPHA = 0.02
 OLD_JUDGE = 75
+# 직전 중앙값 감지 (6e8bc8e) — 기준 없는 충격 하나가 스틴트 전체를 끄고, 횡속도 1.0m/s
+# 상한이 리어 토 게걸음 샘플을 버리던 규칙. 새 경우가 그 코드에서 실패하는지 확인용
+PREV_LAT_VEL_MAX = 1.0
+LOCK_DEG = 17.5             # 조향 풀 락의 로드휠 각 (LMU 프로토타입 근사) — 게걸음 슬립각
 
 GAIN = 21.0                 # 조향(락 대비) / 곡률(1/m) — 고속 언더스티어 포함 근사
 SLIP = 0.06                 # 횡속도(m/s) / 횡가속(m/s²) — 정상 코너링 1~2m/s
@@ -99,22 +113,47 @@ PIT_STOP_S = 12.0
 LAP_S = sum(seg[2] for seg in LAP)
 
 # 랩 계획 — 랩 번호(0부터)별: pit = 이 랩 S1을 피트레인으로, impact = (경우 이름, 구간, 구간 안 시각)
-# 충격 뒤 상태(offset 조향 오프셋, flat 우측 앞 펑크)는 다음 피트 진입까지 유지된다.
-CASES = [
-    dict(name="healthy_sweepers", lap=1, seg="S2", at=7.5, offset=0.0, expect=None,
-         note="멀쩡한 차 + 스위퍼 구간 직전 가벼운 접촉 → 콜 없음 "
-              "(예전: 스위퍼 조향이 EMA에 섞여 align_mild 오탐)"),
-    dict(name="no_baseline", lap=2, pit=True, seg="S2", at=3.0, offset=0.05, expect=None,
-         note="피트 아웃 직후(기준 직선 샘플 16개 < 25) 충격 + 실제 오프셋 +0.05 → 기준 없음, 콜 없음"),
-    dict(name="flat_tyre_pull", lap=5, seg="S2", at=7.5, offset=0.05, flat=True, expect=None,
-         note="충격 + 우측 앞 펑크로 +0.05 쏠림 → 타이어 탓, 얼라인 콜 없음 (점검 리포트가 펑크를 부른다)"),
-    dict(name="align_mild", lap=7, seg="S2", at=7.5, offset=0.05, expect="mild",
-         note="충격 뒤 직선 조향 오프셋 +0.05 → align_mild 하나"),
-    dict(name="align_severe", lap=9, seg="S2", at=7.5, offset=0.10, expect="severe",
-         note="충격 뒤 직선 조향 오프셋 +0.10 → align_severe 하나"),
-]
-PIT_LAPS = {2, 4, 6, 8}     # 경우 사이 피트 = 얼라인·타이어 리셋 (수리)
-N_LAPS = 11                 # 마지막 랩(10)은 S1 끝까지만 달린다
+# 충격 뒤 상태(offset 조향 오프셋, flat 우측 앞 펑크, crab 리어 토 게걸음)는 다음 피트 진입까지
+# 유지된다 (같은 스틴트의 다음 충격이 오면 그 충격의 상태). no_base = 기준 없는 충격이어야 함.
+# 리플레이 하니스는 버스를 비우지 않아 dedup 키(align_damage/align_severe)가 리플레이마다 한 번만
+# 수락된다 — 경미·심각 콜이 각각 하나를 넘으면 리플레이를 나눈다.
+SCENARIOS = {
+    "align": dict(pit_laps={2, 4, 6, 8}, n_laps=11, cases=[
+        dict(name="healthy_sweepers", lap=1, seg="S2", at=7.5, offset=0.0, expect=None,
+             note="멀쩡한 차 + 스위퍼 구간 직전 가벼운 접촉 → 콜 없음 "
+                  "(예전: 스위퍼 조향이 EMA에 섞여 align_mild 오탐)"),
+        dict(name="no_baseline", lap=2, no_base=True, seg="S2", at=3.0, offset=0.05, expect=None,
+             note="피트 아웃 직후(기준 직선 샘플 16개 < 25) 충격 + 실제 오프셋 +0.05 → 기준 없음, 콜 없음"),
+        dict(name="flat_tyre_pull", lap=5, seg="S2", at=7.5, offset=0.05, flat=True, expect=None,
+             note="충격 + 우측 앞 펑크로 +0.05 쏠림 → 타이어 탓, 얼라인 콜 없음 (점검 리포트가 펑크를 부른다)"),
+        dict(name="align_mild", lap=7, seg="S2", at=7.5, offset=0.05, expect="mild",
+             note="충격 뒤 직선 조향 오프셋 +0.05 → align_mild 하나"),
+        dict(name="align_severe", lap=9, seg="S2", at=7.5, offset=0.10, expect="severe",
+             note="충격 뒤 직선 조향 오프셋 +0.10 → align_severe 하나"),
+    ]),
+    # 기준 없는 충격은 그 충격만 — 1랩 첫 직선의 접촉 뒤에도 다음 충격은 판정한다
+    "align_rebase": dict(pit_laps=set(), n_laps=3, cases=[
+        dict(name="opening_tap", lap=0, no_base=True, seg="S1", at=3.0, offset=0.0, expect=None,
+             note="1랩 첫 직선 3초(기준 직선 샘플 16개 < 25)에 가벼운 접촉(멀쩡) → 이 충격만 콜 없음, "
+                  "기준은 이 충격 뒤부터 다시 모은다"),
+        dict(name="after_no_baseline", lap=1, seg="S2", at=7.5, offset=0.05, expect="mild",
+             note="기준 없는 접촉 뒤 한 랩 달린 다음 실제 손상(+0.05) → align_mild "
+                  "(직전 코드: 기준 없는 충격 하나가 피트까지 감지를 꺼서 침묵)"),
+    ]),
+    # 리어 토 손상 — 요레이트 0으로 비스듬히 곧게 간다 (횡속도 = 속도 × sin β)
+    "align_crab": dict(pit_laps={2}, n_laps=5, cases=[
+        dict(name="rear_crab_mild", lap=1, seg="S2", at=7.5, offset=0.05, crab=True, expect="mild",
+             note="리어 토 손상 — 오프셋 +0.05로 비스듬히 곧게 감(직선 횡속도 1.0~1.25m/s) → align_mild "
+                  "(직전 코드: 횡속도 1.0m/s 상한이 고속 직선 샘플을 버려 판정 버퍼가 안 참)"),
+        dict(name="rear_crab_severe", lap=3, seg="S2", at=7.5, offset=0.10, crab=True, expect="severe",
+             note="리어 토 심한 손상 — 오프셋 +0.10, 직선 횡속도 2.0~2.5m/s → align_severe "
+                  "(직전 코드: 샘플이 전부 빠져 콜 없음)"),
+    ]),
+}
+NAME = "align"
+CASES: list = []
+PIT_LAPS: set = set()
+N_LAPS = 0
 
 
 class Seg:
@@ -147,8 +186,8 @@ def build_track():
 
 
 TL_S1 = LAP[0][2] * LAP[0][3] / 3.6
-SEGS = build_track()
-T_END = SEGS[-1].t1
+SEGS: list = []
+T_END = 0.0
 
 
 def seg_at(t):
@@ -186,8 +225,19 @@ def case_impact_t(c):
     return t
 
 
-IMPACTS = [(case_impact_t(c), c) for c in CASES]
-PIT_ENTRIES = sorted(s.t0 for s in SEGS if s.name == "PIT_IN")
+IMPACTS: list = []
+PIT_ENTRIES: list = []
+
+
+def configure(name):
+    """리플레이 하나의 랩 계획으로 모듈 상태를 다시 짠다 (구간 표·충격·피트 진입)."""
+    global NAME, CASES, PIT_LAPS, N_LAPS, SEGS, T_END, IMPACTS, PIT_ENTRIES
+    sc = SCENARIOS[name]
+    NAME, CASES, PIT_LAPS, N_LAPS = name, sc["cases"], sc["pit_laps"], sc["n_laps"]
+    SEGS = build_track()
+    T_END = SEGS[-1].t1
+    IMPACTS = [(case_impact_t(c), c) for c in CASES]
+    PIT_ENTRIES = sorted(s.t0 for s in SEGS if s.name == "PIT_IN")
 
 
 def damage_at(t):
@@ -234,6 +284,8 @@ def motion(n):
     steer = offset + GAIN * k + 0.0015 * math.sin(n * 1.7) + 0.0008 * math.sin(n * 0.37)
     yaw = s.v * k
     lat = SLIP * s.v * s.v * k + 0.05 * math.sin(n * 0.71)
+    if dmg and dmg[1].get("crab"):
+        lat += s.v * math.sin(math.radians(offset * LOCK_DEG))   # 리어 토 — 비스듬히 곧게 감
     return (round(s.v * 3.6, 1), round(steer, 4), round(yaw, 4), round(lat, 2), s.pit)
 
 
@@ -332,14 +384,18 @@ def median(xs):
     return sorted(xs)[len(xs) // 2]
 
 
-def judge(snaps):
+def judge(snaps, lat_max=LAT_VEL_MAX, stint_off=False):
     """
-    규칙대로 경우마다 기준·판정을 구한다 (기대값). 샘플 분류는 경계에서 멀어야 한다 —
-    직선 샘플은 한계의 2/3 안, 코너 샘플은 한계의 1.5배 밖 (생성 모델이 판정 경계에 걸쳐
-    엔진 반올림 차이로 갈리지 않게).
+    규칙대로 경우마다 기준·판정을 구한다 (기대값). lat_max/stint_off는 직전 코드(6e8bc8e)
+    규칙 — 횡속도 1.0m/s 상한, 기준 없는 충격이 피트까지 감지를 끔 — 재현용.
+    기본 규칙에선 샘플 분류가 경계에서 멀어야 한다 — 직선 샘플은 요레이트×속도 한계의
+    2/3 안·횡속도 한계의 0.9 안, 코너 샘플은 요레이트×속도 한계의 1.5배 밖 (생성 모델이
+    판정 경계에 걸쳐 엔진 반올림 차이로 갈리지 않게). 횡속도 상한은 리어 토 게걸음
+    경우(2.5m/s까지)에서 실제로 쓰인다.
     """
+    default = lat_max == LAT_VEL_MAX and not stint_off
     out = {}
-    pre, post, base, no_base, cur = [], None, None, False, None
+    pre, post, base, no_base, cur, n_base = [], None, None, False, None, 0
     ema, old_base, old_n, old_call = None, None, 0, {}
     pit_prev = False
     for s in snaps:
@@ -351,12 +407,13 @@ def judge(snaps):
         v = p["speed_kmh"]
         acc = abs(p["yaw_rate"]) * v / 3.6
         ok = (not p["in_pitlane"] and v >= SPEED_MIN and abs(p["steering"]) <= STEER_MAX
-              and acc <= LAT_ACC_MAX and abs(p["lat_vel"]) <= LAT_VEL_MAX)
+              and acc <= LAT_ACC_MAX and abs(p["lat_vel"]) <= lat_max)
         if v >= SPEED_MIN and not p["in_pitlane"]:
-            if ok:
-                assert acc <= LAT_ACC_MAX * 2 / 3 and abs(p["lat_vel"]) <= LAT_VEL_MAX * 2 / 3, t
-            else:
-                assert acc >= LAT_ACC_MAX * 1.5, (t, acc)
+            if default:
+                if ok:
+                    assert acc <= LAT_ACC_MAX * 2 / 3 and abs(p["lat_vel"]) <= LAT_VEL_MAX * 0.9, t
+                else:
+                    assert acc >= LAT_ACC_MAX * 1.5, (t, acc)
             # 예전 감지 (EMA, |조향| ≤ 0.20 전부)
             if abs(p["steering"]) <= STEER_MAX:
                 ema = p["steering"] if ema is None else (1 - OLD_ALPHA) * ema + OLD_ALPHA * p["steering"]
@@ -384,27 +441,38 @@ def judge(snaps):
                 if len(pre) >= BASE_MIN:
                     base, n_base = median(pre), len(pre)
                 else:
-                    no_base = True
                     out[hit["name"]] = dict(t=t, base=None, n_pre=len(pre))
-            if not no_base:
+                    if stint_off:
+                        no_base = True          # 직전 코드: 피트까지 감지 꺼짐
+                    pre = []                    # 새 규칙: 이 충격만, 기준은 다시 모은다
+                    continue
+            if base is not None:
                 post = []
     return out, old_call
+
+
+def decide(r):
+    if r is None or r.get("base") is None:
+        return None
+    sh = abs(r["shift"])
+    return "severe" if sh >= SHIFT_SEVERE else "mild" if sh >= SHIFT_MIN else None
 
 
 def build():
     snaps = [snapshot(n) for n in range(tick(T_END) + 1)]
     res, old_call = judge(snaps)
+    prev, _ = judge(snaps, lat_max=PREV_LAT_VEL_MAX, stint_off=True)
     events, cases = [], []
     for ti, c in IMPACTS:
         r = res.get(c["name"])
         assert r is not None, f"{c['name']}: 판정 버퍼가 차지 않음"
-        if c["name"] == "no_baseline":
+        if c.get("no_base"):
+            # 피트 아웃 직후·1랩 첫 직선 충격 — 기준 없음 (이 충격만)
             assert r["base"] is None and r["n_pre"] < BASE_MIN, c["name"]
             decision = None
         else:
             assert r["n_base"] >= BASE_MIN, c["name"]
-            sh = abs(r["shift"])
-            decision = "severe" if sh >= SHIFT_SEVERE else "mild" if sh >= SHIFT_MIN else None
+            decision = decide(r)
             # 판정 시각이 점검 리포트(+8초) 쿨다운(20초) 밖 — 재시도 경계에 걸치지 않게
             assert r["t"] >= ti + REPORT_DELAY + REPORT_COOLDOWN + 1.0, c["name"]
             # 판정 시각에 아직 스위퍼(F)를 지나 S3 — 같은 랩 안
@@ -419,6 +487,15 @@ def build():
         if c["name"] == "healthy_sweepers":
             # 예전 감지라면 이 경우에서 콜 — 이 리플레이가 회귀를 잡는다는 근거
             assert c["name"] in old_call, "healthy_sweepers: 예전 EMA 감지가 콜하는 모양이 아님"
+        prev_decision = None if c.get("flat") else decide(prev.get(c["name"]))
+        if NAME != "align":
+            # 직전 코드(기준 없는 충격이 스틴트를 끔 · 횡속도 1.0m/s 상한)는 여기서 침묵
+            assert prev_decision is None, (c["name"], prev.get(c["name"]))
+        if c.get("crab"):
+            # 횡속도 상한이 실제로 쓰인다 — 게걸음 직선 샘플이 예전 상한(1.0m/s)을 넘는다
+            lats = [abs(x["player"]["lat_vel"]) for x in snaps
+                    if ti < x["t"] <= r["t"] and seg_at(x["t"]).kind == "straight"]
+            assert min(lats) > PREV_LAT_VEL_MAX, (c["name"], min(lats))
         if decision is not None:
             events.append({
                 "t": round(r["t"], 2),
@@ -426,7 +503,8 @@ def build():
                 "data": {},
                 "message": SAY_SEVERE if decision == "severe" else SAY_MILD,
             })
-        case = {"name": c["name"], "impact_t": ti, "call": decision is not None, "note": c["note"]}
+        case = {"name": c["name"], "impact_t": ti, "call": decision is not None, "note": c["note"],
+                "prev_call": prev_decision is not None}
         if r.get("base") is not None:
             case.update(base=round(r["base"], 4), post=round(r["post"], 4),
                         shift=round(r["shift"], 4), judge_t=r["t"])
@@ -436,9 +514,10 @@ def build():
 
     sidecar = {
         "scenario": NAME,
-        "note": "얼라인 콜 — 곧게 가는 고속 샘플(요레이트×속도 ≤ 1.5m/s², 횡속도 ≤ 1m/s)의 조향 중앙값을 "
+        "note": "얼라인 콜 — 곧게 가는 고속 샘플(요레이트×속도 ≤ 1.5m/s², 횡속도 ≤ 3m/s)의 조향 중앙값을 "
                 "첫 충격 전(101개, 최소 25) ↔ 충격 뒤(51개가 찼을 때) 비교, 0.03 경미 · 0.08 심각. "
-                "스위퍼 조향은 섞이지 않고, 기준 부족·타이어 펑크면 콜 없음",
+                "스위퍼 조향은 섞이지 않고, 리어 토 게걸음은 샘플이다. 기준 부족이면 그 충격만, "
+                "타이어 펑크면 콜 없음",
         "types": ["damage_report"],
         "keys": ["align_damage", "align_severe"],
         "events": events,
@@ -473,6 +552,14 @@ def main() -> int:
     ap.add_argument("--check", action="store_true",
                     help="임시 폴더에 다시 만들어 저장소 파일과 대조 (압축 해제 바이트)")
     args = ap.parse_args()
+    rc = 0
+    for name in SCENARIOS:
+        configure(name)
+        rc |= one(args)
+    return rc
+
+
+def one(args) -> int:
     snaps, sidecar = build()
     if not args.check:
         os.makedirs(args.out_dir, exist_ok=True)

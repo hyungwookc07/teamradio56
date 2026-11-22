@@ -41,7 +41,7 @@ namespace TeamRadio56.Core.Logic
         private const double SteerSampleSpeedKmh = 150.0;
         private const double SteerSampleMax = 0.20;      // 센서 튐 상한
         private const double SteerLatAccMax = 1.5;       // m/s² — |요레이트|×속도
-        private const double SteerLatVelMax = 1.0;       // m/s — |횡속도|
+        private const double SteerLatVelMax = 3.0;       // m/s — |횡속도| (슬라이드만 뺀다, 리어 토 게걸음은 포함)
         private const double SteerShiftMin = 0.03;
         private const double SteerShiftSevere = 0.08;
         private const int SteerBaseSamples = 101;        // 충격 전 기준 버퍼 (홀수)
@@ -74,10 +74,9 @@ namespace TeamRadio56.Core.Logic
         private double? _wingEma;
         private double? _preImpactWing;
         private bool _wingWarned;
-        private readonly List<double> _steerPre = new List<double>();   // 첫 충격 전 직선 조향
+        private readonly List<double> _steerPre = new List<double>();   // 기준 전 직선 조향
         private double? _preImpactSteer;          // 기준 중앙값
         private int _steerBaseN;
-        private bool _steerNoBase;                // 첫 충격 때 기준 부족 → 피트까지 판정 없음
         private List<double> _steerPost;          // 충격 후 판정 버퍼 (null = 판정 대기 없음)
         private double _alignImpactMag;
         private string _alignPending;             // 판정 끝난 콜 ("mild"/"severe") — 쿨다운 재시도
@@ -481,7 +480,6 @@ namespace TeamRadio56.Core.Logic
             _steerPre.Clear();
             _preImpactSteer = null;
             _steerBaseN = 0;
-            _steerNoBase = false;
             _steerPost = null;
             _alignImpactMag = 0.0;
             _alignPending = null;
@@ -494,27 +492,26 @@ namespace TeamRadio56.Core.Logic
             return (d >= 0 ? "+" : "") + d.ToString("F3", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>기준 임계 이상 충격 — 첫 충격이면 기준을 굳히고, 판정 버퍼를 새로 연다.</summary>
+        /// <summary>
+        /// 기준 임계 이상 충격 — 기준이 아직 없으면 굳히고, 판정 버퍼를 새로 연다.
+        /// 기준 샘플이 모자라면 이 충격만 판정하지 않고 기준 버퍼를 이 충격 뒤부터 새로
+        /// 모은다 (다음 충격이 기준을 굳힐 수 있게 — 스틴트 전체를 끄지 않는다).
+        /// </summary>
         private void AlignOnImpact(double mag)
         {
-            if (!_preImpactSteer.HasValue && !_steerNoBase)
+            if (!_preImpactSteer.HasValue)
             {
-                if (_steerPre.Count >= SteerBaseMin)      // 다중 충격 시 최초 기준 유지
+                if (_steerPre.Count < SteerBaseMin)
                 {
-                    _preImpactSteer = SteerMedian(_steerPre);
-                    _steerBaseN = _steerPre.Count;
+                    FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                        "얼라인 판정 (충격 {0:F0}): 기준 없음 — 충격 전 직선 샘플 {1}개 < {2} → "
+                        + "no-baseline (이 충격만, 기준 다시 모음)",
+                        mag, _steerPre.Count, SteerBaseMin));
+                    _steerPre.Clear();
+                    return;
                 }
-                else
-                {
-                    _steerNoBase = true;
-                }
-            }
-            if (_steerNoBase)
-            {
-                FileLog.Info(string.Format(CultureInfo.InvariantCulture,
-                    "얼라인 판정 (충격 {0:F0}): 기준 없음 — 충격 전 직선 샘플 {1}개 < {2} → no-baseline",
-                    mag, _steerPre.Count, SteerBaseMin));
-                return;
+                _preImpactSteer = SteerMedian(_steerPre);  // 다중 충격 시 최초 기준 유지
+                _steerBaseN = _steerPre.Count;
             }
             if (_alignWarned || _alignPending != null)
                 return;
@@ -549,9 +546,9 @@ namespace TeamRadio56.Core.Logic
                 return;    // 코너·슬라이드 — 곧게 가는 중이 아니다
             }
 
-            if (!_preImpactSteer.HasValue && !_steerNoBase)
+            if (!_preImpactSteer.HasValue)
             {
-                _steerPre.Add(steer);            // 첫 충격 전 — 건강한 기준 샘플
+                _steerPre.Add(steer);            // 기준 전 — 건강한 기준 샘플
                 if (_steerPre.Count > SteerBaseSamples)
                     _steerPre.RemoveAt(0);
                 return;
