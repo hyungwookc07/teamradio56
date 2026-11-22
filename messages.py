@@ -657,8 +657,11 @@ def fnv1a32(text: str) -> int:
 
 
 def variant_index(key: str, seed: str) -> int:
-    """시드로 고른 변형 번호 — 슬롯(그룹 키)마다 따로 해시해 서로 엮이지 않게."""
-    return fnv1a32(f"{seed}|{key}") % len(variants(key))
+    """시드로 고른 변형 번호 — 슬롯(그룹 키)마다 따로 해시해 서로 엮이지 않게.
+    해시의 상위 비트로 줄인다 ((h × n) >> 32, Lemire). `h % n`은 안 된다: FNV-1a의 하위
+    k비트는 입력의 하위 k비트로만 정해져서, 키가 고정 접미사면 변형 2·4개짜리 슬롯이 전부
+    같은 2비트 상태를 따라 함께 움직인다 (C# Messages.VariantIndex와 같은 식)."""
+    return (fnv1a32(f"{seed}|{key}") * len(variants(key))) >> 32
 
 
 def variant(key: str, seed: str, **kw) -> str:

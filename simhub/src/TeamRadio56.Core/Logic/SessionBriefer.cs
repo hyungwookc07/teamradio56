@@ -8,7 +8,8 @@ namespace TeamRadio56.Core.Logic
     /// <summary>
     /// main.py _maybe_session_briefing + briefing.py 포팅 — 세션 시작 브리핑 (세션당 1회).
     /// 주행 가능 상태에서 첫 데이터가 잡히면 무전 체크로 열고 세션 종류마다 다른 내용을
-    /// 브리핑한다 (트랙 이름은 말하지 않는다). 세션 중간 합류도 현재 상황 기준으로.
+    /// 브리핑한다 (트랙 이름은 말하지 않는다). 세션 중간 합류도 현재 상황 기준으로 —
+    /// 연습/퀄리/웜업은 차가 트랙에 나가 있을 때만 중간 합류 (차고에서 붙으면 시작 구성).
     /// 문장 슬롯마다 변형은 스냅샷 값 시드의 FNV-1a 해시로 고른다 (Messages.Variant) —
     /// 파이썬과 같은 문장이라 리플레이가 문장 단위로 대조한다.
     /// </summary>
@@ -16,6 +17,9 @@ namespace TeamRadio56.Core.Logic
     {
         /// <summary>스타트 스포터 모드 길이(초) — 0이면 브리핑에서 예고 생략.</summary>
         public double StartSpotterSec = 45;
+
+        /// <summary>연습/퀄리/웜업 — 세션 시계가 이만큼 지났으면 '남은 시간'으로 말한다 (briefing.LATE_START_S).</summary>
+        public const double LateStartSec = 120.0;
 
         private bool _briefed;
 
@@ -78,9 +82,13 @@ namespace TeamRadio56.Core.Logic
             // 레이스의 그리드/포메이션 대기(롤링 스타트 전 ~40초)는 '시작'이다.
             // 세션 시계는 대기 중에도 흐르므로 경과 시간이 아니라 페이즈로
             // 판정한다 — 그린(5) 전이면 스타트 브리핑, 이후 합류면 중간 합류.
+            // 연습/퀄리/웜업은 차가 트랙에 나가 있을 때만 중간 합류 — 진행 중인 서버에 붙어
+            // 차고(또는 피트)에 앉아 있으면 아직 나가기 전이다: 아웃랩·"준비되면 나가" 쪽 시작
+            // 구성이 맞고, "이대로 가자"는 틀린 말이다.
+            bool onTrack = !(me.InGarage || me.InPits);
             bool midJoin = isRace
                 ? ses.GamePhase >= 5 || me.TotalLaps > 0
-                : curEt > 120 || me.TotalLaps > 0;
+                : onTrack && (curEt > LateStartSec || me.TotalLaps > 0);
             int clsCount = 0, cp = 0;
             if (isRace)
             {
@@ -153,13 +161,15 @@ namespace TeamRadio56.Core.Logic
             v(mid ? "brief_open_" + kind + "_mid" : "brief_open_" + kind, new object[0]);
 
             // 세션 길이 — 시간제(잔여 기준)와 랩제 구분. 미기입 거대값은 무시.
+            // 연습/퀄리/웜업에 차고에서 늦게 붙으면(시작 구성) 세션 전체 길이가 아니라 남은 시간이다.
             if (0 < b.EndEt && b.EndEt < 86400)
             {
                 int minutes = Math.Max(
                     (int)Math.Round((b.EndEt - b.CurEt) / 60, MidpointRounding.ToEven), 1);
                 if (minutes <= SpeechDomain.BriefMinutesMax)
                 {
-                    v(mid ? "brief_len_remaining" : "brief_len_long",
+                    bool late = !isRace && b.CurEt > LateStartSec;
+                    v(mid || late ? "brief_len_remaining" : "brief_len_long",
                       new object[] { "length", Messages.BriefLengthText(minutes) });
                 }
             }

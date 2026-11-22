@@ -2,7 +2,7 @@
  "events": [
   {
    "data": {},
-   "message": "Radio check. Practice is running, I'm with you. 80 minutes remaining. Track 34 degrees. Head down, carry on.",
+   "message": "Radio check, one two. Practice still live. 80 minutes to go. Track 34 degrees. Keep doing what you're doing.",
    "t": 0.0,
    "type": "session_briefing"
   }

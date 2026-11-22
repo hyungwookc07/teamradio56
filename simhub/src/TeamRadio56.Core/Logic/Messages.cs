@@ -427,10 +427,15 @@ namespace TeamRadio56.Core.Logic
             return h;
         }
 
-        /// <summary>시드로 고른 변형 번호 — 슬롯(그룹 키)마다 따로 해시 (messages.variant_index).</summary>
+        /// <summary>
+        /// 시드로 고른 변형 번호 — 슬롯(그룹 키)마다 따로 해시 (messages.variant_index).
+        /// 해시의 상위 비트로 줄인다 ((h × n) >> 32, Lemire) — `h % n`이면 FNV-1a 하위 비트가
+        /// 입력 하위 비트로만 정해져 변형 2·4개짜리 슬롯끼리 함께 움직인다.
+        /// </summary>
         public static int VariantIndex(string key, string seed)
         {
-            return (int)(Fnv1a32(seed + "|" + key) % (uint)Variants[key].Length);
+            ulong h = Fnv1a32(seed + "|" + key);
+            return (int)((h * (ulong)Variants[key].Length) >> 32);
         }
 
         /// <summary>Variant("brief_temp", seed, "t", 31.0) — 이름/값 쌍 (messages.variant).</summary>

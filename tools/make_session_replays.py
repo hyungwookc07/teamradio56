@@ -2,6 +2,8 @@
 세션 브리핑 회귀용 합성 리플레이 생성기 — 연습·퀄리·웜업 (시작/중간 합류) 리플레이 + 기대 콜.
 
 녹화·합성 리플레이는 전부 레이스라 연습·퀄리·웜업 브리핑이 한 번도 재생되지 않았다.
+*_garage는 진행 중인 세션에 차고에서 붙는 경우 (시계는 120초가 지났지만 아직 나가기 전 —
+중간 합류가 아니라 시작 구성, 길이는 '남은 시간').
 세션마다 10초짜리 리플레이(플레이어 + 멀리 있는 차 한 대)를 만들고, 첫 틱에 나가야 할 브리핑
 문장 전체를 data/replays/<이름>.expect.json에 쓴다 (tools/expect_calls.py가 파이썬·C# 각각
 'message'까지 대조). 기대 문장은 스냅샷이 아니라 시나리오 값으로 만든 BriefingInputs를
@@ -43,6 +45,7 @@ GT3 = "LMGT3"
 SPOTTER_SEC = 45.0          # config DEFAULTS thresholds.start_spotter_sec (하니스 기본값)
 
 # 이름, 세션 종류, end_et, 첫 틱 세션 시계, 내 완료 랩, 노면, 비, 연료, 기대 문장 그룹
+# (+ 선택: 차고에 있음 — in_pits·in_garage, 정지)
 SCENARIOS = [
     ("session_practice", 1, 3600.0, 12.4, 0, 27.0, 0.0, 60.0,
      ["brief_open_practice", "brief_len_long", "brief_temp", "brief_plan_practice",
@@ -58,15 +61,22 @@ SCENARIOS = [
     ("session_warmup", 9, 900.0, 5.0, 0, 24.0, 0.0, 85.0,
      ["brief_open_warmup", "brief_len_long", "brief_temp", "brief_plan_warmup",
       "brief_close_out"]),
+    ("session_quali_garage", 6, 3600.0, 900.4, 0, 28.3, 0.0, 30.0,
+     ["brief_open_quali", "brief_len_remaining", "brief_temp", "brief_gap_quali",
+      "brief_limits_quali", "brief_close_quali"], True),
+    ("session_practice_garage", 2, 5400.0, 1500.2, 4, 31.7, 0.0, 55.0,
+     ["brief_open_practice", "brief_len_remaining", "brief_temp", "brief_plan_practice",
+      "brief_close_out"], True),
 ]
 
 
-def snapshot(n, stype, end_et, et0, laps, temp, rain, fuel):
+def snapshot(n, stype, end_et, et0, laps, temp, rain, fuel, garage=False):
     t = round(n / HZ, 3)
     et = round(et0 + t, 3)
     vehicles = []
     for cid, drv, off in ((0, "나", 0.0), (1, "리바이", TL / 2)):
-        d = (off + t * TL / LAP_S) % TL
+        parked = garage and cid == 0
+        d = (off + (0.0 if parked else t * TL / LAP_S)) % TL
         vehicles.append({
             "id": cid, "driver": drv, "vehicle": "Porsche 911 GT3 R", "cls": GT3,
             "is_player": cid == 0, "place": cid + 1,
@@ -75,12 +85,12 @@ def snapshot(n, stype, end_et, et0, laps, temp, rain, fuel):
             "last_lap": LAP_S if laps else 0.0, "best_lap": LAP_S if laps else 0.0,
             "last_s1": 0.0, "last_s2": 0.0,
             "time_behind_next": 0.0, "laps_behind_next": 0, "time_behind_leader": 0.0,
-            "in_pits": False, "pit_state": 0, "num_pitstops": 0, "num_penalties": 0,
+            "in_pits": parked, "pit_state": 0, "num_pitstops": 0, "num_penalties": 0,
             "finish_status": 0, "flag_blue": False, "estimated_lap": LAP_S,
             "time_into_lap": round(et % LAP_S, 3), "lap_start_et": 0.0,
             "pos": [round(math.cos(d / TL * 2 * math.pi) * 900, 1), 0.0,
                     round(math.sin(d / TL * 2 * math.pi) * 900, 1)],
-            "in_garage": False,
+            "in_garage": parked,
         })
 
     def wheel():
@@ -98,29 +108,33 @@ def snapshot(n, stype, end_et, et0, laps, temp, rain, fuel):
             "num_vehicles": 2,
         },
         "player": {
-            "id": 0, "lap_number": laps + 1, "lap_start_et": 0.0, "speed_kmh": 151.2,
+            "id": 0, "lap_number": laps + 1, "lap_start_et": 0.0,
+            "speed_kmh": 0.0 if garage else 151.2,
             "rpm": 7000, "max_rpm": 9250, "gear": 4, "fuel": fuel, "fuel_capacity": 90.0,
             "water_temp": 85.0, "oil_temp": 98.0, "overheating": False, "detached": False,
             "dent_severity": [0] * 8, "last_impact_et": 0.0, "last_impact_mag": 0.0,
-            "in_pitlane": False, "speed_limiter": False,
+            "in_pitlane": False, "speed_limiter": garage,
             "wheels": [wheel(), wheel(), wheel(), wheel()],
         },
         "vehicles": vehicles,
     }
 
 
-def build(name, stype, end_et, et0, laps, temp, rain, fuel, groups):
-    snaps = [snapshot(n, stype, end_et, et0, laps, temp, rain, fuel)
+def build(name, stype, end_et, et0, laps, temp, rain, fuel, groups, garage=False):
+    snaps = [snapshot(n, stype, end_et, et0, laps, temp, rain, fuel, garage)
              for n in range(int(SECONDS * HZ) + 1)]
-    # 기대 브리핑 — 시나리오 값으로 직접 (연습/퀄리/웜업의 중간 합류는 시계 120초 초과 또는 완료 랩)
+    # 기대 브리핑 — 시나리오 값으로 직접 (연습/퀄리/웜업의 중간 합류는 차가 트랙에 있고
+    # 시계 120초 초과 또는 완료 랩)
     b = BriefingInputs(session_type=stype, end_et=end_et, cur_et=et0, max_laps=2147483647,
-                       mid_join=et0 > 120 or laps > 0, track_temp=temp, raining=rain,
+                       mid_join=not garage and (et0 > 120 or laps > 0),
+                       track_temp=temp, raining=rain,
                        fuel=fuel, start_spotter_sec=SPOTTER_SEC)
     got = [k for k, _ in briefing_parts(b)]
     assert got == groups, f"{name}: 브리핑 구성 {got} ≠ {groups}"
     expect = {
         "scenario": name,
-        "note": "세션 시작 브리핑 — 무전 체크로 열고 세션 종류별 구성, 트랙 이름 없음",
+        "note": "세션 시작 브리핑 — 무전 체크로 열고 세션 종류별 구성, 트랙 이름 없음"
+                + (" (진행 중인 세션에 차고에서 합류 — 시작 구성, 남은 시간)" if garage else ""),
         "types": ["session_briefing"],
         "events": [{"t": 0.0, "type": "session_briefing", "data": {},
                     "message": briefing_text(b)}],

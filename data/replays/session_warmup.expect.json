@@ -2,7 +2,7 @@
  "events": [
   {
    "data": {},
-   "message": "Radio check. Warm-up, last look before the race. 15 minutes long. Track's at 24 degrees. Just check the car. Brakes, tyres, balance. Off you go when you're happy.",
+   "message": "Radio check, one two. This is warm-up. 15 minutes on the clock. Track 24 degrees. Feel for the car, save the effort for the race. Off you go when you're happy.",
    "t": 0.0,
    "type": "session_briefing"
   }

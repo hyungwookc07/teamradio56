@@ -1,0 +1,68 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 5,
+   "t": 80.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 4,
+   "t": 160.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 3,
+   "t": 239.4
+  },
+  {
+   "lap": 4,
+   "laps_left": 2,
+   "t": 319.4
+  },
+  {
+   "lap": 5,
+   "laps_left": 1,
+   "t": 399.4
+  },
+  {
+   "lap": 6,
+   "laps_left": 0,
+   "t": 479.4
+  }
+ ],
+ "end_et": 443.0,
+ "final_calls": [
+  {
+   "lap": 6,
+   "t": 399.4
+  }
+ ],
+ "finish": {
+  "class_place": 5,
+  "gained": 0,
+  "lap": 6,
+  "pool": "race_end_held",
+  "start_place": 5,
+  "t": 479.4
+ },
+ "leader_flag_t": 465.8,
+ "max_laps": 2147483647,
+ "note": "체커 뒤 12초에 ESC로 차고 복귀 (in_pits·in_garage 같은 틱, 피트레인 안 지남) — 쿨다운 콜 뒤라 피트인 콜만 없다 (요약은 차고에서)",
+ "post": [
+  {
+   "pool": "cooldown_lap",
+   "still_racing": 0,
+   "t": 486.4,
+   "type": "cooldown_lap"
+  },
+  {
+   "pool": "race_summary_pace",
+   "rank": 2,
+   "t": 499.4,
+   "type": "race_summary"
+  }
+ ],
+ "scenario": "race_end_garage",
+ "trace_exact_from_lap": 1
+}

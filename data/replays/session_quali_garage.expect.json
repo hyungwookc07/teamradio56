@@ -1,0 +1,15 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Radio check. Qualifying, time to show the pace. 45 minutes remaining. Track's at 28 degrees. Find a gap on the out lap, we want clear air. Stay inside the white lines, a deleted lap costs us everything. One clean lap, that's all we need.",
+   "t": 0.0,
+   "type": "session_briefing"
+  }
+ ],
+ "note": "세션 시작 브리핑 — 무전 체크로 열고 세션 종류별 구성, 트랙 이름 없음 (진행 중인 세션에 차고에서 합류 — 시작 구성, 남은 시간)",
+ "scenario": "session_quali_garage",
+ "types": [
+  "session_briefing"
+ ]
+}

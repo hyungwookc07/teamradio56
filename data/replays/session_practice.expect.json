@@ -2,7 +2,7 @@
  "events": [
   {
    "data": {},
-   "message": "Radio check. Practice is green, the car's yours. 1 hour long. Track 27 degrees. Settle in, find a rhythm, then tell me about the balance. Out when you're ready.",
+   "message": "Radio check, one two. This is practice. 1 hour long. Track's at 27 degrees. Install lap first, then build the pace. Head out when you're set.",
    "t": 0.0,
    "type": "session_briefing"
   }

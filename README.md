@@ -167,15 +167,19 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   check (no track name) and differs per session: practice (length, track/rain,
   build-up run plan), qualifying (find a gap, track limits, "make it count" — no
   fuel), warm-up (car check), race (grid slot of N in class, fuel, formation lap
-  and green call, start spotter, calm first lap); mid-join variants. Every
-  sentence slot has 2–5 variants picked by an FNV-1a hash of the snapshot, so
-  Python and C# say the same words while sessions still differ
+  and green call, start spotter, calm first lap); mid-join variants (practice,
+  qualifying and warm-up count as mid-join only when the car is already out —
+  joining a running session from the garage gets the full briefing with the
+  time remaining). Every sentence slot has 2–5 variants picked by an FNV-1a
+  hash of the snapshot (reduced with the high bits, so slots vary
+  independently), so Python and C# say the same words while sessions still
+  differ
 - [x] Chequered flag and after — the flag call is tiered by result (win, class
   win, podium, places gained / about the same / lost vs. the class start
   position, or result-only after a mid-join) and says the real class position.
   Then a cool-down lap call (with a "faster cars still racing" note when
   needed), one summary (fastest lap in class or our best-lap rank) and a
-  pit-in line. After our finish, strategy, fuel, tyre, rival, position and
+  pit-in line (skipped when the driver jumps straight to the garage). After our finish, strategy, fuel, tyre, rival, position and
   periodic report calls go quiet; only safety calls remain (pit limiter,
   yellows, wheel loss, cars alongside / faster cars approaching)
 - [x] Class standings — real (in-class) positions in multiclass, called only

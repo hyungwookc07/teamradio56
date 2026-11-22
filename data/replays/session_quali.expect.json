@@ -2,7 +2,7 @@
  "events": [
   {
    "data": {},
-   "message": "Radio check, one two. This is qualifying. 20 minutes long. Track's at 29 degrees. Use the out lap to make some space. Four wheels inside the lines, no deleted laps. One clean lap, that's all we need.",
+   "message": "Radio check. Qualifying is live. 20 minutes on the clock. Track's at 29 degrees. Clear air is everything. Back off if you need to. Stay inside the white lines, a deleted lap costs us everything. Deep breath, then go for it.",
    "t": 0.0,
    "type": "session_briefing"
   }

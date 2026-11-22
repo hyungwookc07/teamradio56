@@ -47,6 +47,7 @@ namespace TeamRadio56.Core.Logic
         private double? _penDue;               // 페널티 콜 예정 시각
         private int _penCount;
         private bool _postLanePrev;            // 직전 틱 피트레인 여부 (체커 뒤 피트인 엣지)
+        private bool _postGarage;              // 직전 틱 차고 여부 (체커 뒤 피트인 콜 무효화)
 
         public RaceControlAnalyzer(bool sectorYellowCalls = true)
         {
@@ -71,6 +72,7 @@ namespace TeamRadio56.Core.Logic
             _penDue = null;
             _penCount = 0;
             _postLanePrev = false;
+            _postGarage = false;
         }
 
         /// <summary>게임 메시지에서 페널티 종류/사유 추출. 아니면 null.</summary>
@@ -564,19 +566,29 @@ namespace TeamRadio56.Core.Logic
             bool inLane = (p != null && p.InPitLane) || me.InPits;
             bool entered = inLane && !_postLanePrev;
             _postLanePrev = inLane;
+            _postGarage = me.InGarage;
             RaceEndTracker re = state.RaceEnd;
             if (!re.EndCalled || !re.EndT.HasValue)
                 return;
             double since = snap.T - re.EndT.Value;
             int gen = re.Generation;
-            if (entered && !re.PitInCalled)
+            if (entered && !re.PitInCalled && _postGarage)
+            {
+                // ESC로 차고에 순간이동 (InPits·InGarage 같은 틱) — "리미터 켜고 차고로"는
+                // 이미 세워 둔 차에 틀린 말이라 말없이 래치 (쿨다운 콜도 늦었다)
+                re.PitInCalled = true;
+                re.CooldownCalled = true;
+                state.AddNarrative("(이벤트) 체커 뒤 차고로 바로 복귀 — 피트인 콜 생략");
+            }
+            else if (entered && !re.PitInCalled)
             {
                 var ev = new RadioEvent
                 {
                     Type = EventTypes.PostRacePit,
                     Priority = Priority.High,
                     Ttl = 15.0,
-                    ValidFn = () => re.Generation == gen && _postLanePrev,
+                    // 대기 중에 차고로 들어가면(순간이동) 버린다
+                    ValidFn = () => re.Generation == gen && _postLanePrev && !_postGarage,
                 };
                 ev.Data["pool"] = "post_race_pit";
                 if (bus.Push(ev))

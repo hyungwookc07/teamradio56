@@ -100,6 +100,7 @@ class RaceControlAnalyzer:
         self._pen_due: Optional[float] = None   # 페널티 콜 예정 시각 (메시지 대기)
         self._pen_count = 0
         self._post_lane_prev = False            # 직전 틱 피트레인 여부 (체커 뒤 피트인 엣지)
+        self._post_garage = False               # 직전 틱 차고 여부 (체커 뒤 피트인 콜 무효화)
 
     # -- 5Hz 틱: 코스 상태 전이 ------------------------------------------------
 
@@ -420,21 +421,30 @@ class RaceControlAnalyzer:
             빠른 클래스가 남아 있으면 미러 경고 (이미 피트레인이면 생략)
           - + 20초: 요약 한 번 — 내 베스트 랩의 클래스 순위 (패스티스트 랩이면 그 말)
           - 체커 뒤 피트레인 진입 순간: 리미터·차고·인사 (진입하면 쿨다운 콜은 생략)
+            ESC로 차고에 순간이동하면(in_pits·in_garage 같은 틱) 이미 세워 둔 차라 말없이 래치,
+            차고에 들어간 뒤에는 대기 중인 피트인 콜도 버린다
         C# RaceControlAnalyzer.CheckPostRace.
         """
         p = snap.player or {}
         in_lane = bool(p.get("in_pitlane")) or bool(me["in_pits"])
         entered = in_lane and not self._post_lane_prev
         self._post_lane_prev = in_lane
+        self._post_garage = bool(me["in_garage"])
         re = state.race_end
         if not re.end_called or re.end_t is None:
             return
         since = snap.t - re.end_t
-        if entered and not re.pit_in_called:
+        if entered and not re.pit_in_called and self._post_garage:
+            # 차고로 순간이동 — "리미터 켜고 차고로"는 이미 세워 둔 차에 틀린 말 (쿨다운도 늦었다)
+            re.pit_in_called = True
+            re.cooldown_called = True
+            state.add_narrative("(이벤트) 체커 뒤 차고로 바로 복귀 — 피트인 콜 생략")
+        elif entered and not re.pit_in_called:
             if bus.push(Event(
                     type=EventType.POST_RACE_PIT, priority=Priority.HIGH,
                     data={"pool": "post_race_pit"}, ttl=15.0,
-                    valid_fn=lambda: state.race_end is re and self._post_lane_prev)):
+                    valid_fn=lambda: state.race_end is re and self._post_lane_prev
+                    and not self._post_garage)):
                 re.pit_in_called = True
                 re.cooldown_called = True        # 이미 들어오는 중 — 쿨다운 콜은 늦었다
                 state.add_narrative("(이벤트) 체커 뒤 피트인")

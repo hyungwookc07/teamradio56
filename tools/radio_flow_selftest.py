@@ -9,7 +9,10 @@
   5  구성 — 세션 종류별 문장 그룹 순서 (연습: 연료·그리드·포메이션 없음, 퀄리: 연료 없음·
      트랙 리미트 항상, 레이스 스타트: 그리드·포메이션, 레이스 중간 합류: 포메이션 없음),
      BriefingInputs에 트랙 이름이 없다
-  6  다양성 — 레이스 스타트 브리핑 500개 시드에서 서로 다른 문장 100개 이상
+     차고 합류(중간 합류 아님, 시계 120초 넘음)는 시작 구성에 '남은 시간'
+  6  다양성 — 레이스 스타트 브리핑 500개 시드에서 서로 다른 문장 100개 이상, 그리고 슬롯끼리
+     독립: 세션 종류(시작/중간 합류)마다 변형 슬롯 두 개씩 n_a × n_b 조합이 전부 나온다
+     (`h % n`으로 줄이면 FNV-1a 하위 비트 때문에 변형 2·4개 슬롯이 함께 움직였다)
   7  체커 콜 문장 — 4·9·12·60위는 "P{순위}." 그대로 (8로 자르지 않는다), 계단 수, 포디움
   8  순수 규칙 표 — finish_call, summary_pool, cooldown_pool
   9  피니시 뒤 침묵 — 연료·페이스·타이어·전략·리포터·라이벌·차량 상태·섹터 코칭이
@@ -66,39 +69,45 @@ check(fnv1a32("무전") == fnv1a32("무전") and fnv1a32("무전") != fnv1a32("�
 # ── 2. 골든 브리핑 ──────────────────────────────────────────────────────
 GOLDEN = [
     (dict(session_type=1, end_et=3600.0, cur_et=12.4, track_temp=27.0, fuel=60.0),
-     "Radio check, one two. This is practice. 1 hour long. Track temp 27. Build it up over "
-     "a few laps, no need to push yet. Out when you're ready."),
+     "Radio check. We're in practice. 1 hour long. Track 27 degrees. Easy first lap, then "
+     "we go to work. Head out when you're set."),
     (dict(session_type=2, end_et=5400.0, cur_et=600.0, mid_join=True, track_temp=33.6,
           fuel=41.5),
-     "Radio check. Picking you up mid-session. 80 minutes remaining. Track 34 degrees. "
-     "Carry on with the plan."),
+     "Radio check, one two. Practice still live. 80 minutes remaining. Track's at 34 "
+     "degrees. Keep doing what you're doing."),
     (dict(session_type=5, end_et=1200.0, cur_et=3.2, track_temp=29.4, raining=0.2, fuel=22.0),
-     "Radio check. Qualifying, time to show the pace. 20 minutes long. Track temp 29. "
-     "Rain falling, be gentle early on. Clear air is everything. Back off if you need to. "
-     "Four wheels inside the lines, no deleted laps. Go and get it."),
+     "Radio check, one two. This is qualifying. 20 minutes long. Track 29 degrees. Rain "
+     "falling, be gentle early on. Out lap is about space and tyre temperature. Track "
+     "limits are being watched. Keep it tidy. Deep breath, then go for it."),
     (dict(session_type=6, end_et=1800.0, cur_et=840.6, mid_join=True, track_temp=18.2,
           raining=0.3, fuel=30.0),
-     "Radio check. Qualifying is running, I'm with you. 16 minutes remaining. Track temp 18. "
-     "Wet out there, grip will be low. Stay inside the white lines, a deleted lap costs us "
-     "everything. Head down, carry on."),
+     "Radio check. Picking you up mid-qualifying. 16 minutes remaining. Track's at 18 "
+     "degrees. Rain falling, be gentle early on. Mind the track limits, we can't afford a "
+     "deleted lap. Head down, carry on."),
     (dict(session_type=9, end_et=900.0, cur_et=5.0, track_temp=24.0, fuel=85.0),
-     "Radio check. Warm-up, last look before the race. 15 minutes long. Track 24 degrees. "
-     "Just check the car. Brakes, tyres, balance. Car's ready when you are."),
+     "Radio check, one two. This is warm-up. 15 minutes long. Track 24 degrees. Systems "
+     "check before the race, no heroics. Car's ready when you are."),
     (dict(session_type=10, end_et=21600.0, cur_et=31.8, cls_count=14, class_place=6,
           track_temp=35.2, fuel=88.0, start_spotter_sec=45.0),
-     "Radio check, one two. This is the race. 6 hours on the clock. 14 cars in class. "
-     "Starting P6. Track temp 35. 88 litres on board. Formation lap, warm everything up. "
-     "Keep your slot, I'll call the green. Through the start it's left and right calls only. "
-     "No heroes into turn one."),
-    (dict(session_type=12, max_laps=30, cur_et=8.6, cls_count=9, class_place=1,
-          track_temp=22.7, raining=0.4, fuel=55.0, start_spotter_sec=0.0),
-     "Radio check. Race day, here we go. 30 laps. 9 cars in class. Starting P1. Track 23 "
-     "degrees. Rain falling, be gentle early on. 55 litres on board. Formation lap, get heat "
-     "in the tyres and brakes. Hold your slot, I'll call the green. Patience on the opening lap."),
+     "Radio check. Race time. 6 hours on the clock. 14 cars in class. We start P6. Track's "
+     "at 35 degrees. 88 litres on board. Rolling out for the formation lap. Brakes and "
+     "tyres up to temp, hold your place. I'll call it when it's green. Through the start "
+     "it's left and right calls only. Keep your nose clean on lap one."),
+    (dict(session_type=12, max_laps=30, cur_et=8.6, cls_count=9, class_place=1, track_temp=22.7,
+          raining=0.4, fuel=55.0, start_spotter_sec=0.0),
+     "Radio check. Race on, I'm with you all the way. 30 laps. 9 cars in class. Starting "
+     "P1. Track 23 degrees. Wet out there, grip will be low. 55 litres on board. Formation "
+     "lap, warm everything up. Keep your slot, I'll call the green. Patience on the "
+     "opening lap."),
     (dict(session_type=10, end_et=86000.0, cur_et=5400.2, mid_join=True, cls_count=20,
           class_place=12, track_temp=41.0, fuel=47.3),
      "Radio check. Race is on, I'm with you. 22 and a half hours to go. 20 cars in class. "
-     "We're P12. Track temp 41. 47 litres on board. Carry on."),
+     "Running P12. Track's at 41 degrees. Fuel 47 litres. Carry on with the plan."),
+    # 진행 중인 퀄리에 차고에서 합류 (mid_join=False, 시계 120초 넘음) — 시작 구성, '남은 시간'
+    (dict(session_type=6, end_et=3600.0, cur_et=900.4, track_temp=28.3, fuel=30.0),
+     "Radio check. Qualifying, here we go. 45 minutes remaining. Track temp 28. Use the "
+     "out lap to make some space. Stay inside the white lines, a deleted lap costs us "
+     "everything. Make it count."),
 ]
 for args, want in GOLDEN:
     got = briefing_text(BriefingInputs(**args))
@@ -165,6 +174,17 @@ for (kind, mid), keys in ORDER.items():
         check("brief_fuel" not in keys and "brief_formation" not in keys
               and "brief_grid" not in keys, f"{kind}: 연료/포메이션/그리드가 들어감")
 check("brief_limits_quali" in ORDER[("quali", True)], "퀄리 중간 합류에 트랙 리미트 없음")
+# 진행 중인 세션에 차고에서 합류 — 중간 합류가 아니니 시작 구성, 길이만 '남은 시간'
+# (레이스는 페이즈로 판정하므로 그대로 '길이')
+for stype in (1, 5, 9, 10):
+    kind = session_kind(stype)
+    b = BriefingInputs(session_type=stype, end_et=3600.0, cur_et=900.0, cls_count=9,
+                       class_place=5, track_temp=31.0, raining=0.3, fuel=70.0,
+                       start_spotter_sec=45.0)
+    keys = [k for k, _ in briefing_parts(b)]
+    want = [("brief_len_long" if kind == "race" else "brief_len_remaining")
+            if k == "brief_len_long" else k for k in ORDER[(kind, False)]]
+    check(keys == want, f"차고 합류 구성 {kind}: {keys}\n   기대 {want}")
 
 # ── 6. 다양성 ───────────────────────────────────────────────────────────
 texts = {briefing_text(BriefingInputs(session_type=10, end_et=3600.0, cur_et=i * 0.37,
@@ -172,6 +192,29 @@ texts = {briefing_text(BriefingInputs(session_type=10, end_et=3600.0, cur_et=i *
                                       fuel=70.0, start_spotter_sec=45.0))
          for i in range(500)}
 check(len(texts) >= 100, f"레이스 스타트 브리핑 다양성 부족: {len(texts)}종/500")
+pairs_checked = 0
+for stype in (1, 5, 9, 10):
+    for mid in (False, True):
+        kind = session_kind(stype)
+        seen: dict = {}
+        slots: list = []
+        for i in range(3000):
+            b = BriefingInputs(session_type=stype, end_et=3600.0 + 60 * (i % 7),
+                               cur_et=(300.0 if mid else 0.0) + i * 0.37, mid_join=mid,
+                               cls_count=9, class_place=1 + i % 8,
+                               track_temp=20.0 + (i % 23) * 0.7, raining=0.3,
+                               fuel=40.0 + (i % 31) * 1.3, start_spotter_sec=45.0)
+            seed = briefing_seed(b)
+            slots = [k for k, _ in briefing_parts(b) if k in variant_keys()]
+            idx = [variant_index(k, seed) for k in slots]
+            for x in range(len(slots)):
+                for y in range(x + 1, len(slots)):
+                    seen.setdefault((slots[x], slots[y]), set()).add((idx[x], idx[y]))
+        for (ka, kb), got in seen.items():
+            n = len(variants(ka)) * len(variants(kb))
+            pairs_checked += 1
+            check(len(got) == n, f"변형 슬롯이 엮임 {kind} mid={mid}: {ka} × {kb} "
+                                 f"조합 {len(got)}/{n}")
 
 # ── 7. 체커 콜 문장 ─────────────────────────────────────────────────────
 from events import EventType                                           # noqa: E402
@@ -348,4 +391,5 @@ if errors:
         print("   " + e)
     sys.exit(1)
 print(f"✅ 무전 흐름 셀프테스트 통과 — 골든 브리핑 {len(GOLDEN)}개, 변형 그룹 {len(variant_keys())}개 "
-      f"전부 도달, 레이스 스타트 {len(texts)}종/500, 체커 등급·요약·쿨다운 규칙, 피니시 뒤 침묵 8종")
+      f"전부 도달, 레이스 스타트 {len(texts)}종/500, 슬롯 쌍 {pairs_checked}개 독립, "
+      f"체커 등급·요약·쿨다운 규칙, 피니시 뒤 침묵 8종")

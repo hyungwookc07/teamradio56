@@ -1,0 +1,15 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Radio check. Practice is green, the car's yours. 65 minutes remaining. Track's at 32 degrees. Build it up over a few laps, no need to push yet. Car's ready when you are.",
+   "t": 0.0,
+   "type": "session_briefing"
+  }
+ ],
+ "note": "세션 시작 브리핑 — 무전 체크로 열고 세션 종류별 구성, 트랙 이름 없음 (진행 중인 세션에 차고에서 합류 — 시작 구성, 남은 시간)",
+ "scenario": "session_practice_garage",
+ "types": [
+  "session_briefing"
+ ]
+}

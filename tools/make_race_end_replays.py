@@ -11,7 +11,9 @@ data/replays/<이름>.truth.json에 같이 쓴다 (tools/race_end_oracle.py가 �
   finish.pool/start_place/gained  체커 콜 등급 — 스타트 순위는 그린 직전(페이즈 4) 마지막
                                   스냅샷의 클래스 순위, 중간 합류(start_t)면 0
   post                            체커 콜 +7초 쿨다운 랩(아직 달리는 차 수·빠른 클래스),
-                                  +20초 요약(베스트 랩 클래스 순위), 피트인(리미터 경고 포함)
+                                  +20초 요약(베스트 랩 클래스 순위), 피트인(리미터 경고 포함).
+                                  ESC로 차고 순간이동(in_pits·in_garage 같은 틱)이면 피트인
+                                  콜 없음, 그 전이면 쿨다운도 없음 (요약은 그대로)
 엔진 코드를 import하지 않고 이 파일의 규칙으로 따로 계산한다 (두 엔진이 같이 틀려도 잡히게).
 <이름>.config.json(선택)은 리플레이 하니스가 읽는 설정 덮어쓰기 — 리포터를 켠다.
 
@@ -298,11 +300,12 @@ def finish_tier(place, start, multiclass):
     return "race_end_held", start, gained
 
 
-def post_truth(snaps_at, pf_tick, pid, multiclass, pit_entry=None):
-    """체커 뒤 콜 정답 — 쿨다운 랩(+7), 요약(+20), 피트인(진입 틱, 리미터 경고 먼저)."""
+def post_truth(snaps_at, pf_tick, pid, multiclass, pit_entry=None, garage=None):
+    """체커 뒤 콜 정답 — 쿨다운 랩(+7), 요약(+20), 피트인(진입 틱, 리미터 경고 먼저).
+    garage = 차고 순간이동 시각 — 이미 세워 둔 차라 피트인 콜이 없고, 쿨다운 전이면 쿨다운도 없다."""
     post = []
     t_cd = round(pf_tick + POST_COOLDOWN_S, 3)
-    if pit_entry is None or pit_entry > t_cd:
+    if (pit_entry is None or pit_entry > t_cd) and (garage is None or garage > t_cd):
         snap = snaps_at(t_cd)
         me = next(v for v in snap["vehicles"] if v["id"] == pid)
         racing = [v for v in snap["vehicles"]
@@ -438,6 +441,25 @@ def pitin_tweak(snap, et, ctx):
         me["in_garage"] = True
 
 
+def garage_tweak(at_s):
+    """체커 뒤 at_s초에 ESC로 차고 복귀 — in_pits·in_garage가 같은 틱에 켜지고 차는 그 자리에
+    선다 (피트레인을 지나지 않는다). '리미터 켜고 차고로' 피트인 콜이 나가면 안 된다."""
+    def tweak(snap, et, ctx):
+        dt = round(et - ctx["pf_tick"], 3)
+        if dt < at_s:
+            return
+        me = next(v for v in snap["vehicles"] if v["is_player"])
+        p = snap["player"]
+        if "garage_at" not in ctx:
+            ctx["garage_at"] = (me["lap_dist"], list(me["pos"]), me["sector"])
+        me["lap_dist"], me["pos"], me["sector"] = ctx["garage_at"][0], \
+            list(ctx["garage_at"][1]), ctx["garage_at"][2]
+        me["in_pits"] = True
+        me["in_garage"] = True
+        p["speed_kmh"] = 0.0
+    return tweak
+
+
 # (이름, 노트, E, M, 차량, final_calls 종류, trace_exact_from_lap)
 SCENARIOS = [
     ("race_end_lead", "내가 전체 1위 — 시계 0 이후 내 라인 통과가 체커 (단일 클래스)",
@@ -494,6 +516,12 @@ SCENARIOS = [
     ("race_end_pitin", "체커 뒤 쿨다운 → 블루·페널티·충격(침묵) → 피트인(리미터 경고) → 피트레인 라인 통과 "
      "→ 차고. 리포터 켬 (설정 사이드카)",
      443.0, INT_MAX, pitin_cars, "crossing", 1),
+    ("race_end_garage", "체커 뒤 12초에 ESC로 차고 복귀 (in_pits·in_garage 같은 틱, 피트레인 안 지남) — "
+     "쿨다운 콜 뒤라 피트인 콜만 없다 (요약은 차고에서)",
+     443.0, INT_MAX, held_cars, "crossing", 1),
+    ("race_end_garage_early", "체커 뒤 4초에 ESC로 차고 복귀 — 쿨다운 콜 전이라 쿨다운·피트인 둘 다 없고 "
+     "요약만",
+     443.0, INT_MAX, held_cars, "crossing", 1),
 ]
 
 RESTART_GAP_S = 30.0        # 재시작 전 공백 (스냅샷 없음)
@@ -505,6 +533,7 @@ RESTART_GAP_S = 30.0        # 재시작 전 공백 (스냅샷 없음)
 #   wear_per_lap     타이어 마모 (랩당 잔량 감소)
 #   tweak            스냅샷 후처리 (snap, et, ctx) — 체커 뒤 피트인·플래그·충격 등
 #   pit_entry        체커 뒤 피트레인 진입 시각 (피니시 틱 기준 초) — 정답에 리미터·피트인
+#   garage           체커 뒤 차고 순간이동 시각 (피니시 틱 기준 초) — 정답에 피트인 없음
 #   config           <이름>.config.json — 하니스 설정 덮어쓰기 (리포터)
 #   expect           생성 결과가 의도한 시나리오인지 확인 (pool/start_place/class_place/gained)
 #   expect_post      체커 뒤 콜 (type, pool) 목록 확인
@@ -531,6 +560,13 @@ EXTRA: dict = {
                                        ("race_summary", "race_summary_fastest"),
                                        ("pit_limiter", "pit_limiter"),
                                        ("post_race_pit", "post_race_pit")]},
+    "race_end_garage": {"tweak": garage_tweak(12.0), "garage": 12.0,
+                        "expect": {"pool": "race_end_held", "class_place": 5},
+                        "expect_post": [("cooldown_lap", "cooldown_lap"),
+                                        ("race_summary", "race_summary_pace")]},
+    "race_end_garage_early": {"tweak": garage_tweak(4.0), "garage": 4.0,
+                              "expect": {"pool": "race_end_held", "class_place": 5},
+                              "expect_post": [("race_summary", "race_summary_pace")]},
 }
 
 
@@ -625,7 +661,8 @@ def build(name, note, E, M, mk, kind, exact_from):
         "finish": {"t": round(pf_tick, 2), "lap": pf_k, "class_place": cp,
                    "pool": pool, "start_place": start, "gained": gained},
         "post": post_truth(at, pf_tick, player.id, multiclass,
-                           opts.get("pit_entry") and round(pf_tick + opts["pit_entry"], 3)),
+                           opts.get("pit_entry") and round(pf_tick + opts["pit_entry"], 3),
+                           opts.get("garage") and round(pf_tick + opts["garage"], 3)),
     }
     if "expect_post" in opts:
         got = [(p["type"], p["pool"]) for p in sidecar["post"]]

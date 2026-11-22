@@ -2,7 +2,7 @@
  "events": [
   {
    "data": {},
-   "message": "Radio check. Picking you up mid-qualifying. 16 minutes remaining. Track 18 degrees. It's raining, watch the grip. Four wheels inside the lines, no deleted laps. Carry on with the plan.",
+   "message": "Radio check. Picking you up mid-qualifying. 16 minutes to go. Track's at 18 degrees. Wet out there, grip will be low. Track limits are being watched. Keep it tidy. Carry on.",
    "t": 0.0,
    "type": "session_briefing"
   }

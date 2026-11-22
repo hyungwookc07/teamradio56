@@ -625,7 +625,7 @@ namespace TeamRadio56.Core.Logic
                     "Position gained. P{place}.",
                     "P{place}. Nice.",
                     "P{place}. Keep the rhythm.",
-                    "Good move. P{place}.",
+                    "Up the order. P{place}.",
                 },
             },
             new PhraseSet
@@ -634,7 +634,7 @@ namespace TeamRadio56.Core.Logic
                 Tone = "casual",
                 Lines = new[]
                 {
-                    "Lost a place. P{place}.",
+                    "Dropped back. P{place}.",
                     "P{place}. One lap at a time.",
                     "P{place}. The pace is there, chances will come.",
                     "P{place}. We'll take it back.",

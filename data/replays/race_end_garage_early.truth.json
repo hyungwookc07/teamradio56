@@ -1,0 +1,62 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 5,
+   "t": 80.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 4,
+   "t": 160.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 3,
+   "t": 239.4
+  },
+  {
+   "lap": 4,
+   "laps_left": 2,
+   "t": 319.4
+  },
+  {
+   "lap": 5,
+   "laps_left": 1,
+   "t": 399.4
+  },
+  {
+   "lap": 6,
+   "laps_left": 0,
+   "t": 479.4
+  }
+ ],
+ "end_et": 443.0,
+ "final_calls": [
+  {
+   "lap": 6,
+   "t": 399.4
+  }
+ ],
+ "finish": {
+  "class_place": 5,
+  "gained": 0,
+  "lap": 6,
+  "pool": "race_end_held",
+  "start_place": 5,
+  "t": 479.4
+ },
+ "leader_flag_t": 465.8,
+ "max_laps": 2147483647,
+ "note": "체커 뒤 4초에 ESC로 차고 복귀 — 쿨다운 콜 전이라 쿨다운·피트인 둘 다 없고 요약만",
+ "post": [
+  {
+   "pool": "race_summary_pace",
+   "rank": 2,
+   "t": 499.4,
+   "type": "race_summary"
+  }
+ ],
+ "scenario": "race_end_garage_early",
+ "trace_exact_from_lap": 1
+}

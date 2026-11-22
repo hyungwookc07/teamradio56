@@ -8,8 +8,10 @@
   퀄리   길이 · 노면/비 · 아웃랩 공간 확보 · 트랙 리미트 · "한 랩에 모든 걸" (연료 없음)
   웜업   길이 · 노면/비 · 차 점검 · "준비되면 나가"
   레이스 길이 · 클래스 대수/스타트 순위 · 노면/비 · 연료 · 포메이션 · 스포터 예고 · 첫 랩
-중간 합류는 남은 시간과 "이대로 가자"로 짧게. 문장 슬롯마다 변형 2~5개 중 하나를
-스냅샷 값 시드의 FNV-1a 해시로 고른다 (messages.variant) — 파이썬과 C#이 같은 문장을 고른다.
+중간 합류는 남은 시간과 "이대로 가자"로 짧게 — 연습/퀄리/웜업은 차가 트랙에 나가 있을 때만
+중간 합류다 (차고·피트에서 붙으면 곧 나갈 사람이라 시작 구성, 길이는 '남은 시간'으로).
+문장 슬롯마다 변형 2~5개 중 하나를 스냅샷 값 시드의 FNV-1a 해시로 고른다 (messages.variant)
+— 파이썬과 C#이 같은 문장을 고른다.
 """
 
 from __future__ import annotations
@@ -49,6 +51,9 @@ def session_kind(session_type: int) -> str:
     return "practice"
 
 
+LATE_START_S = 120.0     # 연습/퀄리/웜업 — 세션 시계가 이만큼 지났으면 '남은 시간'으로 말한다
+
+
 def _fx(x: float, d: int) -> str:
     return f"{x:.{d}f}"
 
@@ -82,11 +87,13 @@ def briefing_parts(b: BriefingInputs) -> list[tuple[str, str]]:
     v(f"brief_open_{kind}_mid" if mid else f"brief_open_{kind}")
 
     # 세션 길이 — 시간제(잔여 기준)와 랩제를 구분. 미기입 거대값은 무시.
+    # 연습/퀄리/웜업에 차고에서 늦게 붙으면(시작 구성) 세션 전체 길이가 아니라 남은 시간이다.
     end_et, cur_et, max_laps = b.end_et, b.cur_et, b.max_laps
     if 0 < end_et < 86400:
         minutes = max(int(round((end_et - cur_et) / 60)), 1)
         if minutes <= BRIEF_MINUTES_MAX:
-            v("brief_len_remaining" if mid else "brief_len_long",
+            late = not is_race and cur_et > LATE_START_S
+            v("brief_len_remaining" if mid or late else "brief_len_long",
               length=brief_length_text(minutes))
     elif 0 < max_laps <= BRIEF_LAPS_MAX:
         parts.append(("brief_laps", msg("brief_lap") if max_laps == 1
@@ -155,7 +162,11 @@ def compose_session_briefing(snap, state, start_spotter_sec) -> Optional[str]:
         mid_join = (ses.get("game_phase", 0) or 0) >= 5 \
             or me.get("total_laps", 0) > 0
     else:
-        mid_join = cur_et > 120 or me.get("total_laps", 0) > 0
+        # 연습/퀄리/웜업은 차가 트랙에 나가 있을 때만 중간 합류 — 진행 중인 서버에 붙어
+        # 차고(또는 피트)에 앉아 있으면 아직 나가기 전이다: 아웃랩·"준비되면 나가" 쪽 시작
+        # 구성이 맞고, "이대로 가자"는 틀린 말이다.
+        on_track = not (me.get("in_garage") or me.get("in_pits"))
+        mid_join = on_track and (cur_et > LATE_START_S or me.get("total_laps", 0) > 0)
 
     cls_count = cp = 0
     if is_race:
