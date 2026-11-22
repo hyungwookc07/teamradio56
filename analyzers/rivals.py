@@ -7,11 +7,15 @@
       · 그린/FCY(5·6)에서만 — 그리드·포메이션·롤링 스타트 대기(0~4)는 무음
       · 처음 보는 차(또는 리셋·틱 공백 뒤)는 기준값만 잡는다 — 이미 피트에 있던 차가
         "방금 피트 인"이 되지 않게
-      · 앞/뒤는 진입 직전 틱의 순위로 — 진입 틱에 순위가 흔들려도 앞차가 뒤차가 안 되게
-      · 순위가 비었거나(0) 같으면 침묵, 차고로 순간이동한 차도 침묵
+      · 앞/뒤는 진입 전 PLACE_HIST_S초 순위 기록으로 — 그 안에서 한 번이라도 우리 앞이었으면
+        앞차(가장 최근 그 순간의 클래스 순위로 콜). 피트 진입 감속으로 플래그가 켜지기 몇 틱
+        전에 우리에게 추월당해도(원격 차는 mInPits가 늦기도 하다) 앞차가 뒤차가 안 되게
+      · 직전·진입 틱 순위가 비었거나(0) 같으면 침묵, 차고로 순간이동한 차도 침묵
       · "언더컷"(뒤차)은 그린, 상대가 1랩 이상 돈 뒤, 트랙 위에서 실제로 1/4랩 안쪽
-        뒤에 있을 때만 — FCY 피트, 첫 랩 피트, 랩 다운 차는 언더컷이 아니다.
-        음성 팩에는 "뒤차 + 갭 안내" 문장이 없어 꼬리를 바꾸지 않고 콜을 뺀다.
+        뒤에 있고, 창 전체(PLACE_HIST_S초) 내내 우리 뒤였고, 우리가 피트에 있지도
+        아웃랩 중이지도 않을 때만 — FCY 피트, 첫 랩 피트, 랩 다운 차, 우리 피트를 따라
+        들어온 차는 언더컷이 아니다. 음성 팩에는 "뒤차 + 갭 안내" 문장이 없어 꼬리를
+        바꾸지 않고 콜을 뺀다.
   - 페이스 비교 (랩 완료 시): 클래스 바로 앞/뒤 차와 최근 랩 평균 비교 →
     추격 가능성/방어 필요성 인텔.
 """
@@ -38,6 +42,7 @@ PHASE_GREEN = 5
 PIT_CALL_PHASES = (5, 6)     # 경쟁자 피트 콜은 그린/FCY에서만
 UNDERCUT_MAX_LAPS = 0.25     # 언더컷 위협 = 트랙 위에서 이 랩 비율 안쪽 뒤에 있는 차
 RESEED_GAP_S = 2.0           # 틱 공백(모니터·일시정지·재시작)이 이보다 길면 기준값 다시 잡기
+PLACE_HIST_S = 5.0           # 앞/뒤 판정 창 — 진입 전 이만큼의 순위 기록 (5Hz ≈ 25틱)
 
 
 def pit_data(their_cp: int, my_cp: int, driver: str = "") -> Optional[dict]:
@@ -87,17 +92,22 @@ class RivalAnalyzer:
     def __init__(self, cfg):
         self.pace_diff_min = cfg.get("thresholds.rival_pace_diff", 0.3)
         self._in_pits: dict[int, bool] = {}
-        self._prev: dict[int, tuple] = {}            # cid → 직전 틱 (클래스 순위|0, 진행)
-        self._prev_me: Optional[tuple] = None        # 내 직전 틱 (클래스 순위|0, 진행)
+        # 틱 기록 (오래된 → 최근): (t, 나 (클래스 순위|0, 진행), 내가 피트/차고, {cid: (클래스 순위|0, 진행)})
+        # PLACE_HIST_S초를 다 덮는 만큼만 — 창보다 오래된 것은 가장 최근 하나만 남긴다
+        self._hist: deque = deque()
+        self._my_pit_lap: Optional[int] = None       # 내가 마지막으로 피트에 있던 틱의 완료 랩
         self._last_t: Optional[float] = None
         self._laps_seen: dict[int, deque] = {}      # cid → 최근 랩타임 3개
 
     def reset(self) -> None:
-        self._in_pits.clear()
-        self._prev.clear()
-        self._prev_me = None
+        self._clear_pit_tracking()
         self._last_t = None
         self._laps_seen.clear()
+
+    def _clear_pit_tracking(self) -> None:
+        self._in_pits.clear()
+        self._hist.clear()
+        self._my_pit_lap = None
 
     # -- 5Hz: 경쟁자 피트 진입 -------------------------------------------------
 
@@ -110,17 +120,24 @@ class RivalAnalyzer:
         ses = snap.session
         phase = ses["game_phase"]
         tl = ses["track_len"]
+        t = snap.t
         # 틱이 끊겼으면(모니터·일시정지·재시작) 그사이 바뀐 플래그를 진입으로 보지 않는다
-        if self._last_t is not None and not (0.0 <= snap.t - self._last_t <= RESEED_GAP_S):
-            self._in_pits.clear()
-            self._prev.clear()
-            self._prev_me = None
-        self._last_t = snap.t
+        if self._last_t is not None and not (0.0 <= t - self._last_t <= RESEED_GAP_S):
+            self._clear_pit_tracking()
+        self._last_t = t
+        while len(self._hist) >= 2 and t - self._hist[1][0] >= PLACE_HIST_S:
+            self._hist.popleft()
 
         my_now = (state.class_place_of(snap, me) if me["place"] > 0 else 0,
                   _progress(me, tl))
-        my_prev, self._prev_me = self._prev_me, my_now
+        my_in = bool(me["in_pits"] or me["in_garage"])
+        if my_in:
+            self._my_pit_lap = me["total_laps"]
+        # 우리가 피트에 있거나, 창 안에 있었거나, 아웃랩 중 — 뒤차 피트는 언더컷이 아니다
+        my_pitting = my_in or any(r[2] for r in self._hist) or (
+            self._my_pit_lap is not None and me["total_laps"] <= self._my_pit_lap)
 
+        cars: dict[int, tuple] = {}
         for v in snap.vehicles:
             if v["is_player"] or v["cls"] != me["cls"] or v["finish_status"] != 0:
                 continue
@@ -128,28 +145,22 @@ class RivalAnalyzer:
             was = self._in_pits.get(cid)            # None = 처음 봄 → 기준값만
             now_in = bool(v["in_pits"])
             self._in_pits[cid] = now_in
-            prev = self._prev.get(cid)
             cur = (state.class_place_of(snap, v) if v["place"] > 0 else 0,
                    _progress(v, tl))
-            self._prev[cid] = cur
+            cars[cid] = cur
             if was is None or was or not now_in:
                 continue    # 피트 진입 순간만
-            why = self._pit_veto(phase, v, prev, cur, my_prev, my_now)
-            data = None
-            if why is None:
-                data = pit_data(prev[0], my_prev[0], v["driver"])
-                if data is None:
-                    why = "range"
-                elif data["undercut_risk"] and not (
-                        phase == PHASE_GREEN and prev[1] >= 1.0
-                        and 0.0 < my_prev[1] - prev[1] < UNDERCUT_MAX_LAPS):
-                    data, why = None, "not-undercut"
+            data, why, prev, my_prev, basis = self._judge_pit(
+                t, phase, v, cur, my_now, my_pitting)
             log.info("라이벌 피트 진입 %s#%d %s · 페이즈 %d · 직전 나 C%d 상대 C%d · "
-                     "지금 나 P%d/C%d 상대 P%d/C%d · 랩 %d %.0fm · 차고 %s · 피트 상태 %d",
+                     "기준 나 C%d 상대 C%d · 지금 나 P%d/C%d 상대 P%d/C%d · 랩 %d %.0fm · "
+                     "차고 %s · 피트 상태 %d · 내 피트 %s",
                      v["driver"], cid, "콜" if data else f"침묵({why})", phase,
                      my_prev[0] if my_prev else -1, prev[0] if prev else -1,
+                     basis[1] if basis else -1, basis[0] if basis else -1,
                      me["place"], my_now[0], v["place"], cur[0],
-                     v["total_laps"], v["lap_dist"], v["in_garage"], v["pit_state"])
+                     v["total_laps"], v["lap_dist"], v["in_garage"], v["pit_state"],
+                     my_pitting)
             if data is None:
                 continue
             bus.push(Event(
@@ -159,10 +170,50 @@ class RivalAnalyzer:
             ))
             state.add_narrative(
                 f"(이벤트) 클래스 {data['rel']} P{data['their_class_place']} {v['driver']} 피트 인")
+        self._hist.append((t, my_now, my_in, cars))
+
+    def _judge_pit(self, t: float, phase: int, v: dict, cur, my_now, my_pitting: bool):
+        """피트 진입 한 건 판정 → (콜 데이터|None, 침묵 사유|None, 상대 직전 틱, 내 직전 틱,
+        앞/뒤 기준 (상대 클래스 순위, 내 클래스 순위)|None). 기록은 진입 틱 이전 것만 본다."""
+        cid = v["id"]
+        last = self._hist[-1] if self._hist else None
+        prev = last[3].get(cid) if last else None
+        my_prev = last[1] if last else None
+        why = self._pit_veto(phase, v, prev, cur, my_prev, my_now)
+        if why is not None:
+            return None, why, prev, my_prev, None
+        # 창 안에서 가장 최근에 우리 앞이었던 순간 — 있으면 앞차, 없으면 직전 틱 순위.
+        # 언더컷은 창을 다 덮는 기록이 있고 그 내내 (순위 0·동률 없이) 우리 뒤였을 때만
+        ahead = None
+        behind_all = t - self._hist[0][0] >= PLACE_HIST_S
+        for _, rme, _, rcars in reversed(self._hist):
+            r = rcars.get(cid)
+            known = r is not None and r[0] > 0 and rme[0] > 0
+            if known and r[0] < rme[0]:
+                ahead = (r[0], rme[0])
+                break
+            if not (known and r[0] > rme[0]):
+                behind_all = False
+        basis = ahead or (prev[0], my_prev[0])
+        data = pit_data(basis[0], basis[1], v["driver"])
+        if data is None:
+            return None, "range", prev, my_prev, basis
+        if data["undercut_risk"]:
+            why = None
+            if my_pitting:
+                why = "my-pit"
+            elif not behind_all:
+                why = "window"
+            elif not (phase == PHASE_GREEN and prev[1] >= 1.0
+                      and 0.0 < my_prev[1] - prev[1] < UNDERCUT_MAX_LAPS):
+                why = "not-undercut"
+            if why is not None:
+                return None, why, prev, my_prev, basis
+        return data, None, prev, my_prev, basis
 
     @staticmethod
     def _pit_veto(phase: int, v: dict, prev, cur, my_prev, my_now) -> Optional[str]:
-        """피트 진입 콜을 막는 사유 (없으면 None). 앞/뒤는 진입 직전 틱 순위로 정한다."""
+        """피트 진입 콜을 막는 사유 (없으면 None) — 페이즈, 차고, 직전 틱 기록, 순위 0."""
         if phase not in PIT_CALL_PHASES:
             return "phase"
         if v["in_garage"]:

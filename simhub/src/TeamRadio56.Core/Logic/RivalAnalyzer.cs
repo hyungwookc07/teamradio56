@@ -10,8 +10,9 @@ namespace TeamRadio56.Core.Logic
     /// analyzers/rivals.py 포팅 — 동클래스 경쟁자 관찰.
     /// 경쟁자 피트 진입(언더컷/오버컷 재료)과 페이스 비교 인텔.
     /// 피트 플래그는 레이스 틱마다(페이즈 무관) 추적하고 콜만 거른다 — 그린/FCY에서만,
-    /// 처음 보는 차는 기준값만, 앞/뒤는 진입 직전 틱 순위로, 순위 0·동률·차고 순간이동은
-    /// 침묵, "언더컷"(뒤차)은 그린 + 상대 1랩 이상 + 트랙 위 1/4랩 안쪽 뒤일 때만.
+    /// 처음 보는 차는 기준값만, 앞/뒤는 진입 전 PlaceHistS초 순위 기록으로(그 안에서 한 번이라도
+    /// 앞이었으면 앞차), 직전·진입 틱 순위 0·동률·차고 순간이동은 침묵, "언더컷"(뒤차)은 그린 +
+    /// 상대 1랩 이상 + 트랙 위 1/4랩 안쪽 뒤 + 창 내내 뒤 + 우리가 피트·아웃랩이 아닐 때만.
     /// </summary>
     public sealed class RivalAnalyzer
     {
@@ -23,14 +24,29 @@ namespace TeamRadio56.Core.Logic
         private const int PhaseFcy = 6;
         private const double UndercutMaxLaps = 0.25;   // 트랙 위에서 이 랩 비율 안쪽 뒤
         private const double ReseedGapS = 2.0;         // 틱 공백이 이보다 길면 기준값 다시
+        private const double PlaceHistS = 5.0;         // 앞/뒤 판정 창 — 진입 전 순위 기록 (5Hz ≈ 25틱)
+
+        /// <summary>한 차의 한 틱 — 클래스 순위(없으면 0)와 트랙 위 누적 진행(랩).</summary>
+        private struct PlaceSample
+        {
+            public int Cp;
+            public double Prog;
+        }
+
+        /// <summary>rivals._hist의 한 항목 — 한 틱의 나와 동클래스 경쟁자 순위.</summary>
+        private sealed class TickRecord
+        {
+            public double T;
+            public PlaceSample Me;
+            public bool MyInPits;     // 내가 피트/차고
+            public readonly Dictionary<int, PlaceSample> Cars = new Dictionary<int, PlaceSample>();
+        }
 
         private readonly double _paceDiffMin;
         private readonly Dictionary<int, bool> _inPits = new Dictionary<int, bool>();
-        private readonly Dictionary<int, int> _prevCp = new Dictionary<int, int>();       // 직전 틱 클래스 순위|0
-        private readonly Dictionary<int, double> _prevProg = new Dictionary<int, double>(); // 직전 틱 진행 (랩)
-        private bool _hasPrevMe;
-        private int _prevMyCp;
-        private double _prevMyProg;
+        // 틱 기록 (오래된 → 최근) — PlaceHistS초를 다 덮는 만큼만, 창보다 오래된 것은 가장 최근 하나만
+        private readonly List<TickRecord> _hist = new List<TickRecord>();
+        private int? _myPitLap;      // 내가 마지막으로 피트에 있던 틱의 완료 랩
         private double? _lastT;
         private readonly Dictionary<int, List<double>> _lapsSeen =
             new Dictionary<int, List<double>>();
@@ -50,11 +66,8 @@ namespace TeamRadio56.Core.Logic
         private void ClearPitTracking()
         {
             _inPits.Clear();
-            _prevCp.Clear();
-            _prevProg.Clear();
-            _hasPrevMe = false;
-            _prevMyCp = 0;
-            _prevMyProg = 0.0;
+            _hist.Clear();
+            _myPitLap = null;
         }
 
         /// <summary>rivals.pit_data — 경쟁자 피트 콜 데이터. 클래스 순위 ±2 밖이거나
@@ -127,20 +140,31 @@ namespace TeamRadio56.Core.Logic
                 return;
             int phase = snap.Session.GamePhase;
             double tl = snap.Session.TrackLength;
+            double t = snap.T;
             // 틱이 끊겼으면(모니터·일시정지·재시작) 그사이 바뀐 플래그를 진입으로 보지 않는다
-            if (_lastT.HasValue && !(snap.T - _lastT.Value >= 0.0 && snap.T - _lastT.Value <= ReseedGapS))
+            if (_lastT.HasValue && !(t - _lastT.Value >= 0.0 && t - _lastT.Value <= ReseedGapS))
                 ClearPitTracking();
-            _lastT = snap.T;
+            _lastT = t;
+            while (_hist.Count >= 2 && t - _hist[1].T >= PlaceHistS)
+                _hist.RemoveAt(0);
 
-            int myCpNow = me.Place > 0 ? RaceState.ClassPlaceOf(snap, me) : 0;
-            double myProgNow = Progress(me, tl);
-            bool hasMyPrev = _hasPrevMe;
-            int myCpPrev = _prevMyCp;
-            double myProgPrev = _prevMyProg;
-            _hasPrevMe = true;
-            _prevMyCp = myCpNow;
-            _prevMyProg = myProgNow;
+            var myNow = new PlaceSample
+            {
+                Cp = me.Place > 0 ? RaceState.ClassPlaceOf(snap, me) : 0,
+                Prog = Progress(me, tl),
+            };
+            bool myIn = me.InPits || me.InGarage;
+            if (myIn)
+                _myPitLap = me.TotalLaps;
+            // 우리가 피트에 있거나, 창 안에 있었거나, 아웃랩 중 — 뒤차 피트는 언더컷이 아니다
+            bool myPitting = myIn || (_myPitLap.HasValue && me.TotalLaps <= _myPitLap.Value);
+            foreach (TickRecord r in _hist)
+            {
+                if (r.MyInPits)
+                    myPitting = true;
+            }
 
+            var rec = new TickRecord { T = t, Me = myNow, MyInPits = myIn };
             foreach (VehicleInfo v in snap.Vehicles)
             {
                 if (v.IsPlayer || v.Class != me.Class || v.FinishStatus != 0)
@@ -149,42 +173,31 @@ namespace TeamRadio56.Core.Logic
                 bool known = _inPits.TryGetValue(v.Id, out was);   // 처음 봄 → 기준값만
                 bool nowIn = v.InPits;
                 _inPits[v.Id] = nowIn;
-                int theirCpPrev;
-                bool hasPrev = _prevCp.TryGetValue(v.Id, out theirCpPrev);
-                double theirProgPrev;
-                _prevProg.TryGetValue(v.Id, out theirProgPrev);
-                int theirCpNow = v.Place > 0 ? RaceState.ClassPlaceOf(snap, v) : 0;
-                _prevCp[v.Id] = theirCpNow;
-                _prevProg[v.Id] = Progress(v, tl);
+                var cur = new PlaceSample
+                {
+                    Cp = v.Place > 0 ? RaceState.ClassPlaceOf(snap, v) : 0,
+                    Prog = Progress(v, tl),
+                };
+                rec.Cars[v.Id] = cur;
                 if (!known || was || !nowIn)
                     continue;    // 피트 진입 순간만
 
-                string why = PitVeto(phase, v, hasPrev, theirCpPrev, theirCpNow,
-                                     hasMyPrev, myCpPrev, myCpNow);
-                Dictionary<string, object> data = null;
-                if (why == null)
-                {
-                    data = PitData(theirCpPrev, myCpPrev, v.Driver);
-                    if (data == null)
-                    {
-                        why = "range";
-                    }
-                    else if ((bool)data["undercut_risk"]
-                             && !(phase == PhaseGreen && theirProgPrev >= 1.0
-                                  && myProgPrev - theirProgPrev > 0.0
-                                  && myProgPrev - theirProgPrev < UndercutMaxLaps))
-                    {
-                        data = null;
-                        why = "not-undercut";
-                    }
-                }
+                bool hasPrev, hasMyPrev, hasBasis;
+                PlaceSample prev, myPrev;
+                int basisTheirs, basisMine;
+                string why;
+                Dictionary<string, object> data = JudgePit(t, phase, v, cur, myNow, myPitting,
+                    out why, out hasPrev, out prev, out hasMyPrev, out myPrev,
+                    out hasBasis, out basisTheirs, out basisMine);
                 FileLog.Info(string.Format(CultureInfo.InvariantCulture,
                     "라이벌 피트 진입 {0}#{1} {2} · 페이즈 {3} · 직전 나 C{4} 상대 C{5} · "
-                    + "지금 나 P{6}/C{7} 상대 P{8}/C{9} · 랩 {10} {11:F0}m · 차고 {12} · 피트 상태 {13}",
+                    + "기준 나 C{6} 상대 C{7} · 지금 나 P{8}/C{9} 상대 P{10}/C{11} · 랩 {12} {13:F0}m · "
+                    + "차고 {14} · 피트 상태 {15} · 내 피트 {16}",
                     v.Driver, v.Id, data != null ? "콜" : "침묵(" + why + ")", phase,
-                    hasMyPrev ? myCpPrev : -1, hasPrev ? theirCpPrev : -1,
-                    me.Place, myCpNow, v.Place, theirCpNow,
-                    v.TotalLaps, v.LapDist, v.InGarage, v.PitState));
+                    hasMyPrev ? myPrev.Cp : -1, hasPrev ? prev.Cp : -1,
+                    hasBasis ? basisMine : -1, hasBasis ? basisTheirs : -1,
+                    me.Place, myNow.Cp, v.Place, cur.Cp,
+                    v.TotalLaps, v.LapDist, v.InGarage, v.PitState, myPitting));
                 if (data == null)
                     continue;
                 string rel = (string)data["rel"];
@@ -199,10 +212,82 @@ namespace TeamRadio56.Core.Logic
                 state.AddNarrative("(이벤트) 클래스 " + rel + " P" + data["their_class_place"] + " "
                                    + v.Driver + " 피트 인");
             }
+            _hist.Add(rec);
         }
 
-        /// <summary>rivals._pit_veto — 피트 진입 콜을 막는 사유 (없으면 null).
-        /// 앞/뒤는 진입 직전 틱 순위로 정한다.</summary>
+        /// <summary>rivals._judge_pit — 피트 진입 한 건 판정. 콜 데이터(침묵이면 null과 사유),
+        /// 직전 틱 기록, 앞/뒤 기준 (상대 클래스 순위, 내 클래스 순위). 기록은 진입 틱 이전 것만 본다.</summary>
+        private Dictionary<string, object> JudgePit(double t, int phase, VehicleInfo v,
+            PlaceSample cur, PlaceSample myNow, bool myPitting, out string why,
+            out bool hasPrev, out PlaceSample prev, out bool hasMyPrev, out PlaceSample myPrev,
+            out bool hasBasis, out int basisTheirs, out int basisMine)
+        {
+            prev = default(PlaceSample);
+            myPrev = default(PlaceSample);
+            hasPrev = false;
+            hasMyPrev = false;
+            hasBasis = false;
+            basisTheirs = 0;
+            basisMine = 0;
+            if (_hist.Count > 0)
+            {
+                TickRecord last = _hist[_hist.Count - 1];
+                hasPrev = last.Cars.TryGetValue(v.Id, out prev);
+                hasMyPrev = true;
+                myPrev = last.Me;
+            }
+            why = PitVeto(phase, v, hasPrev, prev.Cp, cur.Cp, hasMyPrev, myPrev.Cp, myNow.Cp);
+            if (why != null)
+                return null;
+            // 창 안에서 가장 최근에 우리 앞이었던 순간 — 있으면 앞차, 없으면 직전 틱 순위.
+            // 언더컷은 창을 다 덮는 기록이 있고 그 내내 (순위 0·동률 없이) 우리 뒤였을 때만
+            bool ahead = false;
+            bool behindAll = t - _hist[0].T >= PlaceHistS;
+            for (int i = _hist.Count - 1; i >= 0; i--)
+            {
+                TickRecord r = _hist[i];
+                PlaceSample s;
+                bool known = r.Cars.TryGetValue(v.Id, out s) && s.Cp > 0 && r.Me.Cp > 0;
+                if (known && s.Cp < r.Me.Cp)
+                {
+                    ahead = true;
+                    basisTheirs = s.Cp;
+                    basisMine = r.Me.Cp;
+                    break;
+                }
+                if (!(known && s.Cp > r.Me.Cp))
+                    behindAll = false;
+            }
+            if (!ahead)
+            {
+                basisTheirs = prev.Cp;
+                basisMine = myPrev.Cp;
+            }
+            hasBasis = true;
+            Dictionary<string, object> data = PitData(basisTheirs, basisMine, v.Driver);
+            if (data == null)
+            {
+                why = "range";
+                return null;
+            }
+            if ((bool)data["undercut_risk"])
+            {
+                if (myPitting)
+                    why = "my-pit";
+                else if (!behindAll)
+                    why = "window";
+                else if (!(phase == PhaseGreen && prev.Prog >= 1.0
+                           && myPrev.Prog - prev.Prog > 0.0
+                           && myPrev.Prog - prev.Prog < UndercutMaxLaps))
+                    why = "not-undercut";
+                if (why != null)
+                    return null;
+            }
+            return data;
+        }
+
+        /// <summary>rivals._pit_veto — 피트 진입 콜을 막는 사유 (없으면 null) —
+        /// 페이즈, 차고, 직전 틱 기록, 순위 0.</summary>
         private static string PitVeto(int phase, VehicleInfo v, bool hasPrev, int theirCpPrev,
                                       int theirCpNow, bool hasMyPrev, int myCpPrev, int myCpNow)
         {

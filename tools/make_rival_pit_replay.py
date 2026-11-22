@@ -3,7 +3,8 @@
 
 사용자 제보: "앞차가 피트인만 하면 '언더컷 어탬트'라고 함, 롤링 스타트 대기 중에도".
 녹화 리플레이(race_full 등)에는 그린 중 앞차 피트가 한 번뿐이고 그리드·포메이션 피트,
-처음 볼 때 이미 피트에 있는 차, 순위 0, 진입 틱 순위 흔들림, 랩 다운 차, FCY 피트가 없어서
+처음 볼 때 이미 피트에 있는 차, 순위 0, 진입 틱 순위 흔들림, 진입 감속 중 추월, 랩 다운 차,
+FCY 피트, 우리 피트를 따라 들어오는 차가 없어서
 analyzers/rivals.py(C# RivalAnalyzer)의 이런 경로가 한 번도 재생되지 않았다.
 여기서는 한 레이스에 그 경우를 전부 넣고, 어떤 콜이 몇 초에 나와야 하는지를
 data/replays/rival_pit.expect.json에 같이 쓴다 (tools/expect_calls.py가 파이썬·C# 둘 다 대조).
@@ -11,16 +12,20 @@ data/replays/rival_pit.expect.json에 같이 쓴다 (tools/expect_calls.py가 �
 규칙 (기대값의 근거):
   · 콜은 그린/FCY(페이즈 5·6)에서만 — 그리드·포메이션·카운트다운(0~4)은 무음
   · 처음 보는 차(첫 레이스 틱, 틱 공백 뒤)는 기준값만 — 이미 피트에 있던 차는 콜하지 않는다
-  · 앞/뒤와 클래스 순위는 진입 직전 틱 기준 — 진입 틱에 순위가 바뀌어도 앞차는 앞차
-  · 순위 0(내 차든 상대든)이면 침묵, 차고로 순간이동(in_garage)도 침묵
-  · 뒤차 "언더컷" 콜은 그린 + 상대 1랩 이상 완료 + 트랙 위에서 1/4랩 안쪽 뒤일 때만
-    (FCY 피트·첫 랩 피트·랩 다운 차는 침묵 — 음성 팩에 "뒤차 + 갭 안내" 문장이 없다)
+  · 앞/뒤와 클래스 순위는 진입 전 5초(PLACE_HIST_S) 기록 기준 — 그 안에서 한 번이라도 우리
+    앞이었으면 앞차(가장 최근 그 순간의 순위). 진입 틱에 순위가 바뀌어도, 진입 감속 중
+    플래그보다 몇 틱 먼저 추월당해도 앞차는 앞차
+  · 직전·진입 틱 순위 0(내 차든 상대든)이면 침묵, 차고로 순간이동(in_garage)도 침묵
+  · 뒤차 "언더컷" 콜은 그린 + 상대 1랩 이상 완료 + 트랙 위에서 1/4랩 안쪽 뒤 + 5초 내내 뒤 +
+    우리가 피트에 있지도 아웃랩 중이지도 않을 때만 (FCY 피트·첫 랩 피트·랩 다운 차·우리를
+    따라 들어온 차는 침묵 — 음성 팩에 "뒤차 + 갭 안내" 문장이 없다)
   · 같은 종류 쿨다운 90초 — 기대 콜끼리는 90초 넘게 띄운다
 
-모델: 단일 클래스 5대, 같은 페이스(80초/랩)라 순서는 스크립트한 정지(halt)로만 바뀐다.
-그린 전에는 그리드에 서 있다. 피트 정지는 기본으로 시간 손실 없음(순서 고정 — 경우마다
-규칙 하나만 보이게), 랩 다운을 만드는 정지만 그 시간 동안 멈춘다. 위치는 시각에서
-해석적으로 구한다 (dt 누적 없음 — 재생성 결과가 머신과 무관하게 같다).
+모델: 단일 클래스 5대, 같은 페이스(80초/랩)라 순서는 스크립트한 정지(halt)·감속(slow)으로만
+바뀐다. 그린 전에는 그리드에 서 있다. 피트 정지는 기본으로 시간 손실 없음(순서 고정 — 경우마다
+규칙 하나만 보이게), 랩 다운을 만드는 정지만 그 시간 동안 멈추고, 진입 감속은 피트 플래그 전
+구간을 느리게 달린다. 위치는 시각에서 해석적으로 구한다 (dt 누적 없음 — 재생성 결과가
+머신과 무관하게 같다).
 
 사용법: python tools/make_rival_pit_replay.py [--out-dir data/replays] [--check]
 """
@@ -60,6 +65,9 @@ T_RESTART = 590.0           # 그린 복귀
 T_END = 820.0
 GAP = (600.0, 610.0)        # 이 사이(양끝 제외) 스냅샷 없음 — 모니터에 다녀온 공백
 
+PLACE_HIST_S = 5.0          # rivals.PLACE_HIST_S — 앞/뒤 판정 창
+WIN = int(round(PLACE_HIST_S * HZ))
+
 PLAYER = 0
 # (id, 드라이버, 차, 그리드 위치 m — 음수 = 라인 뒤)
 CARS = [
@@ -77,6 +85,8 @@ SAY_BEHIND = ("P{p} in class, car behind, just pitted. "
 # 경우 하나 = 피트 진입 하나. expect: None(침묵) 또는 (rel, 진입 직전 클래스 순위).
 #   halt  — 피트에 있는 동안 멈춤 (시간 손실)     garage — 차고 순간이동 (끝까지 차고)
 #   zero  — [(차 id, 시작, 끝)] 그 구간 순위 0     swap — (id_a, id_b, 시작, 끝) 순위 맞바꿈
+#   slow  — (시작, 속도 비율) 시작~t_in(피트 플래그) 동안 그 비율로 감속 (진입 감속 — 시간 손실)
+#   car=PLAYER 경우는 내 피트 (콜 대상 아님 — 다른 경우의 조건)
 CASES = [
     dict(name="pitlane_start", car=4, t_in=0.0, t_out=30.0, expect=None,
          note="포메이션 — 첫 레이스 틱에 이미 피트에 있는 차 (처음 봄 = 기준값만)"),
@@ -92,22 +102,34 @@ CASES = [
          note="첫 랩 긴 정지(67초) — 이 차는 이후 한 랩 다운"),
     dict(name="ahead_green", car=1, t_in=200.0, t_out=206.0, expect=("ahead", 1),
          note="그린 중 앞차 피트 → 갭 안내 콜 하나"),
-    dict(name="behind_undercut", car=3, t_in=300.0, t_out=306.0, expect=("behind", 4),
-         note="그린 중 바로 뒤(160m) 차 피트 → 언더컷 콜 하나"),
-    dict(name="ahead_reshuffle", car=2, t_in=400.0, t_out=406.0, swap=(2, PLAYER, 400.0, 401.0),
+    dict(name="player_pit", car=PLAYER, t_in=290.0, t_out=296.0, expect=None,
+         note="내 피트 (290~296, 시간 손실 없음) — 아래 두 경우의 조건"),
+    dict(name="follow_into_pits", car=3, t_in=293.0, t_out=299.0, expect=None,
+         note="내가 피트에 있는 동안 바로 뒤(160m) 차가 따라 들어옴 — 언더컷 아님"),
+    dict(name="follow_outlap", car=3, t_in=305.0, t_out=311.0, expect=None,
+         note="내 아웃랩(312초 라인 통과 전)에 바로 뒤차 피트 — 언더컷 아님"),
+    dict(name="behind_undercut", car=3, t_in=315.0, t_out=321.0, expect=("behind", 4),
+         note="그린 중 바로 뒤(160m) 차 피트 → 언더컷 콜 하나 (내 아웃랩이 끝난 뒤)"),
+    dict(name="ahead_reshuffle", car=2, t_in=405.0, t_out=411.0, swap=(2, PLAYER, 405.0, 406.0),
          expect=("ahead", 2),
          note="앞차 피트 진입 틱에 순위가 나와 맞바뀜 — 그래도 앞차 콜 (예전: 뒤차 언더컷)"),
-    dict(name="fcy_behind", car=3, t_in=505.0, t_out=511.0, expect=None,
+    dict(name="fcy_behind", car=3, t_in=502.0, t_out=508.0, expect=None,
          note="FCY(피트 오픈) 중 뒤차 피트 — 언더컷 아님"),
-    dict(name="fcy_ahead", car=1, t_in=520.0, t_out=526.0, expect=("ahead", 1),
+    dict(name="fcy_ahead", car=1, t_in=510.0, t_out=516.0, expect=("ahead", 1),
          note="FCY 중 앞차 피트 → 갭 안내 콜 (앞 경우가 쿨다운을 먹지 않는다)"),
-    dict(name="monitor_gap", car=3, t_in=605.0, t_out=615.0, expect=None,
+    dict(name="monitor_gap", car=1, t_in=605.0, t_out=615.0, expect=None,
          note="틱 공백(600~610) 사이에 피트 인 — 돌아왔을 때 이미 피트 (기준값 다시)"),
-    dict(name="lapped_on_road", car=4, t_in=650.0, t_out=656.0, expect=None,
+    dict(name="short_history", car=3, t_in=613.0, t_out=619.0, expect=None,
+         note="틱 공백 3초 뒤 바로 뒤차 피트 — 5초 내내 뒤였는지 기록이 모자라 언더컷 아님"),
+    dict(name="lapped_on_road", car=4, t_in=625.0, t_out=631.0, expect=None,
          note="한 랩 다운 차가 트랙 위 70m 앞에서 피트 — 클래스 뒤지만 언더컷 아님"),
-    dict(name="player_place0", car=2, t_in=703.0, t_out=708.0, zero=[(PLAYER, 700.0, 706.0)],
+    dict(name="ahead_slow_entry", car=2, t_in=640.0, t_out=646.0, slow=(630.0, 0.4),
+         expect=("ahead", 2),
+         note="앞차가 피트 진입 전 10초 감속(40%) — 플래그 1.1초(5틱) 전에 추월당해 직전 틱은 뒤차, "
+              "그래도 앞차 콜 (예전: 뒤차 언더컷). 이후 이 차는 20m 뒤"),
+    dict(name="player_place0", car=1, t_in=740.0, t_out=745.0, zero=[(PLAYER, 737.0, 743.0)],
          expect=None, note="그린 중 내 순위 0 구간에 앞차 피트"),
-    dict(name="rival_place0", car=3, t_in=763.0, t_out=768.0, zero=[(3, 760.0, 766.0)],
+    dict(name="rival_place0", car=3, t_in=765.0, t_out=770.0, zero=[(3, 762.0, 768.0)],
          expect=None, note="그린 중 상대 순위 0 구간에 피트 (예전: 클래스 P1 앞차로 콜)"),
     dict(name="garage_teleport", car=2, t_in=800.0, t_out=None, garage=True, halt=True,
          expect=None, note="차고로 순간이동 (in_pits + in_garage 같은 틱)"),
@@ -136,15 +158,20 @@ class Car:
         self.offset = offset
         self.is_player = cid == PLAYER
         self.stops = sorted((c for c in CASES if c["car"] == cid), key=lambda c: c["t_in"])
-        self.halts = [(max(c["t_in"], T_GREEN), c["t_out"] if c["t_out"] is not None else math.inf)
-                      for c in self.stops if c.get("halt")]
+        # 시간 손실 구간 (시작, 끝, 손실 비율) — 정지 1.0, 감속은 1 - 속도 비율. 겹치지 않는다
+        lost = [(max(c["t_in"], T_GREEN), c["t_out"] if c["t_out"] is not None else math.inf, 1.0)
+                for c in self.stops if c.get("halt")]
+        lost += [(c["slow"][0], c["t_in"], 1.0 - c["slow"][1]) for c in self.stops if c.get("slow")]
+        self.lost = sorted(lost)
+        for (_, b, _), (a, _, _) in zip(self.lost, self.lost[1:]):
+            assert b <= a, f"차 {cid}: 시간 손실 구간이 겹침"
 
     def moving(self, t):
-        """그린 이후 실제로 달린 시간 (멈춘 구간 제외)."""
+        """그린 이후 실제로 달린 시간 (멈춘 구간 제외, 감속 구간은 비율만큼)."""
         m = max(t - T_GREEN, 0.0)
-        for a, b in self.halts:
+        for a, b, rate in self.lost:
             if t > a:
-                m -= min(t, b) - a
+                m -= rate * (min(t, b) - a)
         return m
 
     def dist(self, t):
@@ -154,9 +181,12 @@ class Car:
         """누적 거리 x에 처음 닿는 시각 (그린 이후)."""
         need = (x - self.offset) / V
         t = T_GREEN + need
-        for a, b in self.halts:
+        for a, b, rate in self.lost:
             if t > a:
-                t += b - a
+                if rate < 1.0 and t - a <= (b - a) * (1.0 - rate):
+                    t = a + (t - a) / (1.0 - rate)      # 감속 구간 안에서 닿는다
+                else:
+                    t += rate * (b - a)
         return t
 
     def stop_at(self, t):
@@ -307,6 +337,40 @@ def progress(snap, cid):
     return v["total_laps"] + v["lap_dist"] / TL
 
 
+def player_in_pits(snap):
+    return next(v for v in snap["vehicles"] if v["id"] == PLAYER)["in_pits"]
+
+
+def window(by_t, n):
+    """진입 직전 기록 창 (최근 → 오래된) — rivals 틱 기록과 같은 범위에 창 밖 하나를 더."""
+    return [by_t[k] for k in range(n - 1, n - WIN - 2, -1) if k in by_t]
+
+
+def basis(by_t, n, cid):
+    """rivals 앞/뒤 기준 (상대, 나) — 창 안에서 가장 최근에 우리 앞이었던 순간, 없으면 직전 틱."""
+    for s in window(by_t, n)[:WIN]:
+        theirs, mine = class_place(s, cid), class_place(s, PLAYER)
+        if theirs < mine:
+            return theirs, mine
+    before = by_t[n - 1]
+    return class_place(before, cid), class_place(before, PLAYER)
+
+
+def undercut_gate(before, cid):
+    """직전 틱만 본 언더컷 조건 — 그린, 클래스 ±2 안 뒤, 상대 1랩 이상, 트랙 위 1/4랩 안쪽 뒤."""
+    lag = progress(before, PLAYER) - progress(before, cid)
+    return (phase_at(before["t"])[0] == 5
+            and 0 < class_place(before, cid) - class_place(before, PLAYER) <= 2
+            and progress(before, cid) >= 1.0 and 0 < lag < 0.25)
+
+
+def undercut_shape(by_t, n, cid):
+    """우리 피트 규칙만 빼면 언더컷 콜이 나갈 모양인가 — 직전 틱 조건 + 창 내내 뒤."""
+    win = window(by_t, n)
+    return (len(win) == WIN + 1 and undercut_gate(by_t[n - 1], cid)
+            and all(class_place(s, cid) > class_place(s, PLAYER) for s in win))
+
+
 def build():
     cars = [Car(*c) for c in CARS]
     snaps = []
@@ -317,7 +381,7 @@ def build():
         snaps.append(snapshot(n, cars))
     by_t = {tick(s["t"]): s for s in snaps}
 
-    # 기대값이 스크립트 의도와 맞는지 생성 시점에 확인 (진입 직전 틱 기준)
+    # 기대값이 스크립트 의도와 맞는지 생성 시점에 확인 (진입 전 기록 창 기준)
     events, cases = [], []
     last_call = -math.inf
     for c in CASES:
@@ -335,12 +399,11 @@ def build():
         if exp is not None:
             rel, p = exp
             assert phase in (5, 6) and before is not None
-            assert class_place(before, c["car"]) == p, f"{c['name']}: 클래스 순위 {p} 아님"
-            mine = class_place(before, PLAYER)
+            theirs, mine = basis(by_t, n, c["car"])
+            assert theirs == p, f"{c['name']}: 클래스 순위 {p} 아님 ({theirs})"
             assert (p < mine) == (rel == "ahead") and 0 < abs(p - mine) <= 2, c["name"]
             if rel == "behind":
-                lag = progress(before, PLAYER) - progress(before, c["car"])
-                assert phase == 5 and progress(before, c["car"]) >= 1.0 and 0 < lag < 0.25, c["name"]
+                assert undercut_shape(by_t, n, c["car"]) and not player_in_pits(before), c["name"]
             assert c["t_in"] - last_call >= 90.0, f"{c['name']}: 앞 콜과 90초 쿨다운 안"
             last_call = c["t_in"]
             events.append({
@@ -354,13 +417,40 @@ def build():
         elif c["name"] == "lapped_on_road":
             lag = progress(before, PLAYER) - progress(before, c["car"])
             assert 0.9 < lag < 1.0 and class_place(before, c["car"]) - class_place(before, PLAYER) == 2
+        elif c["name"] in ("follow_into_pits", "follow_outlap"):
+            # 우리 피트 규칙만 없으면 언더컷 콜이 나갈 모양이어야 의미가 있다
+            assert undercut_shape(by_t, n, c["car"]), f"{c['name']}: 언더컷 모양 아님"
+            me_before = next(v for v in before["vehicles"] if v["id"] == PLAYER)
+            pit_out = next(k for k in CASES if k["car"] == PLAYER)["t_out"]
+            pit_lap = next(v for v in by_t[tick(pit_out) - 1]["vehicles"]
+                           if v["id"] == PLAYER)["total_laps"]
+            if c["name"] == "follow_into_pits":
+                assert player_in_pits(before) and player_in_pits(now), c["name"]
+            else:
+                assert not any(player_in_pits(s) for s in window(by_t, n)), c["name"]
+                assert me_before["total_laps"] == pit_lap, "follow_outlap: 아웃랩이 아님"
+        if c["name"] == "short_history":
+            # 기록 창만 모자라고 나머지는 언더컷 모양
+            win = window(by_t, n)
+            assert len(win) < WIN and undercut_gate(before, c["car"]) and not player_in_pits(before) \
+                and all(class_place(k, c["car"]) > class_place(k, PLAYER) for k in win), c["name"]
+        if c["name"] == "ahead_slow_entry":
+            # 직전 틱만 보면 언더컷 — 플래그 2틱 이상 전에 이미 뒤로 밀려 있어야 한다
+            behind = 0
+            while class_place(by_t[n - 1 - behind], c["car"]) > class_place(by_t[n - 1 - behind], PLAYER):
+                behind += 1
+            assert behind >= 2 and undercut_gate(before, c["car"]), f"{c['name']}: 뒤 {behind}틱"
+        if exp is None and phase in (5, 6) and c["car"] != PLAYER:
+            # 침묵 경우는 기대 콜 쿨다운(90초) 밖이어야 — 그 규칙이 깨지면 콜이 나와 잡힌다
+            assert c["t_in"] - last_call >= 90.0, f"{c['name']}: 앞 기대 콜 쿨다운에 가려짐"
         cases.append({"name": c["name"], "t": round(c["t_in"], 2), "car": car.driver,
                       "phase": phase, "call": exp is not None, "note": c["note"]})
 
     sidecar = {
         "scenario": NAME,
         "note": "경쟁자 피트 콜 — 그린/FCY에서만, 처음 보는 차·순위 0·차고 순간이동은 침묵, "
-                "앞/뒤는 진입 직전 순위, 뒤차 언더컷은 그린·1랩 이후·1/4랩 안쪽만",
+                "앞/뒤는 진입 전 5초 순위 기록(한 번이라도 앞이면 앞차), 뒤차 언더컷은 그린·1랩 이후·"
+                "1/4랩 안쪽·5초 내내 뒤·우리 피트/아웃랩 아닐 때만",
         "types": ["rival_pit"],
         "events": events,
         "cases": cases,

@@ -57,12 +57,36 @@
    "t": 200.0
   },
   {
+   "call": false,
+   "car": "나",
+   "name": "player_pit",
+   "note": "내 피트 (290~296, 시간 손실 없음) — 아래 두 경우의 조건",
+   "phase": 5,
+   "t": 290.0
+  },
+  {
+   "call": false,
+   "car": "로키",
+   "name": "follow_into_pits",
+   "note": "내가 피트에 있는 동안 바로 뒤(160m) 차가 따라 들어옴 — 언더컷 아님",
+   "phase": 5,
+   "t": 293.0
+  },
+  {
+   "call": false,
+   "car": "로키",
+   "name": "follow_outlap",
+   "note": "내 아웃랩(312초 라인 통과 전)에 바로 뒤차 피트 — 언더컷 아님",
+   "phase": 5,
+   "t": 305.0
+  },
+  {
    "call": true,
    "car": "로키",
    "name": "behind_undercut",
-   "note": "그린 중 바로 뒤(160m) 차 피트 → 언더컷 콜 하나",
+   "note": "그린 중 바로 뒤(160m) 차 피트 → 언더컷 콜 하나 (내 아웃랩이 끝난 뒤)",
    "phase": 5,
-   "t": 300.0
+   "t": 315.0
   },
   {
    "call": true,
@@ -70,7 +94,7 @@
    "name": "ahead_reshuffle",
    "note": "앞차 피트 진입 틱에 순위가 나와 맞바뀜 — 그래도 앞차 콜 (예전: 뒤차 언더컷)",
    "phase": 5,
-   "t": 400.0
+   "t": 405.0
   },
   {
    "call": false,
@@ -78,7 +102,7 @@
    "name": "fcy_behind",
    "note": "FCY(피트 오픈) 중 뒤차 피트 — 언더컷 아님",
    "phase": 6,
-   "t": 505.0
+   "t": 502.0
   },
   {
    "call": true,
@@ -86,11 +110,11 @@
    "name": "fcy_ahead",
    "note": "FCY 중 앞차 피트 → 갭 안내 콜 (앞 경우가 쿨다운을 먹지 않는다)",
    "phase": 6,
-   "t": 520.0
+   "t": 510.0
   },
   {
    "call": false,
-   "car": "로키",
+   "car": "리바이",
    "name": "monitor_gap",
    "note": "틱 공백(600~610) 사이에 피트 인 — 돌아왔을 때 이미 피트 (기준값 다시)",
    "phase": 5,
@@ -98,19 +122,35 @@
   },
   {
    "call": false,
+   "car": "로키",
+   "name": "short_history",
+   "note": "틱 공백 3초 뒤 바로 뒤차 피트 — 5초 내내 뒤였는지 기록이 모자라 언더컷 아님",
+   "phase": 5,
+   "t": 613.0
+  },
+  {
+   "call": false,
    "car": "토르",
    "name": "lapped_on_road",
    "note": "한 랩 다운 차가 트랙 위 70m 앞에서 피트 — 클래스 뒤지만 언더컷 아님",
    "phase": 5,
-   "t": 650.0
+   "t": 625.0
+  },
+  {
+   "call": true,
+   "car": "헌터",
+   "name": "ahead_slow_entry",
+   "note": "앞차가 피트 진입 전 10초 감속(40%) — 플래그 1.1초(5틱) 전에 추월당해 직전 틱은 뒤차, 그래도 앞차 콜 (예전: 뒤차 언더컷). 이후 이 차는 20m 뒤",
+   "phase": 5,
+   "t": 640.0
   },
   {
    "call": false,
-   "car": "헌터",
+   "car": "리바이",
    "name": "player_place0",
    "note": "그린 중 내 순위 0 구간에 앞차 피트",
    "phase": 5,
-   "t": 703.0
+   "t": 740.0
   },
   {
    "call": false,
@@ -118,7 +158,7 @@
    "name": "rival_place0",
    "note": "그린 중 상대 순위 0 구간에 피트 (예전: 클래스 P1 앞차로 콜)",
    "phase": 5,
-   "t": 763.0
+   "t": 765.0
   },
   {
    "call": false,
@@ -149,7 +189,7 @@
     "undercut_risk": true
    },
    "say": "P4 in class, car behind, just pitted. Undercut attempt. I'll look at our timing.",
-   "t": 300.0,
+   "t": 315.0,
    "type": "rival_pit"
   },
   {
@@ -160,7 +200,7 @@
     "undercut_risk": false
    },
    "say": "P2 in class, car ahead, just pitted. I'll call the gap when he's out.",
-   "t": 400.0,
+   "t": 405.0,
    "type": "rival_pit"
   },
   {
@@ -171,11 +211,22 @@
     "undercut_risk": false
    },
    "say": "P1 in class, car ahead, just pitted. I'll call the gap when he's out.",
-   "t": 520.0,
+   "t": 510.0,
+   "type": "rival_pit"
+  },
+  {
+   "data": {
+    "driver": "헌터",
+    "rel": "앞",
+    "their_class_place": 2,
+    "undercut_risk": false
+   },
+   "say": "P2 in class, car ahead, just pitted. I'll call the gap when he's out.",
+   "t": 640.0,
    "type": "rival_pit"
   }
  ],
- "note": "경쟁자 피트 콜 — 그린/FCY에서만, 처음 보는 차·순위 0·차고 순간이동은 침묵, 앞/뒤는 진입 직전 순위, 뒤차 언더컷은 그린·1랩 이후·1/4랩 안쪽만",
+ "note": "경쟁자 피트 콜 — 그린/FCY에서만, 처음 보는 차·순위 0·차고 순간이동은 침묵, 앞/뒤는 진입 전 5초 순위 기록(한 번이라도 앞이면 앞차), 뒤차 언더컷은 그린·1랩 이후·1/4랩 안쪽·5초 내내 뒤·우리 피트/아웃랩 아닐 때만",
  "scenario": "rival_pit",
  "types": [
   "rival_pit"
