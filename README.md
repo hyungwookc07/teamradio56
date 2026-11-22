@@ -194,7 +194,11 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
 - [x] Automatic damage check — 8 s after an impact, sweeps dents / wheels /
   punctures / pressures from data and reports ("just marks, carry on" /
   "losing pressure, prepare to box"). Instant call on wheel loss; continuous
-  slow-puncture watch — the tool does the checking, not the driver
+  slow-puncture watch — the tool does the checking, not the driver. Alignment
+  ("steering pull on the straights") compares the median steering of samples
+  where the car is really going straight (low yaw rate and lateral slip, so fast
+  sweepers never count) before the first impact and after it; no call without a
+  pre-impact baseline or while a tyre is flat
 - [x] Fuel-save coaching — target-burn delta guidance in no-stop borderline
   situations
 - [x] Wet/dry crossover — tyre-switch decision trigger from track wetness

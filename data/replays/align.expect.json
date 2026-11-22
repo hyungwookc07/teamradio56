@@ -1,0 +1,83 @@
+{
+ "cases": [
+  {
+   "base": -0.0002,
+   "call": false,
+   "impact_t": 131.6,
+   "judge_t": 164.0,
+   "name": "healthy_sweepers",
+   "note": "멀쩡한 차 + 스위퍼 구간 직전 가벼운 접촉 → 콜 없음 (예전: 스위퍼 조향이 EMA에 섞여 align_mild 오탐)",
+   "old_call_t": 146.6,
+   "old_shift": 0.0516,
+   "post": 0.0003,
+   "shift": 0.0005
+  },
+  {
+   "call": false,
+   "impact_t": 250.0,
+   "name": "no_baseline",
+   "note": "피트 아웃 직후(기준 직선 샘플 16개 < 25) 충격 + 실제 오프셋 +0.05 → 기준 없음, 콜 없음",
+   "old_call_t": 265.2,
+   "old_shift": 0.044
+  },
+  {
+   "base": 0.0001,
+   "call": false,
+   "impact_t": 523.6,
+   "judge_t": 556.0,
+   "name": "flat_tyre_pull",
+   "note": "충격 + 우측 앞 펑크로 +0.05 쏠림 → 타이어 탓, 얼라인 콜 없음 (점검 리포트가 펑크를 부른다)",
+   "old_call_t": 540.8,
+   "old_shift": 0.0664,
+   "post": 0.0499,
+   "shift": 0.0498
+  },
+  {
+   "base": 0.0,
+   "call": true,
+   "impact_t": 719.6,
+   "judge_t": 752.0,
+   "name": "align_mild",
+   "note": "충격 뒤 직선 조향 오프셋 +0.05 → align_mild 하나",
+   "old_call_t": 736.6,
+   "old_shift": 0.0679,
+   "post": 0.0495,
+   "shift": 0.0495
+  },
+  {
+   "base": 0.0001,
+   "call": true,
+   "impact_t": 915.6,
+   "judge_t": 948.0,
+   "name": "align_severe",
+   "note": "충격 뒤 직선 조향 오프셋 +0.10 → align_severe 하나",
+   "old_call_t": 943.4,
+   "old_shift": 0.0883,
+   "post": 0.1001,
+   "shift": 0.1
+  }
+ ],
+ "events": [
+  {
+   "data": {},
+   "message": "Steering pull on the straights. Alignment's off from that hit. It'll eat the tyre. Repair call on pace.",
+   "t": 752.0,
+   "type": "damage_report"
+  },
+  {
+   "data": {},
+   "message": "Alignment is badly out. You're steering on the straights. Box for repairs.",
+   "t": 948.0,
+   "type": "damage_report"
+  }
+ ],
+ "keys": [
+  "align_damage",
+  "align_severe"
+ ],
+ "note": "얼라인 콜 — 곧게 가는 고속 샘플(요레이트×속도 ≤ 1.5m/s², 횡속도 ≤ 1m/s)의 조향 중앙값을 첫 충격 전(101개, 최소 25) ↔ 충격 뒤(51개가 찼을 때) 비교, 0.03 경미 · 0.08 심각. 스위퍼 조향은 섞이지 않고, 기준 부족·타이어 펑크면 콜 없음",
+ "scenario": "align",
+ "types": [
+  "damage_report"
+ ]
+}

@@ -25,6 +25,7 @@
                       마일스톤/마지막 랩·내 체커(등급)/체커 뒤 쿨다운·요약·피트인/
                       피트 리미터/클래스 순위 변동
     health.py         충격→자동 점검 리포트, 얼라인/윙/리어 불안정, 슬로우 펑처, 온도
+                      (얼라인 = 곧게 가는 고속 샘플의 조향 중앙값, 첫 충격 전 ↔ 충격 뒤)
     fuel.py           소모 평균/피트 윈도우/세이브 코칭
     tyres.py          마모 수명/온도 불균형/펑크
     pace.py           랩타임 편차, 갭 추세, 배틀 갭 리포트
@@ -98,6 +99,7 @@
 - `tools/make_session_replays.py`  연습·퀄리·웜업 브리핑 리플레이 + 기대 콜 (`--check`)
 - `tools/radio_flow_selftest.py`  브리핑 변형(FNV-1a 시드)·체커 등급·피니시 뒤 침묵 단위 검사
 - `tools/make_rival_pit_replay.py`  경쟁자 피트 콜 경우를 모은 합성 리플레이 + 기대 콜 사이드카 (`--check`)
+- `tools/make_align_replay.py`  얼라인(조향 쏠림) 콜 경우를 모은 합성 리플레이 + 기대 콜 사이드카 (`--check`)
 - `tools/expect_calls.py`  수락 콜을 기대 콜 사이드카(`.expect.json`)와 대조 (파이썬·C# 각각)
 - `tools/diagnose.py`          실차 원시 값 덤프 (필드 부실 진단)
 - `tools/probe_rest.py`        REST 엔드포인트 수집 (스키마 확정용)

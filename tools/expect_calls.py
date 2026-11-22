@@ -5,6 +5,7 @@
 
   사이드카: {"types": [이벤트 종류...], "events": [{"t", "type", "data", "say"?, "message"?}, ...]}
   calls 파일마다 types에 든 종류의 수락 이벤트만 골라 events와 순서·개수까지 같아야 한다
+  (사이드카에 "keys"가 있으면 그 dedup 키의 이벤트만 — 같은 종류의 다른 콜은 범위 밖, 예: 얼라인)
   (t ±0.011초, data 완전 일치, say·message가 있으면 문장도 일치 — 세션 브리핑은 조립 문장
   message). 기대 목록에 없는 콜 하나도 실패.
 
@@ -48,7 +49,9 @@ def brief(rec):
 
 def check(calls, expect):
     types = set(expect["types"])
-    got = [c for c in calls if c.get("type") in types]
+    keys = set(expect["keys"]) if "keys" in expect else None
+    got = [c for c in calls if c.get("type") in types
+           and (keys is None or c.get("key") in keys)]
     want = expect["events"]
     probs = []
     for i in range(max(len(got), len(want))):
@@ -88,7 +91,8 @@ def main() -> int:
     for path in args.calls:
         got, probs = check(load_jsonl(path), expect)
         label = os.path.basename(path)
-        kinds = "/".join(expect["types"])
+        kinds = "/".join(expect["types"]) + (
+            f" [{'/'.join(expect['keys'])}]" if "keys" in expect else "")
         if probs:
             ok = False
             print(f"❌ {label}: {kinds} 콜이 기대와 다름 (수락 {len(got)} / 기대 {len(expect['events'])}):")
