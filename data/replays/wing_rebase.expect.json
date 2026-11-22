@@ -1,0 +1,64 @@
+{
+ "cases": [
+  {
+   "call": false,
+   "impact_t": 34.0,
+   "name": "opening_tap",
+   "note": "1랩 첫 직선 3초(5샘플 이상 속도 구간 3개 미만)에 가벼운 접촉(멀쩡) → 이 충격만 판정 없음, 기준은 이 충격 뒤부터 다시 모은다 (예전 EMA 감지는 첫 직선 끝에서 오탐)",
+   "old_call_t": 41.0,
+   "old_max_drop_mm": 19.89,
+   "pre_full_bins": 2,
+   "report_t": 42.0
+  },
+  {
+   "base_n": 301,
+   "bins_kmh": [
+    190,
+    200,
+    270
+   ],
+   "call": false,
+   "drop_mm": -0.1,
+   "impact_t": 170.0,
+   "judge_t": 190.8,
+   "n_post": 61,
+   "name": "second_tap",
+   "note": "기준 없는 접촉 뒤 한 랩 — 멀쩡한 차 가벼운 접촉 → 기준을 굳히고 판정, 하락 없음",
+   "pre_full_bins": 18,
+   "report_t": 178.0
+  },
+  {
+   "base_n": 301,
+   "bins_kmh": [
+    190,
+    200,
+    270
+   ],
+   "call": true,
+   "call_t": 293.0,
+   "drop_mm": 14.7,
+   "impact_t": 265.0,
+   "judge_t": 285.8,
+   "n_post": 61,
+   "name": "damage_after_taps",
+   "note": "같은 스틴트 다음 랩 실제 스플리터 손상(h0 −15mm) → 두 번째 접촉 때 굳힌 기준 유지, 새 판정 버퍼로 wing_damage 하나",
+   "report_t": 273.0
+  }
+ ],
+ "events": [
+  {
+   "data": {},
+   "message": "Front aero down 15 millimetres. Splitter damage. Careful in the fast stuff. Repair call on pace.",
+   "t": 293.0,
+   "type": "damage_report"
+  }
+ ],
+ "keys": [
+  "wing_damage"
+ ],
+ "note": "윙 콜 — 제동이 아닌(직전 두 틱 감속 ≤ 0.5g) 150km/h 이상 샘플의 프론트 윙 높이를 10km/h 속도 구간별로 첫 충격 전(301개) ↔ 충격 뒤 비교, 양쪽 5샘플 이상 구간 3개부터 판정, 구간별 중앙값 차의 중앙값 ≥ 10mm면 콜. 기준 부족이면 그 충격만, 타이어 펑크면 콜 없음",
+ "scenario": "wing_rebase",
+ "types": [
+  "damage_report"
+ ]
+}

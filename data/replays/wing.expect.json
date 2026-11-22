@@ -1,0 +1,91 @@
+{
+ "cases": [
+  {
+   "base_n": 301,
+   "bins_kmh": [
+    190,
+    200,
+    270
+   ],
+   "call": false,
+   "drop_mm": -0.1,
+   "impact_t": 170.0,
+   "judge_t": 190.8,
+   "n_post": 61,
+   "name": "healthy_tap",
+   "note": "멀쩡한 차 + 중속 구간 출구(~192km/h) 가벼운 접촉 → 긴 직선(325km/h)을 달려도 같은 속도끼리라 콜 없음 (예전: 중속 높이 기준 ↔ 고속 EMA 차이로 wing_damage 오탐)",
+   "old_call_t": 200.8,
+   "old_max_drop_mm": 12.98,
+   "pre_full_bins": 18,
+   "report_t": 178.0
+  },
+  {
+   "base_n": 301,
+   "bins_kmh": [
+    190,
+    200,
+    270
+   ],
+   "call": false,
+   "drop_mm": 0.0,
+   "impact_t": 411.2,
+   "judge_t": 432.0,
+   "n_post": 61,
+   "name": "static_field",
+   "note": "필드가 정적(높이 0.0520m 상수)인 차 + 충격 → 충격 전후 같은 높이, 하락 0 → 콜 없음",
+   "pre_full_bins": 18,
+   "report_t": 419.2
+  },
+  {
+   "base_n": 301,
+   "call": false,
+   "hold_drop_mm": 14.7,
+   "hold_t": 673.2,
+   "impact_t": 652.4,
+   "name": "flat_tyre_drop",
+   "note": "충격 + 우측 앞 펑크로 높이 15mm 하락 → 타이어 탓, 윙 콜 없음 (점검 리포트가 펑크를 부른다)",
+   "old_call_t": 668.4,
+   "old_max_drop_mm": 26.85,
+   "pre_full_bins": 18,
+   "report_t": 660.4
+  },
+  {
+   "base_n": 301,
+   "bins_kmh": [
+    250,
+    260,
+    270,
+    280
+   ],
+   "call": true,
+   "call_t": 974.6,
+   "drop_mm": 14.8,
+   "impact_t": 946.6,
+   "judge_t": 954.8,
+   "n_post": 41,
+   "name": "splitter_damage",
+   "note": "메인 직선 접촉으로 실제 스플리터 손상(h0 −15mm) → wing_damage 하나. 직선 가속 중이라 충격 몇 초 만에 구간이 차지만 판정은 점검 리포트(+8초) 뒤, 콜은 리포트 쿨다운 20초 뒤 재시도로 (리포트를 밀어내지 않는다)",
+   "old_call_t": 952.4,
+   "old_max_drop_mm": 22.53,
+   "pre_full_bins": 18,
+   "ready_t": 952.0,
+   "report_t": 954.6
+  }
+ ],
+ "events": [
+  {
+   "data": {},
+   "message": "Front aero down 15 millimetres. Splitter damage. Careful in the fast stuff. Repair call on pace.",
+   "t": 974.6,
+   "type": "damage_report"
+  }
+ ],
+ "keys": [
+  "wing_damage"
+ ],
+ "note": "윙 콜 — 제동이 아닌(직전 두 틱 감속 ≤ 0.5g) 150km/h 이상 샘플의 프론트 윙 높이를 10km/h 속도 구간별로 첫 충격 전(301개) ↔ 충격 뒤 비교, 양쪽 5샘플 이상 구간 3개부터 판정, 구간별 중앙값 차의 중앙값 ≥ 10mm면 콜. 기준 부족이면 그 충격만, 타이어 펑크면 콜 없음",
+ "scenario": "wing",
+ "types": [
+  "damage_report"
+ ]
+}

@@ -9,10 +9,10 @@
 #      체커 뒤까지 가고 정답(.truth.json)과 마지막 랩·체커 콜(등급)·체커 뒤 무전(쿨다운·
 #      요약·피트인)·피니시 뒤 침묵까지 대조 (tools/make_race_end_replays.py가 만들고
 #      --check로 재생성 대조; <이름>.config.json은 두 하니스가 읽는 설정 덮어쓰기)
-#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit, align*, session_*)는 수락 콜을
-#      정답 목록과 파이썬·C# 각각 대조 (tools/expect_calls.py — 세션 브리핑은 문장까지;
+#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit, align*, wing*, session_*)는 수락
+#      콜을 정답 목록과 파이썬·C# 각각 대조 (tools/expect_calls.py — 세션 브리핑은 문장까지;
 #      생성기 tools/make_rival_pit_replay.py · tools/make_align_replay.py ·
-#      tools/make_session_replays.py --check)
+#      tools/make_wing_replay.py · tools/make_session_replays.py --check)
 #
 # C# 플러그인 무전은 영어 + kokoro 음성 팩 고정이라 파이썬 ↔ C# 대조는 en만 한다.
 # 파이썬 단독 앱의 한국어·edge 목소리는 파이썬 자체 검사(셀프테스트, ko 스모크)로만 돈다.
@@ -409,6 +409,10 @@ python3 tools/make_rival_pit_replay.py --check || fail=1
 echo
 echo "▶ 얼라인 리플레이 재생성 대조 (스위퍼 직전 접촉 · 기준 없음 · 펑크 · 경미 · 심각 · 기준 재수집 · 리어 토 게걸음)"
 python3 tools/make_align_replay.py --check || fail=1
+
+echo
+echo "▶ 윙 리플레이 재생성 대조 (정적 필드 · 펑크 · 중속 접촉 뒤 긴 직선 · 스플리터 손상 · 기준 재수집)"
+python3 tools/make_wing_replay.py --check || fail=1
 
 echo
 echo "▶ 세션 브리핑 리플레이 재생성 대조 (연습·퀄리·웜업, 시작·중간 합류)"

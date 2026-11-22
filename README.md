@@ -200,7 +200,13 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   sweepers never count, while a car crabbing straight on bent rear toe still does)
   before the first impact and after it; an impact without a pre-impact baseline is
   not judged (the baseline restarts, so a later impact still is), and there is no
-  call while a tyre is flat
+  call while a tyre is flat. Front-wing ("front aero down N millimetres") compares
+  splitter height like with like: samples at 150 km/h and up, never under braking,
+  grouped into 10 km/h speed bins, before the first impact and after it — the
+  healthy height drops with speed (aero load) and under brake dive, so a tap in a
+  slow section followed by a long straight is not damage. Same baseline, flat-tyre
+  and one-judgement-per-impact rules as alignment, and the call waits for the
+  impact's damage report
 - [x] Fuel-save coaching — target-burn delta guidance in no-stop borderline
   situations
 - [x] Wet/dry crossover — tyre-switch decision trigger from track wetness
