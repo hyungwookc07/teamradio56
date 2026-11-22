@@ -163,6 +163,21 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
 - [x] Race control — FCY/safety car deployment, pit-open and restart calls
   (the money calls in endurance racing), local sector yellows, green/chequered,
   time-remaining milestones, final lap, pit-limiter warning
+- [x] Session briefing like a real WEC/IMSA engineer — always opens with a radio
+  check (no track name) and differs per session: practice (length, track/rain,
+  build-up run plan), qualifying (find a gap, track limits, "make it count" — no
+  fuel), warm-up (car check), race (grid slot of N in class, fuel, formation lap
+  and green call, start spotter, calm first lap); mid-join variants. Every
+  sentence slot has 2–5 variants picked by an FNV-1a hash of the snapshot, so
+  Python and C# say the same words while sessions still differ
+- [x] Chequered flag and after — the flag call is tiered by result (win, class
+  win, podium, places gained / about the same / lost vs. the class start
+  position, or result-only after a mid-join) and says the real class position.
+  Then a cool-down lap call (with a "faster cars still racing" note when
+  needed), one summary (fastest lap in class or our best-lap rank) and a
+  pit-in line. After our finish, strategy, fuel, tyre, rival, position and
+  periodic report calls go quiet; only safety calls remain (pit limiter,
+  yellows, wheel loss, cars alongside / faster cars approaching)
 - [x] Class standings — real (in-class) positions in multiclass, called only
   on change
 - [x] Blue flag / backmarkers — dual detection from the mFlag edge + lap
