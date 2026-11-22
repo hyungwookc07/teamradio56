@@ -3,12 +3,14 @@
   {
    "base": -0.0002,
    "call": true,
+   "call_without_lat_vel_gate": true,
+   "call_without_yaw_gate": true,
    "impact_t": 131.6,
    "judge_t": 164.0,
    "name": "rear_crab_mild",
    "note": "리어 토 손상 — 오프셋 +0.05로 비스듬히 곧게 감(직선 횡속도 1.0~1.25m/s) → align_mild (직전 코드: 횡속도 1.0m/s 상한이 고속 직선 샘플을 버려 판정 버퍼가 안 참)",
    "old_call_t": 148.4,
-   "old_shift": 0.0694,
+   "old_shift": 0.0878,
    "post": 0.0503,
    "prev_call": false,
    "shift": 0.0505
@@ -16,12 +18,14 @@
   {
    "base": 0.0001,
    "call": true,
+   "call_without_lat_vel_gate": true,
+   "call_without_yaw_gate": true,
    "impact_t": 327.6,
    "judge_t": 360.0,
    "name": "rear_crab_severe",
    "note": "리어 토 심한 손상 — 오프셋 +0.10, 직선 횡속도 2.0~2.5m/s → align_severe (직전 코드: 샘플이 전부 빠져 콜 없음)",
    "old_call_t": 355.2,
-   "old_shift": 0.0898,
+   "old_shift": 0.1036,
    "post": 0.0997,
    "prev_call": false,
    "shift": 0.0996
@@ -45,7 +49,7 @@
   "align_damage",
   "align_severe"
  ],
- "note": "얼라인 콜 — 곧게 가는 고속 샘플(요레이트×속도 ≤ 1.5m/s², 횡속도 ≤ 3m/s)의 조향 중앙값을 첫 충격 전(101개, 최소 25) ↔ 충격 뒤(51개가 찼을 때) 비교, 0.03 경미 · 0.08 심각. 스위퍼 조향은 섞이지 않고, 리어 토 게걸음은 샘플이다. 기준 부족이면 그 충격만, 타이어 펑크면 콜 없음",
+ "note": "얼라인 콜 — 곧게 가는 고속 샘플(요레이트×속도 ≤ 1.5m/s², 횡속도 ≤ 3m/s)의 조향 중앙값을 첫 충격 전(101개, 최소 25) ↔ 충격 뒤(51개가 찼을 때) 비교, 0.03 경미 · 0.08 심각. 스위퍼 조향은 섞이지 않고, 리어 토 게걸음은 샘플이다. 기준 부족이면 그 충격만, 타이어 펑크면 콜 없음. call_without_yaw_gate/call_without_lat_vel_gate = 그 게이트 하나만 뺀 규칙의 판정 (생성기가 각 게이트가 판정을 바꾸는 경우를 확인)",
  "scenario": "align_crab",
  "types": [
   "damage_report"
