@@ -166,18 +166,6 @@ namespace TeamRadio56.Core.Logic
         private static readonly string[] WheelsEn =
             { "front left", "front right", "rear left", "rear right" };
 
-        // 순서 중요 — 파이썬 dict 순회 순서 그대로 (부분 문자열 매칭)
-        private static readonly KeyValuePair<string, string>[] ClassEn =
-        {
-            new KeyValuePair<string, string>("hypercar", "Hypercar"),
-            new KeyValuePair<string, string>("lmh", "Hypercar"),
-            new KeyValuePair<string, string>("lmdh", "Hypercar"),
-            new KeyValuePair<string, string>("lmp2", "LMP2"),
-            new KeyValuePair<string, string>("lmgt3", "GT3"),
-            new KeyValuePair<string, string>("gt3", "GT3"),
-            new KeyValuePair<string, string>("gte", "GTE"),
-        };
-
         public static string WheelName(int i)
         {
             return WheelsEn[i];
@@ -194,15 +182,20 @@ namespace TeamRadio56.Core.Logic
             return zone;
         }
 
+        /// <summary>
+        /// 무전 호칭 (Hypercar/LMP2/LMP3/GTE/GT3) — 모르는 클래스는 "" (이름 없이 말한다).
+        /// 정규화·서열은 VehicleClass 단일 출처 (messages.class_display).
+        /// </summary>
         public static string ClassDisplay(string cls)
         {
-            string c = (cls ?? "").ToLowerInvariant();
-            foreach (KeyValuePair<string, string> entry in ClassEn)
-            {
-                if (c.Contains(entry.Key))
-                    return entry.Value;
-            }
-            return "faster car";
+            return VehicleClass.Display(cls);
+        }
+
+        /// <summary>다중 차량 종합의 차 이름 — 모르는 클래스는 중립어 "car" (messages.multi_class_name).</summary>
+        public static string MultiClassName(string cls)
+        {
+            string d = ClassDisplay(cls);
+            return d.Length > 0 ? d : Get("multi_car");
         }
 
         /// <summary>traffic_approach 풀의 {gap} 슬롯 — "N second(s)".</summary>
@@ -641,6 +634,7 @@ namespace TeamRadio56.Core.Logic
             { "multi_behind_many", "Several cars behind" },
             { "multi_closing_many", "Several cars closing" },
             { "multi_one", "one {name}" },
+            { "multi_car", "car" },
             { "multi_two", "two {name}s" },
             { "multi_n", "{n} {name}s" },
             // racecontrol

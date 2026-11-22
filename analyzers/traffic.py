@@ -24,6 +24,8 @@ from typing import Optional
 from events import Event, EventBus, EventType, Priority
 from state import SessionState
 from telemetry import Snapshot
+from vehicle_class import (class_display, class_family, class_pace, class_rank,
+                           class_relation, same_class)
 
 log = logging.getLogger("traffic")
 
@@ -75,18 +77,21 @@ def wrap_gap(delta_m: float, track_len: float) -> float:
 
 
 # 클래스 서열 — LMU는 mEstimatedLapTime을 전 차량 동일한 트랙 기본값으로
-# 채워둬서(실차 진단으로 확인) 랩타임 비교가 불가능하다. 클래스 이름의
-# 서열로 상위 클래스(랩핑 트래픽)를 판정한다. 숫자가 클수록 빠른 클래스.
-CLASS_RANK = [("hyper", 4), ("lmh", 4), ("lmdh", 4),
-              ("lmp2", 3), ("gte", 2), ("gt3", 1)]
+# 채워둬서(실차 진단으로 확인) 예상 랩타임 비교가 불가능하다. 클래스 문자열을
+# 계열로 정규화해 서열로 상위 클래스(랩핑 트래픽)를 판정하고, 계열을 모르면
+# 실제 베스트 랩 중앙값으로만 가른다 — vehicle_class (C# VehicleClass) 단일 출처.
 
 
-def class_rank(cls: str) -> int:
-    c = (cls or "").lower()
-    for key, rank in CLASS_RANK:
-        if key in c:
-            return rank
-    return 0    # 서열 불명
+def class_diag_line(raw: str, my_cls: Optional[str] = None) -> str:
+    """클래스 진단 로그 한 줄 — teamradio56.log로 실제 LMU 클래스 문자열을 확인한다.
+    my_cls가 None이면 내 클래스 줄. C# TrafficAnalyzer.ClassDiagLine과 같은 문장."""
+    def desc(c: str) -> str:
+        return (f"\"{c}\" → 계열 {class_family(c)} · 서열 {class_rank(c)} · "
+                f"호칭 {class_display(c) or '(없음 — 클래스 이름 없이 말함)'}")
+    if my_cls is None:
+        return "클래스 진단: 내 클래스 " + desc(raw)
+    return (f"클래스 진단: 상대 클래스 {desc(raw)} · 내 클래스 \"{my_cls}\" 대비 "
+            f"{'같은 클래스' if same_class(my_cls, raw) else '다른 클래스'}")
 
 
 @dataclass
@@ -132,6 +137,8 @@ class TrafficAnalyzer:
         self._prev_phase: Optional[int] = None
         self._spot: Optional[dict] = None            # 스포터: 발화된 좌우 점유 상태
         self._spot_clear_since = {"left": None, "right": None}
+        self._class_logged: set = set()               # 진단 로그를 남긴 클래스 문자열
+        self._my_class_logged: Optional[str] = None
 
     def reset(self) -> None:
         self.tracks.clear()
@@ -140,6 +147,8 @@ class TrafficAnalyzer:
         self._prev_phase = None
         self._spot = None
         self._spot_clear_since = {"left": None, "right": None}
+        self._class_logged = set()
+        self._my_class_logged = None
 
     # -- 외부 조회 (브리지 유효성 검사 등에 사용) -----------------------------
 
@@ -160,6 +169,7 @@ class TrafficAnalyzer:
         if me is None or me["in_pits"] or me["in_garage"]:
             self.tracks.clear()
             return
+        self._log_classes(me, snap.vehicles)
         phase = snap.session["game_phase"]
         # 레이스 스타트(그린 전이) 감지 → 혼전 정숙 구간 시작
         if self._prev_phase in (3, 4) and phase == 5 and state.is_race:
@@ -183,12 +193,13 @@ class TrafficAnalyzer:
 
         transitions: list[tuple[CarTrack, str]] = []   # (track, old_state)
         seen: set[int] = set()
+        pace = class_pace(snap.vehicles)     # 계열을 모르는 클래스의 빠름 판정용
 
         for v in snap.vehicles:
             if v["is_player"] or v["in_pits"] or v["in_garage"] or v["finish_status"] != 0:
                 continue
             seen.add(v["id"])
-            t = self._update_track(v, me, track_len, now, my_speed)
+            t = self._update_track(v, me, track_len, now, my_speed, pace)
             # 한 번도 움직인 적 없는 엔트리 = 미스폰/관전 슬롯 — 존재하지
             # 않는 것으로 취급 (프라이빗 연습/퀄리 유령 콜의 주범)
             if not t.moved:
@@ -233,6 +244,17 @@ class TrafficAnalyzer:
             state.set_issue("battle", f"{battler.cls} ({battler.driver})와 포지션 배틀 중")
         else:
             state.clear_issue("battle")
+
+    def _log_classes(self, me: dict, vehicles: list) -> None:
+        """세션마다 내 클래스(바뀌면 다시)와 새로 본 클래스 문자열을 한 번씩 진단 로그로."""
+        if me["cls"] != self._my_class_logged:
+            self._my_class_logged = me["cls"]
+            log.info(class_diag_line(me["cls"]))
+        for v in vehicles:
+            if v["is_player"] or v["cls"] in self._class_logged:
+                continue
+            self._class_logged.add(v["cls"])
+            log.info(class_diag_line(v["cls"], me["cls"]))
 
     # -- 스포터 모드 (스타트 혼전) --------------------------------------------
 
@@ -311,8 +333,8 @@ class TrafficAnalyzer:
             dedup_key=f"hazard_{t.cid}", ttl=8.0, tone="urgent",
         ))
 
-    def _update_track(self, v: dict, me: dict,
-                      track_len: float, now: float, my_speed: float = 0.0) -> CarTrack:
+    def _update_track(self, v: dict, me: dict, track_len: float, now: float,
+                      my_speed: float = 0.0, pace: Optional[dict] = None) -> CarTrack:
         t = self.tracks.get(v["id"])
         if t is None:
             t = CarTrack(cid=v["id"], cls=v["cls"], driver=v["driver"])
@@ -359,25 +381,21 @@ class TrafficAnalyzer:
         their_prog = v["total_laps"] + v["lap_dist"] / track_len
         t.lap_delta = their_prog - my_prog
 
-        # 랩핑 트래픽 판정: ① 상위 클래스(서열 비교) ② 동클래스라도 랩을
-        # 앞선 리더가 돌리러 오는 경우 (블루 플래그 상황). 같은 랩의 동클래스는
-        # 아무리 빨라도 배틀 상대 (양보 콜 대상 아님).
+        # 랩핑 트래픽 판정: ① 상위 클래스 ② 동클래스라도 랩을 앞선 리더가 돌리러
+        # 오는 경우 (블루 플래그 상황). 같은 랩의 동클래스는 아무리 빨라도 배틀 상대
+        # (양보 콜 대상 아님). 같은 클래스 = 문자열이 같거나 같은 계열 ("LMP2" ↔
+        # "LMP2_ELMS"). 계열을 모르면 관측 페이스로만 가르고, 그것도 없으면 빠른 차가
+        # 아니다 (예전: 모르면 무조건 빠른 차 → 하이퍼카 뒤 하이퍼카도 "faster car").
         # LMU의 mEstimatedLapTime은 전 차량 동일값이라 쓰지 않는다.
-        mine, theirs = class_rank(me["cls"]), class_rank(v["cls"])
-        if v["cls"] == me["cls"]:
+        rel = class_relation(me["cls"], v["cls"], pace)
+        if same_class(me["cls"], v["cls"]):
             t.lapping = t.lap_delta >= 0.9
             t.faster = t.lapping
         else:
             t.lapping = False
-            if mine > 0 and theirs > 0:
-                t.faster = theirs > mine
-            else:
-                # 서열 불명인 낯선 클래스명 → 접근 예고 대상으로 취급
-                # (실제 닫힘 속도 조건이 오탐을 걸러준다)
-                t.faster = True
-        # 내가 잡는 트래픽: 한 랩 이상 뒤졌거나 하위 클래스
-        t.backmarker = (t.lap_delta <= -0.9
-                        or (0 < theirs < mine))
+            t.faster = rel > 0
+        # 내가 잡는 트래픽: 한 랩 이상 뒤졌거나 느린 클래스
+        t.backmarker = t.lap_delta <= -0.9 or rel < 0
         # 좌우 판정: 나란할 때만 의미 있음. mPathLateral 부호 방향은 근사라
         # 실차에서 반대로 나오면 config의 side_invert로 뒤집는다.
         lat = v.get("path_lat")
@@ -552,13 +570,13 @@ def compose_multi(active: list) -> Optional[str]:
     차량은 state/cls/side만 본다 (커버리지 퍼즈가 가짜 차량으로 부른다).
     C# TrafficAnalyzer.ComposeMulti.
     """
-    from messages import msg, class_display, multi_names
+    from messages import msg, multi_class_name, multi_names
     from speech_domain import MULTI_MAX_CARS
 
     def names_of(cars: list) -> str:
         counts: dict[str, int] = {}          # 처음 본 순서 유지
         for c in cars:
-            key = class_display(c.cls)
+            key = multi_class_name(c.cls)
             counts[key] = counts.get(key, 0) + 1
         return multi_names(list(counts.items()))
 
@@ -575,7 +593,7 @@ def compose_multi(active: list) -> Optional[str]:
             key = {"left": "multi_alongside_left",
                    "right": "multi_alongside_right"}.get(
                 cars[0].side, "multi_alongside")
-            clauses.append(msg(key, cls=class_display(cars[0].cls)))
+            clauses.append(msg(key, cls=multi_class_name(cars[0].cls)))
         elif len(cars) > MULTI_MAX_CARS:
             # 4대 이상은 대수 조합 대신 "여러 대" (음성 팩은 3대까지 조합)
             clauses.append(msg("multi_behind_many" if st == NEARBY_BEHIND

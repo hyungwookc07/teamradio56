@@ -173,7 +173,7 @@ namespace TeamRadio56.Replay
                     if (!VoiceRenderer.PoolCall(ev, out key, out slots))
                         return new[] { "none" };
                     string tone = Str(a, "tone");
-                    string[] lines = pool.Lines(key, tone);
+                    string[] lines = pool.LinesFor(key, tone, slots);
                     int line = Int(a, "line");
                     if (line >= lines.Length)
                         return new[] { "none" };

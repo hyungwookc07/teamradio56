@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from analyzers.traffic import class_rank
+from vehicle_class import class_pace, class_relation
 from events import Event, EventBus, EventType, Priority
 from messages import msg, penalty_text
 from race_end import (LATE_MIN_TO_LINE_S, POST_COOLDOWN_S, POST_EPS, POST_SUMMARY_S,
@@ -452,11 +452,12 @@ class RaceControlAnalyzer:
             if in_lane or me["in_garage"]:
                 re.cooldown_called = True
             else:
-                my_rank = class_rank(me["cls"])
                 racing = [v for v in snap.vehicles
                           if v["id"] != me["id"] and v["finish_status"] == 0
                           and v["place"] > 0 and not v["in_pits"] and not v["in_garage"]]
-                faster = any(class_rank(v["cls"]) > my_rank for v in racing)
+                # 빠른 클래스 = 트래픽과 같은 판정 (계열 서열, 모르면 관측 페이스, 그것도 없으면 아님)
+                pace = class_pace(snap.vehicles)
+                faster = any(class_relation(me["cls"], v["cls"], pace) > 0 for v in racing)
                 pool = cooldown_pool(len(racing), faster)
                 if bus.push(Event(
                         type=EventType.COOLDOWN_LAP, priority=Priority.HIGH,

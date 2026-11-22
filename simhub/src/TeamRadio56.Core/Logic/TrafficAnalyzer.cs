@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using TeamRadio56.Core.Diagnostics;
 using TeamRadio56.Core.Telemetry;
 
 namespace TeamRadio56.Core.Logic
@@ -68,33 +70,24 @@ namespace TeamRadio56.Core.Logic
             return m - half;
         }
 
-        // 클래스 서열 — LMU는 mEstimatedLapTime이 전 차량 동일값이라
-        // 클래스 이름 서열로 랩핑 트래픽을 판정한다. 숫자가 클수록 빠름.
-        private static readonly KeyValuePair<string, int>[] ClassRanks =
-        {
-            new KeyValuePair<string, int>("hyper", 4),
-            new KeyValuePair<string, int>("lmh", 4),
-            new KeyValuePair<string, int>("lmdh", 4),
-            new KeyValuePair<string, int>("lmp2", 3),
-            new KeyValuePair<string, int>("gte", 2),
-            new KeyValuePair<string, int>("gt3", 1),
-        };
+        // 클래스 서열 — LMU는 mEstimatedLapTime이 전 차량 동일값이라 클래스 문자열을 계열로
+        // 정규화해 서열로 랩핑 트래픽을 판정하고, 계열을 모르면 실제 베스트 랩 중앙값으로만
+        // 가른다 — VehicleClass 단일 출처 (파이썬 vehicle_class).
 
-        public static int ClassRank(string cls)
+        /// <summary>
+        /// 클래스 진단 로그 한 줄 (traffic.class_diag_line과 같은 문장) — teamradio56.log로 실제 LMU
+        /// 클래스 문자열을 확인한다. myCls가 null이면 내 클래스 줄.
+        /// </summary>
+        public static string ClassDiagLine(string raw, string myCls)
         {
-            string c = (cls ?? "").ToLowerInvariant();
-            foreach (KeyValuePair<string, int> kv in ClassRanks)
-            {
-                if (c.Contains(kv.Key))
-                    return kv.Value;
-            }
-            return 0;   // 서열 불명
-        }
-
-        /// <summary>클래스 표기 — Messages.ClassDisplay 위임 (기존 호출부 호환).</summary>
-        public static string ClassName(string cls)
-        {
-            return Messages.ClassDisplay(cls);
+            string desc = "\"" + raw + "\" → 계열 " + VehicleClass.Family(raw) + " · 서열 "
+                          + VehicleClass.Rank(raw).ToString(CultureInfo.InvariantCulture) + " · 호칭 "
+                          + (VehicleClass.Display(raw).Length > 0
+                              ? VehicleClass.Display(raw) : "(없음 — 클래스 이름 없이 말함)");
+            if (myCls == null)
+                return "클래스 진단: 내 클래스 " + desc;
+            return "클래스 진단: 상대 클래스 " + desc + " · 내 클래스 \"" + myCls + "\" 대비 "
+                   + (VehicleClass.SameClass(myCls, raw) ? "같은 클래스" : "다른 클래스");
         }
 
         private sealed class CarTrack
@@ -133,6 +126,8 @@ namespace TeamRadio56.Core.Logic
         private Dictionary<string, bool> _spot;    // 스포터: 발화된 좌우 점유 상태
         private readonly Dictionary<string, double?> _spotClearSince =
             new Dictionary<string, double?> { { "left", null }, { "right", null } };
+        private readonly HashSet<string> _classLogged = new HashSet<string>();   // 진단 로그를 남긴 클래스
+        private string _myClassLogged;
 
         public TrafficAnalyzer(TrafficSettings cfg)
         {
@@ -148,6 +143,8 @@ namespace TeamRadio56.Core.Logic
             _spot = null;
             _spotClearSince["left"] = null;
             _spotClearSince["right"] = null;
+            _classLogged.Clear();
+            _myClassLogged = null;
         }
 
         // -- 외부 조회 (브리지 유효성 검사 등에 사용) -------------------------
@@ -190,6 +187,7 @@ namespace TeamRadio56.Core.Logic
                 _tracks.Clear();
                 return;
             }
+            LogClasses(me, snap.Vehicles);
             int phase = snap.Session.GamePhase;
             // 레이스 스타트(그린 전이) 감지 → 혼전 정숙 구간 시작
             if ((_prevPhase == 3 || _prevPhase == 4) && phase == 5 && state.IsRace)
@@ -210,13 +208,14 @@ namespace TeamRadio56.Core.Logic
 
             var transitions = new List<KeyValuePair<CarTrack, string>>();
             var seen = new HashSet<int>();
+            Dictionary<string, double> pace = VehicleClass.Pace(snap.Vehicles);   // 계열 모르는 클래스용
 
             foreach (VehicleInfo v in snap.Vehicles)
             {
                 if (v.IsPlayer || v.InPits || v.InGarage || v.FinishStatus != 0)
                     continue;
                 seen.Add(v.Id);
-                CarTrack t = UpdateTrack(v, me, trackLen, now, mySpeed);
+                CarTrack t = UpdateTrack(v, me, trackLen, now, mySpeed, pace);
                 // 한 번도 움직인 적 없는 엔트리 = 미스폰/관전 슬롯 — 무시
                 // (프라이빗 연습/퀄리 유령 콜의 주범)
                 if (!t.Moved)
@@ -283,6 +282,25 @@ namespace TeamRadio56.Core.Logic
                 state.SetIssue("battle", battler.Cls + " (" + battler.Driver + ")와 포지션 배틀 중");
             else
                 state.ClearIssue("battle");
+        }
+
+        /// <summary>세션마다 내 클래스(바뀌면 다시)와 새로 본 클래스 문자열을 한 번씩 진단 로그로.</summary>
+        private void LogClasses(VehicleInfo me, IList<VehicleInfo> vehicles)
+        {
+            string mine = me.Class ?? "";
+            if (_myClassLogged == null || mine != _myClassLogged)
+            {
+                _myClassLogged = mine;
+                FileLog.Info(ClassDiagLine(mine, null));
+            }
+            foreach (VehicleInfo v in vehicles)
+            {
+                string cls = v.Class ?? "";
+                if (v.IsPlayer || _classLogged.Contains(cls))
+                    continue;
+                _classLogged.Add(cls);
+                FileLog.Info(ClassDiagLine(cls, mine));
+            }
         }
 
         // -- 스포터 모드 (스타트 혼전) ------------------------------------------
@@ -402,8 +420,8 @@ namespace TeamRadio56.Core.Logic
             });
         }
 
-        private CarTrack UpdateTrack(VehicleInfo v, VehicleInfo me,
-                                     double trackLen, double now, double mySpeed)
+        private CarTrack UpdateTrack(VehicleInfo v, VehicleInfo me, double trackLen, double now,
+                                     double mySpeed, Dictionary<string, double> pace)
         {
             CarTrack t;
             if (!_tracks.TryGetValue(v.Id, out t))
@@ -465,9 +483,10 @@ namespace TeamRadio56.Core.Logic
             double theirProg = v.TotalLaps + v.LapDist / trackLen;
             t.LapDelta = theirProg - myProg;
 
-            int mine = ClassRank(me.Class);
-            int theirs = ClassRank(v.Class);
-            if (v.Class == me.Class)
+            // 같은 클래스(같은 문자열·같은 계열)는 랩핑할 때만 빠른 차, 다른 클래스는 계열 서열 →
+            // 계열을 모르면 관측 페이스 → 그것도 없으면 빠른 차가 아니다 (예전: 무조건 빠른 차)
+            int rel = VehicleClass.Relation(me.Class, v.Class, pace);
+            if (VehicleClass.SameClass(me.Class, v.Class))
             {
                 t.Lapping = t.LapDelta >= 0.9;
                 t.Faster = t.Lapping;
@@ -475,12 +494,9 @@ namespace TeamRadio56.Core.Logic
             else
             {
                 t.Lapping = false;
-                if (mine > 0 && theirs > 0)
-                    t.Faster = theirs > mine;
-                else
-                    t.Faster = true;   // 서열 불명 클래스 → 접근 예고 대상으로 취급
+                t.Faster = rel > 0;
             }
-            t.Backmarker = t.LapDelta <= -0.9 || (theirs > 0 && theirs < mine);
+            t.Backmarker = t.LapDelta <= -0.9 || rel < 0;
 
             // 좌우 판정: 나란할 때만 의미 있음
             double lat = v.PathLateral;
@@ -808,7 +824,7 @@ namespace TeamRadio56.Core.Logic
                         : cars[0].Side == "right" ? "multi_alongside_right"
                         : "multi_alongside";
                     clauses.Add(Messages.Get(key,
-                        "cls", Messages.ClassDisplay(cars[0].Cls)));
+                        "cls", Messages.MultiClassName(cars[0].Cls)));
                 }
                 else if (cars.Count > SpeechDomain.MultiMaxCars)
                 {
@@ -848,7 +864,7 @@ namespace TeamRadio56.Core.Logic
             var counts = new Dictionary<string, int>();
             foreach (MultiCar c in cars)
             {
-                string key = Messages.ClassDisplay(c.Cls);
+                string key = Messages.MultiClassName(c.Cls);
                 if (!counts.ContainsKey(key))
                 {
                     counts[key] = 0;

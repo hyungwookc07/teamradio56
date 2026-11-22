@@ -54,6 +54,31 @@ namespace TeamRadio56.Core.Logic
             },
             new PhraseSet
             {
+                Pool = "traffic_approach_any",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Traffic behind, {gap}.",
+                    "Car closing from behind, {gap}.",
+                    "Traffic in {gap}. Hold your line.",
+                    "Car coming through in {gap}. Line as normal.",
+                    "Heads up, traffic {gap} back.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "traffic_approach_any",
+                Tone = "urgent",
+                Lines = new[]
+                {
+                    "Traffic! {gap} back.",
+                    "Car closing fast, {gap}.",
+                    "Traffic in {gap}. Mirrors.",
+                    "Mirror check. Traffic, {gap}.",
+                },
+            },
+            new PhraseSet
+            {
                 Pool = "alongside",
                 Tone = "urgent",
                 Lines = new[]

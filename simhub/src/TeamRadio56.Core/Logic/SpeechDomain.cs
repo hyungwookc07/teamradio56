@@ -74,8 +74,9 @@ namespace TeamRadio56.Core.Logic
         public const double CoachMin = 0.1, CoachMax = 2.9;
         public const int MultiMaxCars = 3;
         public const int DentMaxZones = 3;
+        // 다중 차량 종합의 차 이름 — VehicleClass 호칭 5종 + 모르는 클래스의 중립어 (Messages "multi_car")
         public static readonly string[] MultiClasses =
-            { "Hypercar", "LMP2", "GT3", "GTE", "faster car" };
+            { "Hypercar", "LMP2", "LMP3", "GTE", "GT3", "car" };
 
         // -- 문장 단위 사전 생성 도메인 (파이썬 SEG_*와 값·순서 동일) -------------
 

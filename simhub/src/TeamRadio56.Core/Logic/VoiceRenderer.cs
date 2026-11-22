@@ -192,10 +192,18 @@ namespace TeamRadio56.Core.Logic
                 case EventTypes.TrafficApproach:
                 {
                     int g = Clamp(GetInt(d, "gap_sec", 4), 1, 6);
+                    string cls = Messages.ClassDisplay(GetStr(d, "cls"));
+                    if (cls.Length == 0)
+                    {
+                        // 클래스를 모르는 빠른 차(관측 페이스로 판정) — 클래스 이름 없는 풀
+                        key = "traffic_approach_any";
+                        slots = new Dictionary<string, string> { { "gap", Messages.GapSlot(g) } };
+                        return true;
+                    }
                     key = "traffic_approach";
                     slots = new Dictionary<string, string>
                     {
-                        { "cls", Messages.ClassDisplay(GetStr(d, "cls")) },
+                        { "cls", cls },
                         { "gap", Messages.GapSlot(g) },
                     };
                     return true;
@@ -380,7 +388,9 @@ namespace TeamRadio56.Core.Logic
     {
         public static IEnumerable<KeyValuePair<string, string>> Enumerate(PhrasePool pool)
         {
-            string[] classes = { "Hypercar", "LMP2", "GT3", "GTE", "faster car", "" };
+            // 클래스 호칭 전부 — 모르는 클래스는 {cls} 없는 변형만 말하므로(LinesFor) 빈 호칭
+            // 조합은 만들지 않는다 (voice.iter_pregen_texts)
+            string[] classes = VehicleClass.AllDisplays;
 
             var slotValues = new List<KeyValuePair<string, List<Dictionary<string, string>>>>();
 
@@ -399,6 +409,10 @@ namespace TeamRadio56.Core.Logic
                 }
             }
             Add(slotValues, "traffic_approach", approach);
+            var approachAny = new List<Dictionary<string, string>>();
+            for (int g = 1; g <= 6; g++)
+                approachAny.Add(new Dictionary<string, string> { { "gap", Messages.GapSlot(g) } });
+            Add(slotValues, "traffic_approach_any", approachAny);
             Add(slotValues, "alongside", Empty());
             Add(slotValues, "alongside_left", Empty());
             Add(slotValues, "alongside_right", Empty());

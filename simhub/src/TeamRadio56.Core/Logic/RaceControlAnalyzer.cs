@@ -606,7 +606,8 @@ namespace TeamRadio56.Core.Logic
                 }
                 else
                 {
-                    int myRank = TrafficAnalyzer.ClassRank(me.Class);
+                    // 빠른 클래스 = 트래픽과 같은 판정 (계열 서열, 모르면 관측 페이스, 그것도 없으면 아님)
+                    Dictionary<string, double> pace = VehicleClass.Pace(snap.Vehicles);
                     int racing = 0;
                     bool faster = false;
                     foreach (VehicleInfo v in snap.Vehicles)
@@ -615,7 +616,7 @@ namespace TeamRadio56.Core.Logic
                             || v.InPits || v.InGarage)
                             continue;
                         racing++;
-                        if (TrafficAnalyzer.ClassRank(v.Class) > myRank)
+                        if (VehicleClass.Relation(me.Class, v.Class, pace) > 0)
                             faster = true;
                     }
                     string pool = RaceEnd.CooldownPool(racing, faster);

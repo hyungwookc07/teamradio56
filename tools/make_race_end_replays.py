@@ -264,8 +264,10 @@ def snapshot(n, cars, player, E, M, flag, fin, wear_per_lap=0.008):
     }
 
 
-# 클래스 서열 (빠를수록 큼) — 쿨다운 랩의 '빠른 클래스' 판정 정답용
-CLASS_RANK = (("hyper", 4), ("lmh", 4), ("lmdh", 4), ("lmp2", 3), ("gte", 2), ("gt3", 1))
+# 클래스 서열 (빠를수록 큼) — 쿨다운 랩의 '빠른 클래스' 판정 정답용. 엔진(vehicle_class)을
+# 가져다 쓰지 않는 독립 정답 — 이 리플레이들의 클래스 문자열(Hypercar/LMP2/LMGT3)만 맞으면 된다
+CLASS_RANK = (("hyper", 5), ("lmh", 5), ("lmdh", 5), ("lmp2", 4), ("lmp3", 3),
+              ("gte", 2), ("gt3", 1))
 
 
 def class_rank(cls):

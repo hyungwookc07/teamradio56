@@ -2,7 +2,8 @@
 #
 # Structure: <pool>: { casual: [...], urgent: [...] }
 # Style: real team radio — short, word-first, minimal grammar.
-# Slots (discrete only, for audio caching): {cls}=class name, {gap}=1-6 sec,
+# Slots (discrete only, for audio caching): {cls}=class name (Hypercar/LMP2/LMP3/GTE/GT3 —
+# an unknown class only uses the lines without {cls}, and traffic_approach_any), {gap}=1-6 sec,
 # {fuel_laps}=1-4 laps, {side}=left/right, {place}=real class place (1-60),
 # {gained}=places gained since the start (2-56), {nth}=second/third.
 #
@@ -32,6 +33,20 @@ traffic_approach:
     - "{cls} {gap} back. Stay on line."
     - "{cls} coming, {gap}!"
     - "Mirror check. {cls}, {gap}."
+
+# Approach warning for a car of an unknown class that is faster by observed pace — no class name
+traffic_approach_any:
+  casual:
+    - "Traffic behind, {gap}."
+    - "Car closing from behind, {gap}."
+    - "Traffic in {gap}. Hold your line."
+    - "Car coming through in {gap}. Line as normal."
+    - "Heads up, traffic {gap} back."
+  urgent:
+    - "Traffic! {gap} back."
+    - "Car closing fast, {gap}."
+    - "Traffic in {gap}. Mirrors."
+    - "Mirror check. Traffic, {gap}."
 
 alongside:
   urgent:

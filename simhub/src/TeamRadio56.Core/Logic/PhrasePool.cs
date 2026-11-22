@@ -74,11 +74,30 @@ namespace TeamRadio56.Core.Logic
             return new string[0];
         }
 
+        /// <summary>
+        /// 슬롯으로 말할 수 있는 변형만 — 클래스를 모르면({cls} == "") 클래스 이름이 들어가는
+        /// 변형을 뺀다 (voice.PhrasePool.lines_for).
+        /// </summary>
+        public string[] LinesFor(string poolKey, string tone, Dictionary<string, string> slots)
+        {
+            string[] lines = Lines(poolKey, tone);
+            string cls;
+            if (slots == null || !slots.TryGetValue("cls", out cls) || cls != "")
+                return lines;
+            var kept = new List<string>(lines.Length);
+            foreach (string p in lines)
+            {
+                if (!p.Contains("{cls}"))
+                    kept.Add(p);
+            }
+            return kept.ToArray();
+        }
+
         /// <summary>최근 사용을 피해 하나 뽑아 슬롯을 채운다. 실패 시 null.</summary>
         public string Pick(string poolKey, Dictionary<string, string> slots,
                            string tone = "casual")
         {
-            string[] pool = Lines(poolKey, tone);
+            string[] pool = LinesFor(poolKey, tone, slots);
             if (pool.Length == 0)
                 return null;
 

@@ -41,7 +41,7 @@ PY_ONLY = {"lap_feedback", "track_trend", "llm_gate"}
 
 STATES = ("alongside", "nearby_behind", "approaching")
 SIDES = ("left", "right", None)
-RAW_CLASSES = ("Hypercar", "LMP2", "LMGT3", "Mystery Class")
+RAW_CLASSES = ("Hypercar", "Hyper", "LMP2", "LMP3", "LMGT3", "Mystery Class")
 WHEELS = ("front left", "front right", "rear left", "rear right")
 
 
@@ -82,12 +82,21 @@ def generate(seed: int) -> list:
         return len(pools["en"].lines(key, tone))
 
     def pool_cases(ev, key, datas):
-        for tone in tones_of(key):
-            for d in datas:
-                for line in range(n_lines(key, tone)):
+        from voice import VoiceGenerator
+        for d in datas:
+            # 렌더러가 고르는 풀·변형 그대로 — 모르는 클래스는 {cls} 없는 변형만
+            # (traffic_approach는 traffic_approach_any로) 말한다
+            call = VoiceGenerator.pool_call(ev, d)
+            pkey = call[0] if call else key
+            for tone in tones_of(pkey):
+                n = len(pools["en"].lines_for(pkey, tone, call[1])) if call \
+                    else n_lines(pkey, tone)
+                for line in range(n):
                     add("pool", "in", ev=ev, data=d, tone=tone, line=line)
 
-    classes = ("Hypercar", "LMH", "LMDh", "LMP2", "LMGT3", "GT3", "GTE", "Mystery", "")
+    # 실제 LMU 문자열 후보(대소문자·구분자·별칭) + 모르는 클래스("Mystery", "GT4", "")
+    classes = ("Hypercar", "Hyper", "HY", "LMH", "LMDh", "LMP2", "LMP2_ELMS", "LMP2 Pro-Am",
+               "LMP3", "LMGT3", "GT3", "GTE", "LMGTE Am", "Mystery", "GT4", "")
     pool_cases(T.TRAFFIC_APPROACH, "traffic_approach",
                [{"cls": c, "gap_sec": g} for c in classes for g in range(0, 9)])
     for key in ("alongside", "alongside_left", "alongside_right", "nearby_behind",
@@ -462,7 +471,7 @@ def _evaluate_case(kind: str, a: dict, ctx: dict):
         call = VoiceGenerator.pool_call(a["ev"], a["data"])
         if call is None:
             return ("none",)
-        lines = ctx["pool"].lines(call[0], a["tone"])
+        lines = ctx["pool"].lines_for(call[0], a["tone"], call[1])
         if a["line"] >= len(lines):
             return ("none",)
         try:

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import re
 
+from vehicle_class import class_display as _class_display
+
 LANG = "en"
 
 
@@ -51,15 +53,6 @@ _ZONES_KO = {
     "front": "프론트", "front right": "프론트 우측", "right": "우측",
     "rear right": "리어 우측", "rear": "리어", "rear left": "리어 좌측",
     "left": "좌측", "front left": "프론트 좌측",
-}
-
-_CLASS_EN = {
-    "hypercar": "Hypercar", "lmh": "Hypercar", "lmdh": "Hypercar",
-    "lmp2": "LMP2", "lmgt3": "GT3", "gt3": "GT3", "gte": "GTE",
-}
-_CLASS_KO = {
-    "hypercar": "하이퍼카", "lmh": "하이퍼카", "lmdh": "하이퍼카",
-    "lmp2": "엘엠피 투", "lmgt3": "GT3", "gt3": "GT3", "gte": "GTE",
 }
 
 _SIDE_KO = {"left": "왼쪽", "right": "오른쪽"}
@@ -96,12 +89,14 @@ def zone_display(zone: str) -> str:
 
 
 def class_display(cls: str) -> str:
-    c = (cls or "").lower()
-    table = _CLASS_KO if LANG == "ko" else _CLASS_EN
-    for key, name in table.items():
-        if key in c:
-            return name
-    return "상위 클래스" if LANG == "ko" else "faster car"
+    """무전 호칭 (Hypercar/LMP2/LMP3/GTE/GT3) — 모르는 클래스는 "" (이름 없이 말한다).
+    정규화·서열은 vehicle_class 단일 출처 (C# Messages.ClassDisplay → VehicleClass.Display)."""
+    return _class_display(cls, LANG)
+
+
+def multi_class_name(cls: str) -> str:
+    """다중 차량 종합의 차 이름 — 모르는 클래스는 중립어 "car"("차")."""
+    return class_display(cls) or msg("multi_car")
 
 
 def gap_slot(gap_sec: int) -> object:
@@ -269,6 +264,8 @@ _T = {
         "multi_one": "one {name}",
         "multi_two": "two {name}s",
         "multi_n": "{n} {name}s",
+        # 클래스를 모르는 차 — 다중 종합에서 "one car", "car on your left" (예전 "faster car")
+        "multi_car": "car",
         # racecontrol
         "sector_yellow": "Yellow in sector {n}. No overtaking, be ready to lift.",
         "pen_clear": "Penalty served. Back to your race.",
@@ -381,6 +378,7 @@ _T = {
         "multi_one": "{name} 하나",
         "multi_two": "{name} 두 대 줄지어",
         "multi_n": "{name} {n}대",
+        "multi_car": "차",
         "sector_yellow": "섹터{n} 옐로. 추월 금지, 감속 준비.",
         "pen_clear": "페널티 클리어. 다시 니 레이스.",
         "penalty_head": "페널티 — {kind}",

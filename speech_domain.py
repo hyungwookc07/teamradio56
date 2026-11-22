@@ -63,7 +63,8 @@ COACH_MIN, COACH_MAX = 0.1, 2.9
 COACH_SECTORS = (1, 2, 3)
 MULTI_MAX_CARS = 3
 DENT_MAX_ZONES = 3
-MULTI_CLASSES = ("Hypercar", "LMP2", "GT3", "GTE", "faster car")
+# 다중 차량 종합의 차 이름 — vehicle_class 호칭 5종 + 모르는 클래스의 중립어 (messages "multi_car")
+MULTI_CLASSES = ("Hypercar", "LMP2", "LMP3", "GTE", "GT3", "car")
 
 # -- 문장 단위 사전 생성 도메인 (C# SpeechDomain.Seg*와 값·순서 동일) -------------
 # 도메인 밖 값은 위 술어가 거르거나(억제) kokoro 세션에서 자막만 나간다.

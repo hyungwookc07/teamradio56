@@ -84,23 +84,10 @@ def lines_file(lang: str = "en") -> str:
 
 URGENT_LINES_FILE = lines_file()
 
-# 게임 클래스명 → 무전에서 부르는 이름 (영어)
-CLASS_NAMES = {
-    "Hypercar": "Hypercar",
-    "LMH": "Hypercar",
-    "LMDh": "Hypercar",
-    "LMP2": "LMP2",
-    "LMGT3": "GT3",
-    "GT3": "GT3",
-    "GTE": "GTE",
-}
-
-
 def class_name(cls: str) -> str:
-    for key, name in CLASS_NAMES.items():
-        if key.lower() in cls.lower():
-            return name
-    return "faster car"
+    """게임 클래스명 → 무전 호칭 (영어) — 옛 이름. 모르는 클래스는 "" (vehicle_class 단일 출처)."""
+    from vehicle_class import class_display as _vc_display
+    return _vc_display(cls, "en")
 
 
 class_ko = class_name    # 하위 호환 별칭
@@ -140,8 +127,16 @@ class PhrasePool:
             return []
         return lines
 
+    def lines_for(self, pool_key: str, tone: str, slots: dict) -> list[str]:
+        """슬롯으로 말할 수 있는 변형만 — 클래스를 모르면({cls} == "") 클래스 이름이 들어가는
+        변형을 뺀다 ("{cls} right behind." → " right behind." 방지). C# PhrasePool.LinesFor."""
+        lines = self.lines(pool_key, tone)
+        if slots.get("cls") == "":
+            lines = [p for p in lines if "{cls}" not in p]
+        return lines
+
     def pick(self, pool_key: str, slots: dict, tone: str = "casual") -> Optional[str]:
-        pool = self.lines(pool_key, tone)
+        pool = self.lines_for(pool_key, tone, slots)
         if not pool:
             return None
         recent = self._recent.setdefault(
@@ -358,7 +353,11 @@ class VoiceGenerator:
         T = EventType
         if ev_type == T.TRAFFIC_APPROACH:
             g = int(min(max(d["gap_sec"], 1), 6))
-            return "traffic_approach", {"cls": class_display(d["cls"]), "gap": gap_slot(g)}
+            cls = class_display(d["cls"])
+            if not cls:
+                # 클래스를 모르는 빠른 차(관측 페이스로 판정) — 클래스 이름 없는 풀
+                return "traffic_approach_any", {"gap": gap_slot(g)}
+            return "traffic_approach", {"cls": cls, "gap": gap_slot(g)}
         if ev_type in (T.TRAFFIC_CLOSE, T.TRAFFIC_UPDATE):
             # 트래픽 상태 머신이 풀 이름을 지정 (alongside/.../nearby_behind, pass_complete/dropped)
             pool = d.get("pool")
@@ -587,15 +586,18 @@ def iter_pregen_texts(pool: PhrasePool):
     런타임 렌더러와 동일한 슬롯 조합을 열거해야 캐시가 히트한다.
     """
     if is_ko():
-        CLASSES = ("하이퍼카", "엘엠피 투", "GT3", "GTE", "상위 클래스", "")
         SIDES = ("왼쪽", "오른쪽")
     else:
-        CLASSES = ("Hypercar", "LMP2", "GT3", "GTE", "faster car", "")
         SIDES = ("left", "right")
+    # 클래스 호칭 전부 (vehicle_class) — 모르는 클래스는 {cls} 없는 변형만 말하므로(lines_for)
+    # 빈 호칭 조합은 만들지 않는다. 그 변형은 아무 호칭과 조합해도 같은 문장으로 나온다
+    from vehicle_class import FAMILY_DISPLAY
+    CLASSES = tuple(FAMILY_DISPLAY["ko" if is_ko() else "en"].values())
     slot_values = {
         "traffic_approach": [
             {"cls": c, "gap": gap_slot(g)}
-            for c in CLASSES if c for g in range(1, 7)],
+            for c in CLASSES for g in range(1, 7)],
+        "traffic_approach_any": [{"gap": gap_slot(g)} for g in range(1, 7)],
         "alongside": [{}],
         "alongside_left": [{}],
         "alongside_right": [{}],
