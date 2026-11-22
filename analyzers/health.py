@@ -58,17 +58,40 @@ WING_SAMPLE_SPEED_KMH = 150.0
 WING_DROP_M = 0.010          # 10mm 이상 지속 하락이면 윙 손상 의심
 WING_EMA_ALPHA = 0.03        # 5Hz 기준 ~7초 시정수
 
-# 얼라인(조향 쏠림) 감시 — 서스펜션/스티어링 지오메트리가 틀어지면
-# 직선에서도 조향을 한쪽으로 유지해야 한다. 고속·저조향 구간의 조향
-# 입력 EMA를 충격 전후로 비교해 '실주행에 문제가 되는' 손상만 잡는다.
-# (트랙 캠버/바람에 의한 상시 오프셋은 전후 비교로 상쇄된다.)
+# 얼라인(조향 쏠림) 감시 — 서스펜션/스티어링 지오메트리가 틀어지면 직선에서도
+# 조향을 한쪽으로 유지해야 차가 곧게 간다. '차가 실제로 곧게 가는' 샘플의 조향만
+# 모아 충격 전후 중앙값을 비교한다. (트랙 캠버/바람에 의한 상시 오프셋은 전후 비교로
+# 상쇄된다.)
+#
+# 직선 판정은 조향 크기가 아니라 차의 움직임으로 한다: |조향| ≤ 0.20만 보던 예전
+# 판정은 150km/h 넘는 고속 스위퍼(조향 0.1~0.18)를 전부 '직선'으로 넣어서, EMA가
+# 충격 지점과 15초 뒤 지점의 코너 구성(좌우 비율) 차이를 오프셋 변화로 읽었다 —
+# 멀쩡한 차에 가벼운 접촉 뒤 "Steering pull" 오탐 (사용자 제보).
+#   · 횡가속 |요레이트| × 속도 ≤ 1.5m/s² (0.15g): 150km/h 이상에서 조향이 필요한 코너는
+#     어떤 것이든 8m/s² 이상이고, 1.5m/s²는 250km/h에서 반경 3km — 사실상 직선이다.
+#     직선의 미세 수정·노면 요철은 이 안에 든다. 손상된 차도 드라이버가 오프셋을 잡고
+#     곧게 가므로 요레이트는 0 근처 — 오프셋이 그대로 측정된다.
+#   · |횡속도| ≤ 1.0m/s: 정상 코너링 1~2m/s, 슬라이드 4m/s+보다 작고, 틀어진 토로
+#     차가 비스듬히 가는 정도(250km/h에서 0.8°)는 허용한다.
+#   · |조향| ≤ 0.20은 센서 튐 방지용 상한으로만 남긴다.
+# 요레이트/횡속도/조향 중 하나라도 없으면 샘플이 아니다 (감지가 조용히 쉬고, 콜은 없다).
+#
+# 기준 = 첫 충격 직전까지 모은 직선 샘플 최근 101개의 중앙값 (25개 = 직선 5초 미만이면
+# 기준 없음 → 그 충격으로는 콜하지 않는다). 판정 = 충격 뒤 새로 모은 직선 샘플 51개의
+# 중앙값을 버퍼가 찼을 때 한 번. 중앙값은 정렬한 목록의 len//2 번째 (C#과 같은 정의 —
+# 크기가 홀수라 가운데 원소). 같은 위치 비교가 아니어도 직선끼리라 트랙 배치가 섞이지 않는다.
+# 타이어가 펑크/탈락이거나 공기압 누출이 잡혔으면 쏠림은 타이어 탓이라 콜하지 않는다
+# (슬로우 펑처·점검 리포트가 부른다) — 판정만 미루고 샘플은 계속 모은다.
 STEER_SAMPLE_SPEED_KMH = 150.0
-STEER_SAMPLE_MAX = 0.20      # 이 이상 꺾인 샘플은 코너로 보고 제외
+STEER_SAMPLE_MAX = 0.20      # 센서 튐 상한 (직선 판정은 아래 두 값)
+STEER_LAT_ACC_MAX = 1.5      # m/s² — |요레이트|×속도가 이 이하일 때만 '곧게 가는 중'
+STEER_LAT_VEL_MAX = 1.0      # m/s — |횡속도| 이 이하 (미끄러지는 중 아님)
 STEER_SHIFT_MIN = 0.03       # 락 대비 3% 이상 오프셋 변화면 얼라인 손상 의심
 STEER_SHIFT_SEVERE = 0.08    # 이 이상이면 주행 자체가 힘든 수준 → 즉시 박스 권고
-STEER_EMA_ALPHA = 0.02       # ~10초 시정수
-STEER_JUDGE_SAMPLES = 75     # 충격 후 고속 샘플이 이만큼 쌓여 EMA가 안정된
-                             # 뒤에 판정 (수렴 중 경미 단계를 스치는 오판 방지)
+STEER_BASE_SAMPLES = 101     # 충격 전 기준 버퍼 (최근 직선 샘플, 홀수)
+STEER_BASE_MIN = 25          # 기준에 필요한 최소 샘플 (직선 5초)
+STEER_JUDGE_SAMPLES = 51     # 충격 후 판정 버퍼 (직선 ~10초, 홀수) — 찼을 때 판정
+
 
 # 리어 불안정(오버스티어) 감시 — 리어 윙/서스가 죽으면 코너마다 미끄러진다.
 # 판정은 '횡방향 속도'(mLocalVel.x): 정상 코너링은 1~2m/s, 진짜 슬라이드는
@@ -145,6 +168,11 @@ def repair_message(delta: float) -> str:
     return msg("repair_cost", delta=delta)
 
 
+def steer_median(samples: list) -> float:
+    """정렬한 목록의 len//2 번째 — C# HealthAnalyzer.SteerMedian과 같은 정의."""
+    return sorted(samples)[len(samples) // 2]
+
+
 class HealthAnalyzer:
     def __init__(self, cfg):
         self.water_warn = cfg.get("thresholds.water_temp_warn", 105.0)
@@ -168,10 +196,7 @@ class HealthAnalyzer:
         self._wing_ema: Optional[float] = None      # 고속 구간 프론트 윙 높이 EMA
         self._pre_impact_wing: Optional[float] = None
         self._wing_warned = False
-        self._steer_ema: Optional[float] = None     # 고속 직선 조향 오프셋 EMA
-        self._pre_impact_steer: Optional[float] = None
-        self._steer_samples = 0                     # 기준 확보 후 쌓인 고속 샘플 수
-        self._align_warned = False
+        self._reset_alignment()
         self._last_impact_zone: Optional[str] = None
         self._instab_until = 0.0                    # 리어 불안정 감시 종료 시각
         self._instab_armed_t = 0.0                  # 감시 시작 시각
@@ -199,10 +224,7 @@ class HealthAnalyzer:
                 self._wing_ema = None
                 self._pre_impact_wing = None
                 self._wing_warned = False
-                self._steer_ema = None
-                self._pre_impact_steer = None
-                self._steer_samples = 0
-                self._align_warned = False
+                self._reset_alignment()
                 self._instab_until = 0.0
                 self._instab_required = INSTAB_MIN_COUNT
                 self._instab_called = False
@@ -224,9 +246,7 @@ class HealthAnalyzer:
                 self._pre_pressures = [w.get("pressure", 0.0) for w in wheels[:4]]
                 if self._pre_impact_wing is None:    # 다중 충격 시 최초 기준 유지
                     self._pre_impact_wing = self._wing_ema
-                if self._pre_impact_steer is None:
-                    self._pre_impact_steer = self._steer_ema
-                    self._steer_samples = 0
+                self._align_on_impact(mag)
                 self._report_due = snap.t + REPORT_DELAY_SEC
                 self._on_impact(mag, prev_dents, snap.t, state, bus)
 
@@ -363,33 +383,104 @@ class HealthAnalyzer:
             state.set_issue("damage", f"프론트 윙 손상 (높이 -{drop * 1000:.0f}mm)")
             state.add_narrative("(점검) 프론트 윙 손상 감지")
 
+    def _reset_alignment(self) -> None:
+        """얼라인 감시 상태 — 세션 리셋과 피트레인 진입(수리 가능)에서 처음부터."""
+        self._steer_pre: list[float] = []           # 첫 충격 전 직선 조향 (최근 101개)
+        self._pre_impact_steer: Optional[float] = None   # 기준 중앙값
+        self._steer_base_n = 0                      # 기준에 쓴 샘플 수
+        self._steer_no_base = False                 # 첫 충격 때 기준 부족 → 피트까지 판정 없음
+        self._steer_post: Optional[list[float]] = None   # 충격 후 판정 버퍼 (None = 판정 대기 없음)
+        self._align_impact_mag = 0.0                # 판정 중인 충격 크기 (로그용)
+        self._align_pending: Optional[str] = None   # 판정 끝난 콜 ("mild"/"severe") — 쿨다운 재시도
+        self._align_tyre_logged = False
+        self._align_warned = False
+
+    def _align_on_impact(self, mag: float) -> None:
+        """기준 임계 이상 충격 — 첫 충격이면 기준을 굳히고, 판정 버퍼를 새로 연다."""
+        if self._pre_impact_steer is None and not self._steer_no_base:
+            if len(self._steer_pre) >= STEER_BASE_MIN:   # 다중 충격 시 최초 기준 유지
+                self._pre_impact_steer = steer_median(self._steer_pre)
+                self._steer_base_n = len(self._steer_pre)
+            else:
+                self._steer_no_base = True
+        if self._steer_no_base:
+            log.info("얼라인 판정 (충격 %.0f): 기준 없음 — 충격 전 직선 샘플 %d개 < %d → no-baseline",
+                     mag, len(self._steer_pre), STEER_BASE_MIN)
+            return
+        if self._align_warned or self._align_pending is not None:
+            return
+        self._steer_post = []                       # 충격마다 새 버퍼 — 마지막 충격 뒤 상태로 판정
+        self._align_impact_mag = mag
+        self._align_tyre_logged = False
+
     def _track_alignment(self, p: dict, state: SessionState, bus: EventBus) -> None:
         """
-        얼라인 감시 — 고속·저조향(직선) 구간의 조향 입력 평균이 충격 전과
-        비교해 한쪽으로 옮겨가 있으면 지오메트리가 틀어진 것. 드라이버가
+        얼라인 감시 — 차가 곧게 가는(요레이트·횡속도가 작은) 고속 샘플의 조향 중앙값이
+        충격 전보다 한쪽으로 옮겨가 있으면 지오메트리가 틀어진 것. 드라이버가
         느끼기 전에(또는 느낀 것을 확증해서) 불러준다.
         """
+        if self._align_pending is not None:
+            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+            self._push_alignment(self._align_pending, state, bus)
+            return
         steer = p.get("steering")
-        if steer is None or p.get("in_pitlane") \
-                or (p.get("speed_kmh", 0.0) or 0.0) < STEER_SAMPLE_SPEED_KMH \
-                or abs(steer) > STEER_SAMPLE_MAX:
+        yaw = p.get("yaw_rate")
+        lat_vel = p.get("lat_vel")
+        speed = p.get("speed_kmh", 0.0) or 0.0
+        if steer is None or yaw is None or lat_vel is None or p.get("in_pitlane") \
+                or speed < STEER_SAMPLE_SPEED_KMH:
             return
-        if self._steer_ema is None:
-            self._steer_ema = steer
+        if not (math.isfinite(steer) and math.isfinite(yaw) and math.isfinite(lat_vel)):
             return
-        self._steer_ema = (1 - STEER_EMA_ALPHA) * self._steer_ema \
-            + STEER_EMA_ALPHA * steer
+        if abs(steer) > STEER_SAMPLE_MAX or abs(yaw) * (speed / 3.6) > STEER_LAT_ACC_MAX \
+                or abs(lat_vel) > STEER_LAT_VEL_MAX:
+            return    # 코너·슬라이드 — 곧게 가는 중이 아니다
 
-        if self._align_warned or self._pre_impact_steer is None:
+        if self._pre_impact_steer is None and not self._steer_no_base:
+            self._steer_pre.append(steer)           # 첫 충격 전 — 건강한 기준 샘플
+            if len(self._steer_pre) > STEER_BASE_SAMPLES:
+                del self._steer_pre[0]
             return
-        self._steer_samples += 1
-        if self._steer_samples < STEER_JUDGE_SAMPLES:
-            return    # EMA가 새 상태로 수렴할 때까지 판정 유보
-        shift = self._steer_ema - self._pre_impact_steer
-        if abs(shift) < STEER_SHIFT_MIN:
+        if self._steer_post is None or self._align_warned:
             return
-        # 심각 단계: 주행 자체가 힘든 수준 → 페이스 관찰 없이 즉시 박스 권고
+        self._steer_post.append(steer)
+        if len(self._steer_post) > STEER_JUDGE_SAMPLES:
+            del self._steer_post[0]
+        if len(self._steer_post) < STEER_JUDGE_SAMPLES:
+            return
+        wheels = (p.get("wheels") or [])[:4]
+        if self._puncture_warned or any(w.get("flat") or w.get("detached") for w in wheels):
+            # 쏠림은 타이어 탓 — 슬로우 펑처/점검 리포트가 부른다. 샘플은 계속 모은다.
+            if not self._align_tyre_logged:
+                self._align_tyre_logged = True
+                log.info("얼라인 판정 (충격 %.0f): 기준 %+.3f (%d샘플) · 충격 후 %+.3f (%d샘플) · "
+                         "변화 %+.3f → hold-tyre (펑크/휠/공기압 누출)",
+                         self._align_impact_mag, self._pre_impact_steer, self._steer_base_n,
+                         steer_median(self._steer_post), len(self._steer_post),
+                         steer_median(self._steer_post) - self._pre_impact_steer)
+            return
+        post = steer_median(self._steer_post)
+        shift = post - self._pre_impact_steer
         if abs(shift) >= STEER_SHIFT_SEVERE:
+            decision = "severe"
+        elif abs(shift) >= STEER_SHIFT_MIN:
+            decision = "mild"
+        else:
+            decision = None
+        log.info("얼라인 판정 (충격 %.0f): 기준 %+.3f (%d샘플) · 충격 후 %+.3f (%d샘플) · "
+                 "변화 %+.3f → %s", self._align_impact_mag, self._pre_impact_steer,
+                 self._steer_base_n, post, len(self._steer_post), shift,
+                 f"call-{decision}" if decision else "ok")
+        self._steer_post = None                     # 이 충격의 판정은 끝 (다음 충격이 다시 연다)
+        if decision is None:
+            return
+        self._align_pending = decision
+        self._push_alignment(decision, state, bus)
+
+    def _push_alignment(self, decision: str, state: SessionState, bus: EventBus) -> None:
+        """판정된 얼라인 콜 — 쿨다운으로 거절되면 대기로 남아 다음 틱에 다시 민다."""
+        if decision == "severe":
+            # 심각 단계: 주행 자체가 힘든 수준 → 페이스 관찰 없이 즉시 박스 권고
             accepted = bus.push(Event(
                 type=EventType.DAMAGE_REPORT, priority=Priority.CRITICAL,
                 message=msg("align_severe"),
@@ -397,21 +488,20 @@ class HealthAnalyzer:
             ))
             if not accepted:
                 return
-            self._align_warned = True
             state.set_issue("damage", "얼라인 심각 손상 — 즉시 수리 권장")
             state.add_narrative("(점검) 얼라인 심각 손상 → 박스 콜")
-            return
-        # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
-        accepted = bus.push(Event(
-            type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
-            message=msg("align_mild"),
-            dedup_key="align_damage", ttl=20.0, tone="casual",
-        ))
-        if not accepted:
-            return
+        else:
+            accepted = bus.push(Event(
+                type=EventType.DAMAGE_REPORT, priority=Priority.HIGH,
+                message=msg("align_mild"),
+                dedup_key="align_damage", ttl=20.0, tone="casual",
+            ))
+            if not accepted:
+                return
+            state.set_issue("damage", "얼라인 틀어짐 의심 (직선 조향 오프셋 변화)")
+            state.add_narrative("(점검) 얼라인 틀어짐 감지 — 직선 조향 오프셋 변화")
         self._align_warned = True
-        state.set_issue("damage", "얼라인 틀어짐 의심 (직선 조향 오프셋 변화)")
-        state.add_narrative("(점검) 얼라인 틀어짐 감지 — 직선 조향 오프셋 변화")
+        self._align_pending = None
 
     def _check_instability(self, p: dict, now: float,
                            state: SessionState, bus: EventBus) -> None:

@@ -109,6 +109,7 @@ namespace TeamRadio56.Replay
                 Steering = D(p, "steering"),
                 YawRate = D(p, "yaw_rate"),
                 LatVel = D(p, "lat_vel"),
+                HasSteerData = Num(p, "steering") && Num(p, "yaw_rate") && Num(p, "lat_vel"),
                 Wheels = ParseWheels(p),
             };
             return info;
@@ -187,6 +188,11 @@ namespace TeamRadio56.Replay
             return e.TryGetProperty(key, out JsonElement v)
                    && v.ValueKind == JsonValueKind.Object
                 ? v : (JsonElement?)null;
+        }
+
+        private static bool Num(JsonElement e, string key)
+        {
+            return e.TryGetProperty(key, out JsonElement v) && v.ValueKind == JsonValueKind.Number;
         }
 
         private static double D(JsonElement e, string key)

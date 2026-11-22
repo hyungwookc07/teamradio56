@@ -40,6 +40,9 @@ namespace TeamRadio56.Core.Telemetry
         public double Steering;         // -1..1, 얼라인 감지용
         public double YawRate;          // rad/s
         public double LatVel;           // m/s 횡속도 — 슬라이드 판정용
+        // 조향·요레이트·횡속도가 실제 값인가 — 게임에서는 항상 true, 그 필드가 없는 옛 녹화
+        // 리플레이는 false (파이썬 None과 같게 — 얼라인 감지가 조용히 쉰다)
+        public bool HasSteerData = true;
         public WheelInfo[] Wheels;      // FL FR RL RR
     }
 

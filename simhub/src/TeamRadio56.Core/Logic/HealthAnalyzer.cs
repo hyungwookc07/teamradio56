@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using TeamRadio56.Core.Diagnostics;
 using TeamRadio56.Core.Telemetry;
 
 namespace TeamRadio56.Core.Logic
@@ -35,12 +36,17 @@ namespace TeamRadio56.Core.Logic
         private const double WingDropM = 0.010;
         private const double WingEmaAlpha = 0.03;
 
+        // 얼라인 — 곧게 가는(요레이트·횡속도 작은) 고속 샘플의 조향 중앙값을 충격 전후 비교.
+        // 근거와 규칙은 analyzers/health.py STEER_* 주석.
         private const double SteerSampleSpeedKmh = 150.0;
-        private const double SteerSampleMax = 0.20;
+        private const double SteerSampleMax = 0.20;      // 센서 튐 상한
+        private const double SteerLatAccMax = 1.5;       // m/s² — |요레이트|×속도
+        private const double SteerLatVelMax = 1.0;       // m/s — |횡속도|
         private const double SteerShiftMin = 0.03;
         private const double SteerShiftSevere = 0.08;
-        private const double SteerEmaAlpha = 0.02;
-        private const int SteerJudgeSamples = 75;
+        private const int SteerBaseSamples = 101;        // 충격 전 기준 버퍼 (홀수)
+        private const int SteerBaseMin = 25;             // 기준 최소 샘플 (직선 5초)
+        private const int SteerJudgeSamples = 51;        // 충격 후 판정 버퍼 (홀수) — 찼을 때 판정
 
         private const double InstabWatchSec = 180.0;
         private const double InstabSpeedKmh = 80.0;
@@ -68,9 +74,14 @@ namespace TeamRadio56.Core.Logic
         private double? _wingEma;
         private double? _preImpactWing;
         private bool _wingWarned;
-        private double? _steerEma;
-        private double? _preImpactSteer;
-        private int _steerSamples;
+        private readonly List<double> _steerPre = new List<double>();   // 첫 충격 전 직선 조향
+        private double? _preImpactSteer;          // 기준 중앙값
+        private int _steerBaseN;
+        private bool _steerNoBase;                // 첫 충격 때 기준 부족 → 피트까지 판정 없음
+        private List<double> _steerPost;          // 충격 후 판정 버퍼 (null = 판정 대기 없음)
+        private double _alignImpactMag;
+        private string _alignPending;             // 판정 끝난 콜 ("mild"/"severe") — 쿨다운 재시도
+        private bool _alignTyreLogged;
         private bool _alignWarned;
         private string _lastImpactZone;
         private double _instabUntil;
@@ -107,10 +118,7 @@ namespace TeamRadio56.Core.Logic
             _wingEma = null;
             _preImpactWing = null;
             _wingWarned = false;
-            _steerEma = null;
-            _preImpactSteer = null;
-            _steerSamples = 0;
-            _alignWarned = false;
+            ResetAlignment();
             _lastImpactZone = null;
             _instabUntil = 0.0;
             _instabArmedT = 0.0;
@@ -152,10 +160,7 @@ namespace TeamRadio56.Core.Logic
                     _wingEma = null;
                     _preImpactWing = null;
                     _wingWarned = false;
-                    _steerEma = null;
-                    _preImpactSteer = null;
-                    _steerSamples = 0;
-                    _alignWarned = false;
+                    ResetAlignment();
                     _instabUntil = 0.0;
                     _instabRequired = InstabMinCount;
                     _instabCalled = false;
@@ -188,11 +193,7 @@ namespace TeamRadio56.Core.Logic
                         _prePressures[i] = wheels[i].Pressure;
                     if (!_preImpactWing.HasValue)      // 다중 충격 시 최초 기준 유지
                         _preImpactWing = _wingEma;
-                    if (!_preImpactSteer.HasValue)
-                    {
-                        _preImpactSteer = _steerEma;
-                        _steerSamples = 0;
-                    }
+                    AlignOnImpact(mag);
                     _reportDue = snap.T + ReportDelaySec;
                     OnImpact(mag, prevDents, snap.T, state, bus);
                 }
@@ -467,31 +468,144 @@ namespace TeamRadio56.Core.Logic
             }
         }
 
+        /// <summary>정렬한 목록의 Count/2 번째 — 파이썬 steer_median과 같은 정의.</summary>
+        internal static double SteerMedian(List<double> samples)
+        {
+            var sorted = new List<double>(samples);
+            sorted.Sort();
+            return sorted[sorted.Count / 2];
+        }
+
+        private void ResetAlignment()
+        {
+            _steerPre.Clear();
+            _preImpactSteer = null;
+            _steerBaseN = 0;
+            _steerNoBase = false;
+            _steerPost = null;
+            _alignImpactMag = 0.0;
+            _alignPending = null;
+            _alignTyreLogged = false;
+            _alignWarned = false;
+        }
+
+        private static string Signed(double d)
+        {
+            return (d >= 0 ? "+" : "") + d.ToString("F3", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>기준 임계 이상 충격 — 첫 충격이면 기준을 굳히고, 판정 버퍼를 새로 연다.</summary>
+        private void AlignOnImpact(double mag)
+        {
+            if (!_preImpactSteer.HasValue && !_steerNoBase)
+            {
+                if (_steerPre.Count >= SteerBaseMin)      // 다중 충격 시 최초 기준 유지
+                {
+                    _preImpactSteer = SteerMedian(_steerPre);
+                    _steerBaseN = _steerPre.Count;
+                }
+                else
+                {
+                    _steerNoBase = true;
+                }
+            }
+            if (_steerNoBase)
+            {
+                FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                    "얼라인 판정 (충격 {0:F0}): 기준 없음 — 충격 전 직선 샘플 {1}개 < {2} → no-baseline",
+                    mag, _steerPre.Count, SteerBaseMin));
+                return;
+            }
+            if (_alignWarned || _alignPending != null)
+                return;
+            _steerPost = new List<double>();     // 충격마다 새 버퍼 — 마지막 충격 뒤 상태로 판정
+            _alignImpactMag = mag;
+            _alignTyreLogged = false;
+        }
+
         private void TrackAlignment(PlayerInfo p, RaceState state, EventBus bus)
         {
+            if (_alignPending != null)
+            {
+                // push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+                PushAlignment(_alignPending, state, bus);
+                return;
+            }
+            // 요레이트/횡속도/조향이 없는 리플레이(파이썬 None)는 샘플이 아니다
+            if (!p.HasSteerData || p.InPitLane || p.SpeedKmh < SteerSampleSpeedKmh)
+                return;
             double steer = p.Steering;
-            if (p.InPitLane || p.SpeedKmh < SteerSampleSpeedKmh
-                || Math.Abs(steer) > SteerSampleMax)
+            double yaw = p.YawRate;
+            double latVel = p.LatVel;
+            if (double.IsNaN(steer) || double.IsInfinity(steer)
+                || double.IsNaN(yaw) || double.IsInfinity(yaw)
+                || double.IsNaN(latVel) || double.IsInfinity(latVel))
             {
                 return;
             }
-            if (!_steerEma.HasValue)
+            if (Math.Abs(steer) > SteerSampleMax || Math.Abs(yaw) * (p.SpeedKmh / 3.6) > SteerLatAccMax
+                || Math.Abs(latVel) > SteerLatVelMax)
             {
-                _steerEma = steer;
-                return;
+                return;    // 코너·슬라이드 — 곧게 가는 중이 아니다
             }
-            _steerEma = (1 - SteerEmaAlpha) * _steerEma.Value + SteerEmaAlpha * steer;
 
-            if (_alignWarned || !_preImpactSteer.HasValue)
-                return;
-            _steerSamples++;
-            if (_steerSamples < SteerJudgeSamples)
-                return;    // EMA가 새 상태로 수렴할 때까지 판정 유보
-            double shift = _steerEma.Value - _preImpactSteer.Value;
-            if (Math.Abs(shift) < SteerShiftMin)
-                return;
-            if (Math.Abs(shift) >= SteerShiftSevere)
+            if (!_preImpactSteer.HasValue && !_steerNoBase)
             {
+                _steerPre.Add(steer);            // 첫 충격 전 — 건강한 기준 샘플
+                if (_steerPre.Count > SteerBaseSamples)
+                    _steerPre.RemoveAt(0);
+                return;
+            }
+            if (_steerPost == null || _alignWarned)
+                return;
+            _steerPost.Add(steer);
+            if (_steerPost.Count > SteerJudgeSamples)
+                _steerPost.RemoveAt(0);
+            if (_steerPost.Count < SteerJudgeSamples)
+                return;
+            bool tyre = _punctureWarned.Count > 0;
+            WheelInfo[] wheels = p.Wheels ?? new WheelInfo[0];
+            for (int i = 0; i < Math.Min(wheels.Length, 4); i++)
+            {
+                if (wheels[i].Flat || wheels[i].Detached)
+                    tyre = true;
+            }
+            double post = SteerMedian(_steerPost);
+            double shift = post - _preImpactSteer.Value;
+            if (tyre)
+            {
+                // 쏠림은 타이어 탓 — 슬로우 펑처/점검 리포트가 부른다. 샘플은 계속 모은다.
+                if (!_alignTyreLogged)
+                {
+                    _alignTyreLogged = true;
+                    FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                        "얼라인 판정 (충격 {0:F0}): 기준 {1} ({2}샘플) · 충격 후 {3} ({4}샘플) · "
+                        + "변화 {5} → hold-tyre (펑크/휠/공기압 누출)",
+                        _alignImpactMag, Signed(_preImpactSteer.Value), _steerBaseN,
+                        Signed(post), _steerPost.Count, Signed(shift)));
+                }
+                return;
+            }
+            string decision = Math.Abs(shift) >= SteerShiftSevere ? "severe"
+                : Math.Abs(shift) >= SteerShiftMin ? "mild" : null;
+            FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                "얼라인 판정 (충격 {0:F0}): 기준 {1} ({2}샘플) · 충격 후 {3} ({4}샘플) · 변화 {5} → {6}",
+                _alignImpactMag, Signed(_preImpactSteer.Value), _steerBaseN,
+                Signed(post), _steerPost.Count, Signed(shift),
+                decision != null ? "call-" + decision : "ok"));
+            _steerPost = null;                   // 이 충격의 판정은 끝 (다음 충격이 다시 연다)
+            if (decision == null)
+                return;
+            _alignPending = decision;
+            PushAlignment(decision, state, bus);
+        }
+
+        /// <summary>판정된 얼라인 콜 — 쿨다운으로 거절되면 대기로 남아 다음 틱에 다시 민다.</summary>
+        private void PushAlignment(string decision, RaceState state, EventBus bus)
+        {
+            if (decision == "severe")
+            {
+                // 심각 단계: 주행 자체가 힘든 수준 → 페이스 관찰 없이 즉시 박스 권고
                 bool ok = bus.Push(new RadioEvent
                 {
                     Type = EventTypes.DamageReport,
@@ -503,25 +617,27 @@ namespace TeamRadio56.Core.Logic
                 });
                 if (!ok)
                     return;
-                _alignWarned = true;
                 state.SetIssue("damage", "얼라인 심각 손상 — 즉시 수리 권장");
                 state.AddNarrative("(점검) 얼라인 심각 손상 → 박스 콜");
-                return;
             }
-            bool accepted2 = bus.Push(new RadioEvent
+            else
             {
-                Type = EventTypes.DamageReport,
-                Priority = Priority.High,
-                Message = Messages.Get("align_mild"),
-                DedupKey = "align_damage",
-                Ttl = 20.0,
-                Tone = "casual",
-            });
-            if (!accepted2)
-                return;
+                bool accepted = bus.Push(new RadioEvent
+                {
+                    Type = EventTypes.DamageReport,
+                    Priority = Priority.High,
+                    Message = Messages.Get("align_mild"),
+                    DedupKey = "align_damage",
+                    Ttl = 20.0,
+                    Tone = "casual",
+                });
+                if (!accepted)
+                    return;
+                state.SetIssue("damage", "얼라인 틀어짐 의심 (직선 조향 오프셋 변화)");
+                state.AddNarrative("(점검) 얼라인 틀어짐 감지 — 직선 조향 오프셋 변화");
+            }
             _alignWarned = true;
-            state.SetIssue("damage", "얼라인 틀어짐 의심 (직선 조향 오프셋 변화)");
-            state.AddNarrative("(점검) 얼라인 틀어짐 감지 — 직선 조향 오프셋 변화");
+            _alignPending = null;
         }
 
         private void CheckInstability(PlayerInfo p, double now,
