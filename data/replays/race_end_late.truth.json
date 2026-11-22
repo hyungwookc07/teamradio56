@@ -40,12 +40,29 @@
  ],
  "finish": {
   "class_place": 3,
+  "gained": 0,
   "lap": 6,
+  "pool": "race_end_podium",
+  "start_place": 3,
   "t": 480.0
  },
  "leader_flag_t": 466.0,
  "max_laps": 2147483647,
  "note": "예측(2랩) 빗나감 — 선두 DNF로 다른 리더가 일찍 체커, 랩 중간 안전망 '마지막 랩'",
+ "post": [
+  {
+   "pool": "cooldown_lap_traffic",
+   "still_racing": 2,
+   "t": 487.0,
+   "type": "cooldown_lap"
+  },
+  {
+   "pool": "race_summary_pace_class",
+   "rank": 3,
+   "t": 500.0,
+   "type": "race_summary"
+  }
+ ],
  "scenario": "race_end_late",
  "trace_exact_from_lap": 6
 }

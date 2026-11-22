@@ -44,10 +44,27 @@
    ],
    "finish": {
     "class_place": 1,
+    "gained": 0,
     "lap": 6,
+    "pool": "race_end_win",
+    "start_place": 1,
     "t": 480.0
    },
    "leader_flag_t": 480.0,
+   "post": [
+    {
+     "pool": "cooldown_lap_traffic",
+     "still_racing": 2,
+     "t": 487.0,
+     "type": "cooldown_lap"
+    },
+    {
+     "pool": "race_summary_fastest",
+     "rank": 1,
+     "t": 500.0,
+     "type": "race_summary"
+    }
+   ],
    "t0": 0.0,
    "trace_exact_from_lap": 1
   },
@@ -56,47 +73,64 @@
     {
      "lap": 1,
      "laps_left": 5,
-     "t": 600.0
+     "t": 620.0
     },
     {
      "lap": 2,
      "laps_left": 4,
-     "t": 680.0
+     "t": 700.0
     },
     {
      "lap": 3,
      "laps_left": 3,
-     "t": 760.0
+     "t": 780.0
     },
     {
      "lap": 4,
      "laps_left": 2,
-     "t": 840.0
+     "t": 860.0
     },
     {
      "lap": 5,
      "laps_left": 1,
-     "t": 920.0
+     "t": 940.0
     },
     {
      "lap": 6,
      "laps_left": 0,
-     "t": 1000.0
+     "t": 1020.0
     }
    ],
    "final_calls": [
     {
      "lap": 6,
-     "t": 920.0
+     "t": 940.0
     }
    ],
    "finish": {
     "class_place": 1,
+    "gained": 0,
     "lap": 6,
-    "t": 1000.0
+    "pool": "race_end_win",
+    "start_place": 1,
+    "t": 1020.0
    },
-   "leader_flag_t": 1000.0,
-   "t0": 520.0,
+   "leader_flag_t": 1020.0,
+   "post": [
+    {
+     "pool": "cooldown_lap_traffic",
+     "still_racing": 2,
+     "t": 1027.0,
+     "type": "cooldown_lap"
+    },
+    {
+     "pool": "race_summary_fastest",
+     "rank": 1,
+     "t": 1040.0,
+     "type": "race_summary"
+    }
+   ],
+   "t0": 540.0,
    "trace_exact_from_lap": 1
   }
  ],

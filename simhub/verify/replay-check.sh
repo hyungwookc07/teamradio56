@@ -6,10 +6,12 @@
 #   2) C# 러너 실행 (tests/TeamRadio56.Replay)
 #   3) 수락 이벤트 시퀀스 비교 (순서·타이밍·데이터·결정적 멘트 'say' 완전 일치 요구)
 #   4) 레이스 종료 오라클 — 남은 랩 트레이스 파이썬 ↔ C# 일치, race_end_* 리플레이는
-#      체커까지 가고 정답(.truth.json)과 마지막 랩·체커 콜까지 대조
-#      (tools/make_race_end_replays.py가 만들고 --check로 재생성 대조)
-#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit)는 수락 콜을 정답 목록과
-#      파이썬·C# 각각 대조 (tools/expect_calls.py; 생성기 tools/make_rival_pit_replay.py --check)
+#      체커 뒤까지 가고 정답(.truth.json)과 마지막 랩·체커 콜(등급)·체커 뒤 무전(쿨다운·
+#      요약·피트인)·피니시 뒤 침묵까지 대조 (tools/make_race_end_replays.py가 만들고
+#      --check로 재생성 대조; <이름>.config.json은 두 하니스가 읽는 설정 덮어쓰기)
+#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit, session_*)는 수락 콜을
+#      정답 목록과 파이썬·C# 각각 대조 (tools/expect_calls.py — 세션 브리핑은 문장까지;
+#      생성기 tools/make_rival_pit_replay.py · tools/make_session_replays.py --check)
 #
 # C# 플러그인 무전은 영어 + kokoro 음성 팩 고정이라 파이썬 ↔ C# 대조는 en만 한다.
 # 파이썬 단독 앱의 한국어·edge 목소리는 파이썬 자체 검사(셀프테스트, ko 스모크)로만 돈다.
@@ -402,6 +404,16 @@ python3 tools/make_race_end_replays.py --check || fail=1
 echo
 echo "▶ 경쟁자 피트 리플레이 재생성 대조"
 python3 tools/make_rival_pit_replay.py --check || fail=1
+
+echo
+echo "▶ 세션 브리핑 리플레이 재생성 대조 (연습·퀄리·웜업, 시작·중간 합류)"
+python3 tools/make_session_replays.py --check || fail=1
+
+# 브리핑 변형(FNV-1a 시드)·체커 콜 등급·체커 뒤 무전 규칙·피니시 뒤 침묵 (파이썬 단위 검사 —
+# C#은 퍼즈·리플레이 대조가 같은 결과를 요구한다)
+echo
+echo "▶ 무전 흐름 셀프테스트 (브리핑 변형 · 체커 등급 · 피니시 뒤 침묵)"
+python3 tools/radio_flow_selftest.py || fail=1
 
 for replay in data/replays/*.jsonl.gz; do
     name=$(basename "$replay" .jsonl.gz)

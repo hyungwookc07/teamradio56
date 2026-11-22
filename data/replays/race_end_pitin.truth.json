@@ -1,0 +1,78 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 5,
+   "t": 80.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 4,
+   "t": 160.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 3,
+   "t": 240.0
+  },
+  {
+   "lap": 4,
+   "laps_left": 2,
+   "t": 320.0
+  },
+  {
+   "lap": 5,
+   "laps_left": 1,
+   "t": 400.0
+  },
+  {
+   "lap": 6,
+   "laps_left": 0,
+   "t": 481.6
+  }
+ ],
+ "end_et": 443.0,
+ "final_calls": [
+  {
+   "lap": 6,
+   "t": 400.0
+  }
+ ],
+ "finish": {
+  "class_place": 3,
+  "gained": 0,
+  "lap": 6,
+  "pool": "race_end_podium",
+  "start_place": 3,
+  "t": 481.6
+ },
+ "leader_flag_t": 470.6,
+ "max_laps": 2147483647,
+ "note": "체커 뒤 쿨다운 → 블루·페널티·충격(침묵) → 피트인(리미터 경고) → 피트레인 라인 통과 → 차고. 리포터 켬 (설정 사이드카)",
+ "post": [
+  {
+   "pool": "cooldown_lap_traffic",
+   "still_racing": 1,
+   "t": 488.6,
+   "type": "cooldown_lap"
+  },
+  {
+   "pool": "race_summary_fastest",
+   "rank": 1,
+   "t": 501.6,
+   "type": "race_summary"
+  },
+  {
+   "pool": "pit_limiter",
+   "t": 526.6,
+   "type": "pit_limiter"
+  },
+  {
+   "pool": "post_race_pit",
+   "t": 526.6,
+   "type": "post_race_pit"
+  }
+ ],
+ "scenario": "race_end_pitin",
+ "trace_exact_from_lap": 1
+}

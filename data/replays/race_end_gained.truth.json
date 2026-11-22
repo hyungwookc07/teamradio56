@@ -1,0 +1,73 @@
+{
+ "crossings": [
+  {
+   "lap": 1,
+   "laps_left": 6,
+   "t": 79.0
+  },
+  {
+   "lap": 2,
+   "laps_left": 5,
+   "t": 158.0
+  },
+  {
+   "lap": 3,
+   "laps_left": 4,
+   "t": 237.0
+  },
+  {
+   "lap": 4,
+   "laps_left": 3,
+   "t": 316.0
+  },
+  {
+   "lap": 5,
+   "laps_left": 2,
+   "t": 395.0
+  },
+  {
+   "lap": 6,
+   "laps_left": 1,
+   "t": 474.0
+  },
+  {
+   "lap": 7,
+   "laps_left": 0,
+   "t": 553.0
+  }
+ ],
+ "end_et": 443.0,
+ "final_calls": [
+  {
+   "lap": 7,
+   "t": 474.0
+  }
+ ],
+ "finish": {
+  "class_place": 5,
+  "gained": 4,
+  "lap": 7,
+  "pool": "race_end_gained",
+  "start_place": 9,
+  "t": 553.0
+ },
+ "leader_flag_t": 501.6,
+ "max_laps": 2147483647,
+ "note": "멀티클래스, 클래스 9위 스타트 → 5위 (4계단 상승) — 체커 뒤 하이퍼카가 아직 달린다",
+ "post": [
+  {
+   "pool": "cooldown_lap_faster",
+   "still_racing": 4,
+   "t": 560.0,
+   "type": "cooldown_lap"
+  },
+  {
+   "pool": "race_summary_fastest_class",
+   "rank": 1,
+   "t": 573.0,
+   "type": "race_summary"
+  }
+ ],
+ "scenario": "race_end_gained",
+ "trace_exact_from_lap": 1
+}

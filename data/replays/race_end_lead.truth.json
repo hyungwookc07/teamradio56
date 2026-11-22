@@ -40,12 +40,29 @@
  ],
  "finish": {
   "class_place": 1,
+  "gained": 0,
   "lap": 6,
+  "pool": "race_end_win",
+  "start_place": 1,
   "t": 480.0
  },
  "leader_flag_t": 480.0,
  "max_laps": 2147483647,
  "note": "내가 전체 1위 — 시계 0 이후 내 라인 통과가 체커 (단일 클래스)",
+ "post": [
+  {
+   "pool": "cooldown_lap_traffic",
+   "still_racing": 2,
+   "t": 487.0,
+   "type": "cooldown_lap"
+  },
+  {
+   "pool": "race_summary_fastest",
+   "rank": 1,
+   "t": 500.0,
+   "type": "race_summary"
+  }
+ ],
  "scenario": "race_end_lead",
  "trace_exact_from_lap": 1
 }

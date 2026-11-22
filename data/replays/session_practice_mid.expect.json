@@ -1,0 +1,15 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Radio check. Practice is running, I'm with you. 80 minutes remaining. Track 34 degrees. Head down, carry on.",
+   "t": 0.0,
+   "type": "session_briefing"
+  }
+ ],
+ "note": "세션 시작 브리핑 — 무전 체크로 열고 세션 종류별 구성, 트랙 이름 없음",
+ "scenario": "session_practice_mid",
+ "types": [
+  "session_briefing"
+ ]
+}

@@ -40,12 +40,29 @@
  ],
  "finish": {
   "class_place": 1,
+  "gained": 0,
   "lap": 6,
+  "pool": "race_end_class_win",
+  "start_place": 1,
   "t": 480.0
  },
  "leader_flag_t": 450.6,
  "max_laps": 7,
  "note": "랩제 7랩 — 리더가 7랩을 채우면 체커, 랩 다운인 나는 6랩에서 끝",
+ "post": [
+  {
+   "pool": "cooldown_lap_traffic",
+   "still_racing": 1,
+   "t": 487.0,
+   "type": "cooldown_lap"
+  },
+  {
+   "pool": "race_summary_fastest_class",
+   "rank": 1,
+   "t": 500.0,
+   "type": "race_summary"
+  }
+ ],
  "scenario": "race_end_laps",
  "trace_exact_from_lap": 1
 }

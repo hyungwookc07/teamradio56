@@ -3,9 +3,10 @@
 파이썬 ↔ C# 일치(compare_calls.py)만으로는 두 엔진이 같이 틀리면 통과하므로, 생성기가 규칙대로
 적어 둔 정답과 직접 대조한다.
 
-  사이드카: {"types": [이벤트 종류...], "events": [{"t", "type", "data", "say"?}, ...]}
+  사이드카: {"types": [이벤트 종류...], "events": [{"t", "type", "data", "say"?, "message"?}, ...]}
   calls 파일마다 types에 든 종류의 수락 이벤트만 골라 events와 순서·개수까지 같아야 한다
-  (t ±0.011초, data 완전 일치, say가 있으면 문장도 일치). 기대 목록에 없는 콜 하나도 실패.
+  (t ±0.011초, data 완전 일치, say·message가 있으면 문장도 일치 — 세션 브리핑은 조립 문장
+  message). 기대 목록에 없는 콜 하나도 실패.
 
 사용법: python tools/expect_calls.py --expect f.expect.json --calls py.jsonl [--calls cs.jsonl ...]
 종료 코드: 0 = 전부 일치, 1 = 불일치.
@@ -69,6 +70,8 @@ def check(calls, expect):
                      f"{json.dumps(w['data'], ensure_ascii=False, sort_keys=True)}")
         if "say" in w and g.get("say") != w["say"]:
             d.append(f"say «{g.get('say')}» != «{w['say']}»")
+        if "message" in w and g.get("message") != w["message"]:
+            d.append(f"message «{g.get('message')}» != «{w['message']}»")
         if d:
             probs.append(f"#{i}: " + "; ".join(d))
     return got, probs

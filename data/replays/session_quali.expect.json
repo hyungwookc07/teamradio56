@@ -1,0 +1,15 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Radio check, one two. This is qualifying. 20 minutes long. Track's at 29 degrees. Use the out lap to make some space. Four wheels inside the lines, no deleted laps. One clean lap, that's all we need.",
+   "t": 0.0,
+   "type": "session_briefing"
+  }
+ ],
+ "note": "세션 시작 브리핑 — 무전 체크로 열고 세션 종류별 구성, 트랙 이름 없음",
+ "scenario": "session_quali",
+ "types": [
+  "session_briefing"
+ ]
+}

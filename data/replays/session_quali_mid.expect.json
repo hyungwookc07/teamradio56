@@ -1,0 +1,15 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Radio check. Picking you up mid-qualifying. 16 minutes remaining. Track 18 degrees. It's raining, watch the grip. Four wheels inside the lines, no deleted laps. Carry on with the plan.",
+   "t": 0.0,
+   "type": "session_briefing"
+  }
+ ],
+ "note": "세션 시작 브리핑 — 무전 체크로 열고 세션 종류별 구성, 트랙 이름 없음",
+ "scenario": "session_quali_mid",
+ "types": [
+  "session_briefing"
+ ]
+}
