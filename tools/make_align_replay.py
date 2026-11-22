@@ -20,6 +20,10 @@ EMA가 충격 지점과 15초 뒤 지점의 코너 구성(좌우 비율) 차이�
     (6e8bc8e는 기준 없는 충격 하나가 피트까지 감지를 꺼서 침묵)
   · align_crab — 리어 토 손상으로 비스듬히 곧게 감(직선 횡속도 1~2.5m/s) → 경미 · 심각
     (6e8bc8e는 횡속도 1.0m/s 상한이 고속 직선 샘플을 버려 판정 버퍼가 차지 않아 침묵)
+  · align_report — 대기 콜 중 다음 충격 (점검 리포트까지 대조): 메인 직선 초입 접촉 +0.05 → 판정이
+    리포트 쿨다운 안이라 대기 → 리포트 +15.4초 두 번째 충격. 펑크를 남기면 그 충격의 리포트(펑크·박스)
+    가 나가고 대기 콜은 피트까지 붙든다, 멀쩡하면 리포트 먼저·대기 콜은 그 리포트 쿨다운 뒤
+    (b60e335는 대기 콜이 쿨다운 끝 틱에 나가 두 번째 리포트를 잃었다)
 생성기는 새 경우가 직전 규칙(6e8bc8e)에선 콜이 안 나는 모양이라는 것도 확인한다.
 두 직선 게이트가 서로 대신하지 못한다는 것도 확인한다 — 보통 틱은 횡속도 = SLIP × 횡가속이라
 두 게이트가 같이 열리고 닫히므로, 게이트 하나만 뺀 규칙(요레이트×속도 / 횡속도 상한 없음)으로
@@ -37,6 +41,7 @@ EMA가 충격 지점과 15초 뒤 지점의 코너 구성(좌우 비율) 차이�
   · 판정 = 충격 뒤 새 버퍼 51샘플이 찼을 때 중앙값 − 기준: ≥ 0.03 경미, ≥ 0.08 심각
   · 타이어 펑크/탈락·공기압 누출 중엔 콜하지 않는다 (쏠림은 타이어 탓)
   · 판정 시각은 점검 리포트(충격 +8초)의 damage_report 쿨다운 20초 밖 — 재시도 없이 그 틱
+    (align_report만 쿨다운 안: 대기 콜은 새 충격의 점검 리포트가 나갈 때까지 쉬고, 펑크 중엔 붙든다)
 
 모델: 혼자 달리는 레이스(시간제). 랩 = 직선 S1(290) · 시케인(110) · 직선 S2(250) · 고속 스위퍼
 구간 F(200km/h, 오른쪽 4코너, 조향 최대 0.17) · 중속 코너(130) · 직선 S3(270) · 헤어핀(80).
@@ -113,6 +118,9 @@ SLIP = 0.06                 # 횡속도(m/s) / 횡가속(m/s²) — 정상 코�
 SAY_MILD = ("Steering pull on the straights. Alignment's off from that hit. "
             "It'll eat the tyre. Repair call on pace.")
 SAY_SEVERE = "Alignment is badly out. You're steering on the straights. Box for repairs."
+# 점검 리포트 (덴트 1 하나 — 자국뿐 / 우측 앞 펑크) — reports 시나리오만 대조
+SAY_REPORT_MARKS = "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on."
+SAY_REPORT_BOX = "Check done. Front right puncture. Prepare to box."
 
 # 구간: (이름, 종류, 시간 s, km/h, 코너 목록) — 코너 = (시작 s, 길이 s, 건강한 차의 최대 조향)
 # 전부 오른쪽 — 충격 뒤 창이 한쪽으로 쏠려 있어야 '직선 게이트 없는 중앙값'이 여기서 콜한다
@@ -171,6 +179,29 @@ SCENARIOS = {
         dict(name="after_no_baseline", lap=1, seg="S2", at=7.5, offset=0.05, expect="mild",
              note="기준 없는 접촉 뒤 한 랩 달린 다음 실제 손상(+0.05) → align_mild "
                   "(직전 코드: 기준 없는 충격 하나가 피트까지 감지를 꺼서 침묵)"),
+    ]),
+    # 대기 콜과 다음 충격의 점검 리포트 — 판정이 콜이어도 점검 리포트 쿨다운(20초)에 걸려 대기하는
+    # 동안 두 번째 충격이 오면(리포트 +12~20초 — 그 충격의 리포트는 첫 리포트 쿨다운 뒤라 나갈 수
+    # 있다) 그 충격의 점검 리포트가 먼저, 타이어 문제 중엔 대기 콜을 붙든다. 직전 코드(b60e335)는
+    # 대기 콜을 리포트 쿨다운 끝 틱에 바로 밀어 같은 쿨다운을 차지해 두 번째 리포트를 잃었다.
+    # 메인 직선 초입 접촉이라 판정 버퍼가 같은 직선에서 찬다 (충격 +10.2초 — 리포트 쿨다운 안)
+    "align_report": dict(pit_laps={2}, n_laps=5, reports=True, cases=[
+        dict(name="pull_then_flat", lap=1, seg="S1", at=0.6, offset=0.05, expect=None, held=True,
+             judge_seg="S1",
+             note="메인 직선 초입 접촉으로 실제 오프셋 +0.05 → 점검 리포트(자국뿐) 직후 경미 판정, 리포트 "
+                  "쿨다운에 걸려 대기. 대기 중 두 번째 충격이 우측 앞 펑크를 남김 → 대기 콜은 피트까지 "
+                  "붙든다 (펑크·박스 리포트가 우선, b60e335: 쿨다운 끝 틱에 얼라인 콜)"),
+        dict(name="flat_during_wait", lap=1, seg="S2", at=4.0, offset=0.05, flat=True, second=True,
+             expect=None,
+             note="대기 중 두 번째 충격(첫 리포트 +15.4초) + 우측 앞 펑크 → 이 충격의 점검 리포트 "
+                  "'Front right puncture. Prepare to box.'가 나간다 (b60e335: 대기 얼라인 콜이 쿨다운을 "
+                  "차지해 이 리포트를 잃음)"),
+        dict(name="pull_then_tap", lap=3, seg="S1", at=0.6, offset=0.05, expect="mild", judge_seg="S1",
+             note="피트 뒤 같은 모양의 실제 오프셋 +0.05 → 리포트 직후 경미 판정·대기"),
+        dict(name="tap_during_wait", lap=3, seg="S2", at=4.0, offset=0.05, second=True, expect=None,
+             note="대기 중 두 번째 가벼운 접촉(첫 리포트 +15.4초, 타이어 멀쩡) → 이 충격의 점검 리포트가 "
+                  "먼저, 대기 align_mild는 그 리포트의 쿨다운 뒤 (b60e335: 얼라인 콜이 먼저 나가 이 "
+                  "리포트를 잃음)"),
     ]),
     # 리어 토 손상 — 요레이트 0으로 비스듬히 곧게 간다 (횡속도 = 속도 × sin β)
     "align_crab": dict(pit_laps={2}, n_laps=5, cases=[
@@ -452,13 +483,13 @@ def judge(snaps, lat_max=LAT_VEL_MAX, stint_off=False, acc_max=LAT_ACC_MAX, coun
     """
     default = lat_max == LAT_VEL_MAX and acc_max == LAT_ACC_MAX and not stint_off and count is None
     out = {}
-    pre, post, base, no_base, cur, n_base = [], None, None, False, None, 0
+    pre, post, base, no_base, cur, n_base, called = [], None, None, False, None, 0, False
     ema, old_base, old_n, old_call = None, None, 0, {}
     pit_prev = False
     for s in snaps:
         p, t = s["player"], s["t"]
         if p["in_pitlane"] and not pit_prev:
-            pre, post, base, no_base, cur = [], None, None, False, None
+            pre, post, base, no_base, cur, called = [], None, None, False, None, False
             ema, old_base, old_n = None, None, 0
         pit_prev = p["in_pitlane"]
         v = p["speed_kmh"]
@@ -490,6 +521,8 @@ def judge(snaps, lat_max=LAT_VEL_MAX, stint_off=False, acc_max=LAT_ACC_MAX, coun
                     out[cur["name"]] = dict(t=t, base=base, post=median(post), shift=shift,
                                             n_base=n_base)
                     post = None
+                    # 콜 판정(펑크 아님) 뒤엔 대기·콜 끝까지 새 충격이 판정 버퍼를 열지 않는다
+                    called = abs(shift) >= SHIFT_MIN and not flat_now(p)
         hit = next((c for ti, c in IMPACTS if abs(ti - t) < 1e-9), None)
         if hit is not None:
             cur = hit
@@ -504,9 +537,77 @@ def judge(snaps, lat_max=LAT_VEL_MAX, stint_off=False, acc_max=LAT_ACC_MAX, coun
                         no_base = True          # 직전 코드: 피트까지 감지 꺼짐
                     pre = []                    # 새 규칙: 이 충격만, 기준은 다시 모은다
                     continue
-            if base is not None:
+            if base is not None and not called:
                 post = []
     return out, old_call
+
+
+def flat_now(p):
+    return any(w["flat"] or w["detached"] for w in p["wheels"])
+
+
+def radio(snaps, res, report_wait=True, tyre_hold=True):
+    """
+    점검 리포트(충격 +8초)와 얼라인 콜이 damage_report 쿨다운(20초, 심각은 CRITICAL이라 절반)을
+    나눠 쓰는 순서를 따라간다 — 판정(res)이 콜이면 대기로 두고 매 틱 재시도. 재시도는 새 충격의
+    점검 리포트가 예약돼 있으면 쉬고(report_wait), 펑크 중엔 붙든다(tyre_hold) — 둘 다 False면
+    b60e335 규칙. 판정 틱에 펑크면 판정 자체를 붙든다 (콜 없음). 피트 진입이 대기를 지운다.
+    반환: (수락 콜 [(시각, dedup 키, 문장)], 경우별 {pending_t, pending_hold_t, call_t, report_t,
+    report_lost, pending_at_impact}).
+    """
+    judged = {}
+    for name, r in res.items():
+        d = decide(r)
+        if d is not None:
+            judged[r["t"]] = (name, d)
+    calls, info = [], {}
+    report_due, last, last_hit, last_et, pending = None, None, None, None, None
+    pit_prev = False
+
+    def push(t, key, text, severe=False):
+        nonlocal last
+        if last is None or t - last >= REPORT_COOLDOWN or (severe and t - last >= REPORT_COOLDOWN * 0.5):
+            last = t
+            calls.append((t, key, text))
+            return True
+        return False
+
+    def push_align(t, name, d):
+        ok = push(t, "align_severe" if d == "severe" else "align_damage",
+                  SAY_SEVERE if d == "severe" else SAY_MILD, severe=d == "severe")
+        if ok:
+            info[name]["call_t"] = t
+        return ok
+
+    for s in snaps:
+        p, t = s["player"], s["t"]
+        if p["in_pitlane"] and not pit_prev:
+            pending = None
+        pit_prev = p["in_pitlane"]
+        flat = flat_now(p)
+        if pending is not None:
+            if report_wait and report_due is not None:
+                pass                                # 새 충격의 점검 리포트가 먼저
+            elif tyre_hold and flat:
+                info[pending[0]].setdefault("pending_hold_t", t)
+            elif push_align(t, *pending):
+                pending = None
+        elif t in judged and not flat:
+            name, d = judged[t]
+            info[name]["pending_t"] = t
+            if not push_align(t, name, d):
+                pending = (name, d)
+        hit = next((c for ti, c in IMPACTS if abs(ti - t) < 1e-9), None)
+        if hit is not None:
+            last_hit, last_et = hit["name"], p["last_impact_et"]
+            info[last_hit] = {"pending_at_impact": pending is not None}
+            report_due = t + REPORT_DELAY
+        if report_due is not None and t >= report_due:
+            report_due = None
+            info[last_hit]["report_t"] = t
+            if not push(t, f"dmg_report_{last_et}", SAY_REPORT_BOX if flat else SAY_REPORT_MARKS):
+                info[last_hit]["report_lost"] = True
+    return calls, info
 
 
 def r4(x):
@@ -526,9 +627,40 @@ def build():
     prev, _ = judge(snaps, lat_max=PREV_LAT_VEL_MAX, stint_off=True)
     # 게이트 하나씩 뺀 규칙 — 요레이트×속도 게이트 없음 / 횡속도 게이트 없음
     no_gate = {"yaw": judge(snaps, acc_max=math.inf)[0], "lat": judge(snaps, lat_max=math.inf)[0]}
+    reports = SCENARIOS[NAME].get("reports", False)
+    calls, info = radio(snaps, res)
+    if not reports:
+        # 판정 시각 = 콜 시각 (리포트 쿨다운 밖) — 리포트는 전부 나간다
+        assert not any(i.get("report_lost") or "pending_t" in i and "call_t" not in i
+                       for i in info.values()), (NAME, info)
+    variants = {}
+    if reports:
+        # 대기 콜 규칙 하나씩 뺀 순서 — 각 규칙이 이 리플레이의 기대 콜을 바꿔야 한다
+        assert not any(i.get("report_lost") for i in info.values()), (NAME, info)
+        for label, kw in (("no_report_wait", dict(report_wait=False)),
+                          ("no_tyre_hold", dict(tyre_hold=False)),
+                          ("b60e335", dict(report_wait=False, tyre_hold=False))):
+            vcalls, vinfo = radio(snaps, res, **kw)
+            assert vcalls != calls, (NAME, label)
+            variants[label] = vinfo
     events, cases = [], []
     for ti, c in IMPACTS:
         ungated_post = None
+        if c.get("second"):
+            # 대기 콜이 있는 동안의 두 번째 충격 — 판정 버퍼를 새로 열지 않고, 이 충격의 점검 리포트는
+            # 앞 리포트 쿨다운 밖(+12~20초 창)이라 나간다. 예전 규칙은 이 리포트를 잃는다
+            i = info[c["name"]]
+            assert c["name"] not in res and i["pending_at_impact"], (c["name"], i)
+            assert abs(i["report_t"] - (ti + REPORT_DELAY)) < 1e-6 and not i.get("report_lost"), (c["name"], i)
+            prev_report = max(x["report_t"] for x in info.values() if x.get("report_t", math.inf) < ti)
+            assert prev_report + 12.0 <= ti < prev_report + REPORT_COOLDOWN, (c["name"], ti, prev_report)
+            assert variants["b60e335"][c["name"]].get("report_lost"), (c["name"], "b60e335")
+            case = {"name": c["name"], "impact_t": ti, "call": False, "note": c["note"],
+                    "report_t": i["report_t"]}
+            for label, v in variants.items():
+                case[label] = {"report_lost": bool(v[c["name"]].get("report_lost"))}
+            cases.append(case)
+            continue
         r = res.get(c["name"])
         assert r is not None, f"{c['name']}: 판정 버퍼가 차지 않음"
         if c.get("no_base"):
@@ -538,13 +670,25 @@ def build():
         else:
             assert r["n_base"] >= BASE_MIN, c["name"]
             decision = decide(r)
-            # 판정 시각이 점검 리포트(+8초) 쿨다운(20초) 밖 — 재시도 경계에 걸치지 않게
-            assert r["t"] >= ti + REPORT_DELAY + REPORT_COOLDOWN + 1.0, c["name"]
+            if reports:
+                # 판정이 점검 리포트 쿨다운 안 — 콜은 대기로 시작한다
+                i = info[c["name"]]
+                assert i["report_t"] <= r["t"] == i["pending_t"] < i["report_t"] + REPORT_COOLDOWN, \
+                    (c["name"], r, i)
+            else:
+                # 판정 시각이 점검 리포트(+8초) 쿨다운(20초) 밖 — 재시도 경계에 걸치지 않게
+                assert r["t"] >= ti + REPORT_DELAY + REPORT_COOLDOWN + 1.0, c["name"]
             # 판정 시각에 아직 스위퍼(F)를 지나 S3 — 같은 랩 안 (게이트 셋 경우는 F 안 직선 틱)
             seg = seg_at(r["t"])
             assert seg.lap == c["lap"] and seg.name == c.get("judge_seg", "S3"), (c["name"], seg.name)
         if c.get("flat"):
             assert decision == "mild", "flat_tyre_pull: 펑크 규칙만 없으면 콜이 나갈 모양이어야 한다"
+            decision = None
+        elif c.get("held"):
+            # 경미 판정은 났지만(대기) 두 번째 충격의 펑크로 피트까지 붙든다
+            i = info[c["name"]]
+            assert decision == "mild" and "call_t" not in i and i["pending_hold_t"] > i["pending_t"], \
+                (c["name"], i)
             decision = None
         elif c["name"] == "no_baseline":
             assert c["offset"] >= SHIFT_MIN, "no_baseline: 기준만 있으면 콜이 나갈 손상이어야 한다"
@@ -595,7 +739,12 @@ def build():
             lats = [abs(x["player"]["lat_vel"]) for x in snaps
                     if ti < x["t"] <= r["t"] and seg_at(x["t"]).kind == "straight"]
             assert min(lats) > PREV_LAT_VEL_MAX, (c["name"], min(lats))
-        if decision is not None:
+        if reports:
+            i = info[c["name"]]
+            assert (decision is not None) == ("call_t" in i), (c["name"], i)
+        else:
+            assert decision is None or info[c["name"]].get("call_t") == r["t"], (c["name"], info[c["name"]])
+        if decision is not None and not reports:
             events.append({
                 "t": round(r["t"], 2),
                 "type": "damage_report",
@@ -612,7 +761,20 @@ def build():
             case["ungated_post"] = r4(ungated_post)
         if c["name"] in old_call:
             case["old_call_t"], case["old_shift"] = old_call[c["name"]][0], round(old_call[c["name"]][1], 4)
+        if reports:
+            i = info[c["name"]]
+            for k in ("report_t", "pending_t", "pending_hold_t", "call_t"):
+                if k in i:
+                    case[k] = i[k]
+            for label, v in variants.items():
+                case[label] = {"call_t": v[c["name"]].get("call_t")}
         cases.append(case)
+    keys = ["align_damage", "align_severe"]
+    if reports:
+        # 점검 리포트까지 대조 — 대기 얼라인 콜과 같은 damage_report 쿨다운을 나눠 쓴다
+        events = [{"t": round(t, 2), "type": "damage_report", "data": {}, "message": m}
+                  for t, _, m in calls]
+        keys += sorted({f"dmg_report_{ti}" for ti, _ in IMPACTS})
 
     sidecar = {
         "scenario": NAME,
@@ -622,7 +784,7 @@ def build():
                 "타이어 펑크면 콜 없음. call_without_yaw_gate/call_without_lat_vel_gate = 그 게이트 "
                 "하나만 뺀 규칙의 판정 (생성기가 각 게이트가 판정을 바꾸는 경우를 확인)",
         "types": ["damage_report"],
-        "keys": ["align_damage", "align_severe"],
+        "keys": keys,
         "events": events,
         "cases": cases,
     }

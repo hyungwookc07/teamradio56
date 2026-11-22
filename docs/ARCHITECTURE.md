@@ -102,9 +102,10 @@
 - `tools/make_rival_pit_replay.py`  경쟁자 피트 콜 경우를 모은 합성 리플레이 + 기대 콜 사이드카 (`--check`)
 - `tools/make_align_replay.py`  얼라인(조향 쏠림) 콜 경우를 모은 합성 리플레이 + 기대 콜 사이드카 (`--check`;
   align · align_gate(게이트 하나만 어기는 슬라이드·플랫 굽이) · align_rebase(기준 없는 충격 뒤 재판정) ·
-  align_crab(리어 토 게걸음))
+  align_crab(리어 토 게걸음) · align_report(대기 콜 중 다음 충격 — 그 충격 점검 리포트 먼저, 펑크면 붙듦))
 - `tools/make_wing_replay.py`  프론트 윙(스플리터 높이) 콜 경우를 모은 합성 리플레이 + 기대 콜 사이드카
-  (`--check`; wing · wing_rebase(기준 없는 충격 뒤 재판정, 첫 기준 유지))
+  (`--check`; wing · wing_rebase(기준 없는 충격 뒤 재판정, 첫 기준 유지) · wing_report(대기 콜 중 다음
+  충격 — 그 충격 점검 리포트 먼저, 펑크면 붙듦))
 - `tools/expect_calls.py`  수락 콜을 기대 콜 사이드카(`.expect.json`)와 대조 (파이썬·C# 각각)
 - `tools/diagnose.py`          실차 원시 값 덤프 (필드 부실 진단)
 - `tools/probe_rest.py`        REST 엔드포인트 수집 (스키마 확정용)

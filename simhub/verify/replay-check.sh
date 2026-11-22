@@ -407,11 +407,11 @@ echo "▶ 경쟁자 피트 리플레이 재생성 대조"
 python3 tools/make_rival_pit_replay.py --check || fail=1
 
 echo
-echo "▶ 얼라인 리플레이 재생성 대조 (스위퍼 직전 접촉 · 기준 없음 · 펑크 · 경미 · 심각 · 게이트 하나 어김 · 기준 재수집 · 리어 토 게걸음)"
+echo "▶ 얼라인 리플레이 재생성 대조 (스위퍼 직전 접촉 · 기준 없음 · 펑크 · 경미 · 심각 · 게이트 하나 어김 · 기준 재수집 · 리어 토 게걸음 · 대기 콜 중 다음 충격 리포트)"
 python3 tools/make_align_replay.py --check || fail=1
 
 echo
-echo "▶ 윙 리플레이 재생성 대조 (정적 필드 · 펑크 · 중속 접촉 뒤 긴 직선 · 스플리터 손상 · 기준 재수집)"
+echo "▶ 윙 리플레이 재생성 대조 (정적 필드 · 펑크 · 중속 접촉 뒤 긴 직선 · 스플리터 손상 · 기준 재수집 · 대기 콜 중 다음 충격 리포트)"
 python3 tools/make_wing_replay.py --check || fail=1
 
 echo

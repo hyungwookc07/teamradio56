@@ -18,6 +18,10 @@
   · wing_rebase — 1랩 첫 직선 3초 접촉(기준 부족 → 그 충격만 판정 안 함, 기준 다시 모음) · 다음 랩
     멀쩡한 접촉(기준을 굳히고 판정, 침묵) · 같은 스틴트 다음 랩 실제 손상(첫 기준 유지 · 충격마다
     새 판정 버퍼 → 콜)
+  · wing_report — 대기 콜 중 다음 충격 (점검 리포트까지 대조): 메인 직선 실제 손상 → 리포트 직후 판정,
+    리포트 쿨다운에 걸려 대기 → 리포트 +16초 두 번째 충격. 펑크를 남기면 그 충격의 리포트(펑크·박스)가
+    나가고 대기 콜은 피트까지 붙든다, 멀쩡하면 리포트 먼저·대기 콜은 그 리포트 쿨다운 뒤
+    (b60e335는 대기 콜이 쿨다운 끝 틱에 나가 두 번째 리포트를 잃었다)
 
 규칙 (기대값의 근거, analyzers/health.py WING_* · C# HealthAnalyzer와 같은 값):
   · 샘플 = 피트레인 밖 · 150km/h 이상 · 높이 > 0 · 직전 두 틱 구간 감속 모두 ≤ 4.9m/s²(0.5g)
@@ -28,7 +32,8 @@
   · 판정 = 충격 뒤 새 버퍼(최근 301개)에서 양쪽 다 5샘플 이상인 구간이 3개가 되는 첫 틱 (그 충격의
     점검 리포트가 나간 뒤) 한 번 — 하락 = 구간별 (기준 중앙값 − 충격 후 중앙값)의 중앙값 ≥ 10mm면
     콜. 중앙값은 정렬 목록의 (len−1)//2 번째. 쿨다운(damage_report 20초 — 방금 나간 점검 리포트)에
-    거절되면 대기로 남아 다음 틱에 다시 민다 → 콜 시각 = 리포트 + 20초 첫 틱
+    거절되면 대기로 남아 다음 틱에 다시 민다 → 콜 시각 = 리포트 + 20초 첫 틱. 대기 중 새 충격이 오면
+    그 충격의 점검 리포트가 나갈 때까지 쉬고, 타이어 펑크/탈락·공기압 누출 중엔 붙든다
   · 타이어 펑크/탈락·공기압 누출 중엔 콜하지 않는다 (높이 하락은 타이어 탓)
 
 모델: 혼자 달리는 레이스(시간제). 랩(95초) = 메인 직선 S1(240→305) · T1 강한 제동(2.2g) · 헤어핀
@@ -97,6 +102,9 @@ G = 9.81
 
 SAY_WING = ("Front aero down {mm:.0f} millimetres. Splitter damage. "
             "Careful in the fast stuff. Repair call on pace.")
+# 점검 리포트 (덴트 1 하나 — 자국뿐 / 우측 앞 펑크) — reports 시나리오만 대조
+SAY_REPORT_MARKS = "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on."
+SAY_REPORT_BOX = "Check done. Front right puncture. Prepare to box."
 
 # 랩: (이름, 시간 s, 시작 km/h, 끝 km/h) — 구간 안 속도는 시간에 선형
 LAP = [
@@ -158,6 +166,26 @@ SCENARIOS = {
         dict(name="damage_after_taps", lap=2, seg="M5", at=2.0, drop=DAMAGE_DROP, expect=True,
              note="같은 스틴트 다음 랩 실제 스플리터 손상(h0 −15mm) → 두 번째 접촉 때 굳힌 기준 유지, 새 "
                   "판정 버퍼로 wing_damage 하나"),
+    ]),
+    # 대기 콜과 다음 충격의 점검 리포트 — 판정이 콜이어도 점검 리포트 쿨다운(20초)에 걸려 대기하는
+    # 동안 두 번째 충격이 오면(리포트 +12~20초 — 그 충격의 리포트는 첫 리포트 쿨다운 뒤라 나갈 수
+    # 있다) 그 충격의 점검 리포트가 먼저, 타이어 문제 중엔 대기 콜을 붙든다. b60e335는 대기 콜을
+    # 리포트 쿨다운 끝 틱에 바로 밀어 같은 쿨다운을 차지해 두 번째 리포트(펑크·박스)를 잃었다
+    "wing_report": dict(pit_laps={2}, n_laps=5, reports=True, cases=[
+        dict(name="damage_then_flat", lap=1, seg="S1", at=2.0, drop=DAMAGE_DROP, held=True, expect=False,
+             note="메인 직선 접촉으로 실제 스플리터 손상(h0 −15mm) → 점검 리포트(자국뿐) 직후 콜 판정, "
+                  "리포트 쿨다운에 걸려 대기. 대기 중 두 번째 충격이 우측 앞 펑크를 남김 → 대기 콜은 "
+                  "피트까지 붙든다 (펑크·박스 리포트가 우선, b60e335: 쿨다운 끝 틱에 윙 콜)"),
+        dict(name="flat_during_wait", lap=1, seg="A1", at=4.2, drop=DAMAGE_DROP, flat=True, second=True,
+             expect=False,
+             note="대기 중 두 번째 충격(첫 리포트 +16초) + 우측 앞 펑크 → 이 충격의 점검 리포트 "
+                  "'Front right puncture. Prepare to box.'가 나간다 (b60e335: 대기 윙 콜이 쿨다운을 "
+                  "차지해 이 리포트를 잃음)"),
+        dict(name="damage_then_tap", lap=3, seg="S1", at=2.0, drop=DAMAGE_DROP, expect=True,
+             note="피트 뒤 같은 모양의 실제 스플리터 손상 → 리포트 직후 콜 판정·대기"),
+        dict(name="tap_during_wait", lap=3, seg="A1", at=4.2, drop=DAMAGE_DROP, second=True, expect=False,
+             note="대기 중 두 번째 가벼운 접촉(첫 리포트 +16초, 타이어 멀쩡) → 이 충격의 점검 리포트가 "
+                  "먼저, 대기 윙 콜은 그 리포트의 쿨다운 뒤 (b60e335: 윙 콜이 먼저 나가 이 리포트를 잃음)"),
     ]),
 }
 NAME = "wing"
@@ -434,20 +462,25 @@ def compare(base, post):
     return low_median([low_median(base[b]) - low_median(by_post[b]) for b in matched]), matched
 
 
-def judge(snaps):
+def judge(snaps, report_wait=True, tyre_hold=True):
     """
     규칙대로 경우마다 기준·판정·콜 시각을 구한다 (기대값) — 엔진과 독립인 재구현. 같은 스냅샷
     값(반올림된 속도·높이)으로 같은 산술을 하므로 판정 하락이 바이트까지 같다. 점검 리포트와
-    damage_report 쿨다운(리포트 +20초 — 그 사이 윙 콜은 대기·재시도)도 따라간다.
+    damage_report 쿨다운(리포트 +20초 — 그 사이 윙 콜은 대기·재시도)도 따라간다. 대기 콜 재시도는
+    새 충격의 점검 리포트가 예약돼 있으면 쉬고(report_wait), 타이어 문제 중엔 붙든다(tyre_hold) —
+    둘 다 False면 b60e335 규칙 (대기 콜이 쿨다운 끝 틱에 바로 나가 다음 리포트를 잃을 수 있다).
+    calls = 수락된 콜 [(시각, dedup 키, 문장)] 시각순 — 점검 리포트 포함.
     예전 EMA 감지(첫 충격 순간 EMA 기준 ↔ 이후 EMA, 10mm)의 첫 콜 모양 시각도 같이 구한다.
     """
+    default = report_wait and tyre_hold
+    calls = []
     out, old, old_max = {}, {}, {}
     pre, base, base_n, post, cur = [], None, 0, None, None
     pending, warned = None, False
     prev_t, prev_v, prev_calm = None, 0.0, False
     report_due, last_report = None, None
     ema, old_base, old_cur, old_warned = None, None, None, False
-    last_hit = None
+    last_hit, last_hit_et = None, None
     pit_prev = False
     calm_decels, gated_decels = [], []
     for s in snaps:
@@ -476,9 +509,15 @@ def judge(snaps):
             if old_base is not None and not old_warned and old_base - ema >= DROP_M:
                 old[old_cur] = (t, old_base - ema)
                 old_warned = True
+        flat = any(w["flat"] or w["detached"] for w in p["wheels"])
         if pending is not None:
-            if last_report is None or not (t - last_report < REPORT_COOLDOWN):
+            if report_wait and report_due is not None:
+                pass                                # 새 충격의 점검 리포트가 먼저
+            elif tyre_hold and flat:
+                out[cur].setdefault("pending_hold_t", t)
+            elif last_report is None or not (t - last_report < REPORT_COOLDOWN):
                 out[cur]["call_t"] = t
+                calls.append((t, "wing_damage", SAY_WING.format(mm=pending * 1000)))
                 last_report, pending, warned = t, None, True
         elif (h > 0 and not p["in_pitlane"] and v >= SPEED_MIN and steady):
             sample = (int(math.floor((v - SPEED_MIN) / BIN_KMH)), h)
@@ -491,7 +530,6 @@ def judge(snaps):
                 if report_due is None:
                     r = compare(base, post)
                     if r is not None:
-                        flat = any(w["flat"] or w["detached"] for w in p["wheels"])
                         o = out[cur]
                         if flat:
                             o.setdefault("hold_t", t)
@@ -501,14 +539,17 @@ def judge(snaps):
                             post = None
                             if r[0] >= DROP_M:
                                 pending = r[0]
+                                o["pending_t"] = t
                                 if last_report is None or not (t - last_report < REPORT_COOLDOWN):
                                     o["call_t"] = t
+                                    calls.append((t, "wing_damage", SAY_WING.format(mm=r[0] * 1000)))
                                     last_report, pending, warned = t, None, True
         # 충격
         hit = next((c for ti, c in IMPACTS if abs(ti - t) < 1e-9), None)
         if hit is not None:
             name = last_hit = hit["name"]
-            out[name] = {"impact_t": t}
+            last_hit_et = p["last_impact_et"]
+            out[name] = {"impact_t": t, "pending_at_impact": pending is not None}
             if old_base is None:
                 old_base = ema
             old_cur = name
@@ -529,25 +570,49 @@ def judge(snaps):
             report_due = t + REPORT_DELAY
         if report_due is not None and t >= report_due:
             report_due = None
-            assert last_report is None or not (t - last_report < REPORT_COOLDOWN), \
-                f"{NAME}: 점검 리포트가 쿨다운에 걸림 t={t}"
-            last_report = t
             out[last_hit]["report_t"] = t
+            if last_report is not None and t - last_report < REPORT_COOLDOWN:
+                assert not default, f"{NAME}: 점검 리포트가 쿨다운에 걸림 t={t}"
+                out[last_hit]["report_lost"] = True     # 예전 규칙 — 이 리포트를 잃는다
+            else:
+                last_report = t
+                calls.append((t, f"dmg_report_{last_hit_et}",
+                              SAY_REPORT_BOX if flat else SAY_REPORT_MARKS))
     # 샘플 감속이 경계(4.9m/s²)에서 멀다 — 엔진 반올림 차이로 갈리지 않게
     assert max(calm_decels) <= DECEL_MAX * 0.5, max(calm_decels)
     assert min(gated_decels) >= DECEL_MAX * 1.2, min(gated_decels)
     for name, (t, d) in old.items():
         old[name] = (t, d, old_max[name])
-    return out, old
+    return out, old, calls
 
 
 def build():
     snaps = [snapshot(n) for n in range(tick(T_END) + 1)]
-    res, old = judge(snaps)
+    res, old, calls = judge(snaps)
+    reports = SCENARIOS[NAME].get("reports", False)
+    variants = {}
+    if reports:
+        # 대기 콜 규칙 하나씩 뺀 판정 — 각 규칙이 이 리플레이의 기대 콜을 바꿔야 한다
+        for label, kw in (("no_report_wait", dict(report_wait=False)),
+                          ("no_tyre_hold", dict(tyre_hold=False)),
+                          ("b60e335", dict(report_wait=False, tyre_hold=False))):
+            vres, _, vcalls = judge(snaps, **kw)
+            assert vcalls != calls, (NAME, label)
+            variants[label] = (vres, vcalls)
     events, cases = [], []
     for ti, c in IMPACTS:
         r = res[c["name"]]
-        if c.get("no_base"):
+        if c.get("second"):
+            # 대기 콜이 있는 동안의 두 번째 충격 — 판정 버퍼를 새로 열지 않고, 이 충격의 점검 리포트는
+            # 앞 리포트 쿨다운 밖(+12~20초 창)이라 나간다. 예전 규칙은 이 리포트를 잃는다
+            assert r["pending_at_impact"] and "judge_t" not in r, (c["name"], r)
+            assert abs(r["report_t"] - (ti + REPORT_DELAY)) < 1e-6 and not r.get("report_lost"), (c["name"], r)
+            prev_report = max(x["report_t"] for x in res.values()
+                              if x.get("report_t", math.inf) < ti)
+            assert prev_report + 12.0 <= ti < prev_report + REPORT_COOLDOWN, (c["name"], ti, prev_report)
+            assert variants["b60e335"][0][c["name"]].get("report_lost"), (c["name"], "b60e335")
+            call = False
+        elif c.get("no_base"):
             assert r.get("no_base") and r["pre_full_bins"] < MIN_BINS, (c["name"], r)
             call = False
         elif c.get("flat"):
@@ -558,6 +623,13 @@ def build():
             assert not r.get("no_base") and "judge_t" in r, (c["name"], r)
             assert len(r["bins"]) >= MIN_BINS and r["judge_t"] > r["report_t"], (c["name"], r)
             call = "call_t" in r
+            if c.get("held"):
+                # 콜 판정은 났지만(대기) 두 번째 충격의 펑크로 피트까지 붙든다
+                assert not call and "pending_t" in r and r["pending_hold_t"] >= r["pending_t"], (c["name"], r)
+                assert r["drop"] >= DROP_M * 1.3, (c["name"], r["drop"])
+            if reports and not c.get("second"):
+                # 판정이 리포트 쿨다운 안 — 콜은 대기로 시작한다
+                assert r["report_t"] <= r["pending_t"] < r["report_t"] + REPORT_COOLDOWN, (c["name"], r)
             if c["name"] == "splitter_damage":
                 # 리포트 대기 규칙이 실제로 쓰인다 — 대기만 없으면 리포트 전에 판정·콜했을 경우
                 assert r.get("ready_t", r["report_t"]) < r["report_t"], (c["name"], r)
@@ -566,7 +638,7 @@ def build():
                 mm = r["drop"] * 1000
                 assert r["drop"] >= DROP_M * 1.3 and abs(mm - math.floor(mm) - 0.5) > 0.05, (c["name"], mm)
                 assert abs(r["drop"] - c["drop"]) <= 0.003, (c["name"], r["drop"])
-            else:
+            elif not c.get("held"):
                 assert abs(r["drop"]) <= DROP_M * 0.3, (c["name"], r["drop"])
         assert call == c["expect"], (c["name"], r)
         if c["name"] == "healthy_tap":
@@ -575,7 +647,7 @@ def build():
                 ("healthy_tap: 예전 EMA 감지가 확실히 콜하는 모양이 아님", old.get(c["name"]))
         if c.get("static"):
             assert c["name"] not in old and r["drop"] == 0.0, (c["name"], r)
-        if call:
+        if call and not reports:
             events.append({
                 "t": round(r["call_t"], 2),
                 "type": "damage_report",
@@ -583,9 +655,13 @@ def build():
                 "message": SAY_WING.format(mm=r["drop"] * 1000),
             })
         case = {"name": c["name"], "impact_t": ti, "call": call, "note": c["note"]}
-        for k in ("report_t", "ready_t", "judge_t", "call_t", "hold_t", "n_post", "base_n", "pre_full_bins"):
+        for k in ("report_t", "ready_t", "judge_t", "call_t", "hold_t", "n_post", "base_n", "pre_full_bins") \
+                + (("pending_t", "pending_hold_t") if reports else ()):
             if k in r:
                 case[k] = r[k]
+        for label, (vres, _) in variants.items():
+            v = vres[c["name"]]
+            case[label] = {"call_t": v.get("call_t"), "report_lost": bool(v.get("report_lost"))}
         if "drop" in r:
             case["drop_mm"] = round(r["drop"] * 1000, 2)
             case["bins_kmh"] = [int(SPEED_MIN + b * BIN_KMH) for b in r["bins"]]
@@ -596,13 +672,21 @@ def build():
             case["old_max_drop_mm"] = round(old[c["name"]][2] * 1000, 2)
         cases.append(case)
 
+    keys = ["wing_damage"]
+    if reports:
+        # 점검 리포트까지 대조 — 대기 윙 콜과 같은 damage_report 쿨다운을 나눠 쓴다
+        assert sum(1 for _, k, _ in calls if k == "wing_damage") <= 1, calls
+        events = [{"t": round(t, 2), "type": "damage_report", "data": {}, "message": m}
+                  for t, _, m in calls]
+        keys += sorted({k for _, k, _ in calls if k != "wing_damage"}
+                       | {f"dmg_report_{ti}" for ti, _ in IMPACTS})
     sidecar = {
         "scenario": NAME,
         "note": "윙 콜 — 제동이 아닌(직전 두 틱 감속 ≤ 0.5g) 150km/h 이상 샘플의 프론트 윙 높이를 10km/h "
                 "속도 구간별로 첫 충격 전(301개) ↔ 충격 뒤 비교, 양쪽 5샘플 이상 구간 3개부터 판정, "
                 "구간별 중앙값 차의 중앙값 ≥ 10mm면 콜. 기준 부족이면 그 충격만, 타이어 펑크면 콜 없음",
         "types": ["damage_report"],
-        "keys": ["wing_damage"],
+        "keys": keys,
         "events": events,
         "cases": cases,
     }

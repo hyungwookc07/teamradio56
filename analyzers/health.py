@@ -432,6 +432,15 @@ class HealthAnalyzer:
         ))
         state.add_narrative(f"(점검) {message}")
 
+    def _tyre_trouble(self, p: dict) -> bool:
+        """
+        타이어 문제 — 펑크 경고(슬로우 펑처·점검 리포트의 공기압 누출) 또는 펑크/탈락 바퀴.
+        윙 높이 하락·조향 쏠림은 타이어 탓일 수 있고, 펑크·박스 콜이 우선이라 윙·얼라인 콜은
+        판정도 대기 콜 재시도도 붙든다 (피트 진입이 리셋). C# HealthAnalyzer.TyreTrouble.
+        """
+        wheels = (p.get("wheels") or [])[:4]
+        return bool(self._puncture_warned) or any(w.get("flat") or w.get("detached") for w in wheels)
+
     def _reset_wing(self) -> None:
         """윙 감시 상태 — 세션 리셋과 피트레인 진입(수리 가능)에서 처음부터."""
         self._wing_pre: list[tuple[int, float]] = []    # 기준 전 (구간, 높이) — 최근 301개
@@ -491,7 +500,17 @@ class HealthAnalyzer:
         speed = p.get("speed_kmh", 0.0) or 0.0
         steady = self._wing_calm(now, speed)
         if self._wing_pending is not None:
-            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등). 그 사이 새 충격이
+            # 오면 그 충격의 점검 리포트가 먼저 (같은 damage_report 쿨다운 — 대기 콜이 펑크·박스
+            # 리포트를 밀어내지 않게, 콜은 리포트 쿨다운 뒤 재시도). 타이어 문제 중엔 붙든다
+            if self._report_due is not None:
+                return
+            if self._tyre_trouble(p):
+                if not self._wing_tyre_logged:
+                    self._wing_tyre_logged = True
+                    log.info("윙 콜 대기 (충격 %.0f): 하락 %+.1fmm → hold-tyre (펑크/휠/공기압 누출 "
+                             "— 피트 진입까지)", self._wing_impact_mag, self._wing_pending * 1000)
+                return
             self._push_wing(self._wing_pending, state, bus)
             return
         h = p.get("front_wing_height")
@@ -516,8 +535,7 @@ class HealthAnalyzer:
             return
         drop, matched = res
         bins = ",".join(str(int(WING_SAMPLE_SPEED_KMH + b * WING_BIN_KMH)) for b in matched)
-        wheels = (p.get("wheels") or [])[:4]
-        if self._puncture_warned or any(w.get("flat") or w.get("detached") for w in wheels):
+        if self._tyre_trouble(p):
             # 높이 하락은 타이어 탓 — 슬로우 펑처/점검 리포트가 부른다. 샘플은 계속 모은다.
             if not self._wing_tyre_logged:
                 self._wing_tyre_logged = True
@@ -534,6 +552,7 @@ class HealthAnalyzer:
         if not call:
             return
         self._wing_pending = drop
+        self._wing_tyre_logged = False              # 대기 중 타이어 홀드 로그용으로 다시
         self._push_wing(drop, state, bus)
 
     def _push_wing(self, drop: float, state: SessionState, bus: EventBus) -> None:
@@ -592,7 +611,16 @@ class HealthAnalyzer:
         느끼기 전에(또는 느낀 것을 확증해서) 불러준다.
         """
         if self._align_pending is not None:
-            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+            # push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등). 새 충격의 점검
+            # 리포트가 먼저, 타이어 문제 중엔 붙든다 (윙 대기 콜과 같은 규칙)
+            if self._report_due is not None:
+                return
+            if self._tyre_trouble(p):
+                if not self._align_tyre_logged:
+                    self._align_tyre_logged = True
+                    log.info("얼라인 콜 대기 (충격 %.0f): call-%s → hold-tyre (펑크/휠/공기압 누출 "
+                             "— 피트 진입까지)", self._align_impact_mag, self._align_pending)
+                return
             self._push_alignment(self._align_pending, state, bus)
             return
         steer = p.get("steering")
@@ -620,8 +648,7 @@ class HealthAnalyzer:
             del self._steer_post[0]
         if len(self._steer_post) < STEER_JUDGE_SAMPLES:
             return
-        wheels = (p.get("wheels") or [])[:4]
-        if self._puncture_warned or any(w.get("flat") or w.get("detached") for w in wheels):
+        if self._tyre_trouble(p):
             # 쏠림은 타이어 탓 — 슬로우 펑처/점검 리포트가 부른다. 샘플은 계속 모은다.
             if not self._align_tyre_logged:
                 self._align_tyre_logged = True
@@ -647,6 +674,7 @@ class HealthAnalyzer:
         if decision is None:
             return
         self._align_pending = decision
+        self._align_tyre_logged = False             # 대기 중 타이어 홀드 로그용으로 다시
         self._push_alignment(decision, state, bus)
 
     def _push_alignment(self, decision: str, state: SessionState, bus: EventBus) -> None:

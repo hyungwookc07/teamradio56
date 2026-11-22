@@ -206,7 +206,9 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   healthy height drops with speed (aero load) and under brake dive, so a tap in a
   slow section followed by a long straight is not damage. Same baseline, flat-tyre
   and one-judgement-per-impact rules as alignment, and the call waits for the
-  impact's damage report
+  impact's damage report. A judged wing or alignment call that is still waiting
+  out the report cooldown lets a newer impact's damage report go first and is
+  held while a tyre is flat or losing pressure
 - [x] Fuel-save coaching — target-burn delta guidance in no-stop borderline
   situations
 - [x] Wet/dry crossover — tyre-switch decision trigger from track wetness

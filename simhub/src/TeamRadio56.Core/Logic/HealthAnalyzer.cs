@@ -522,6 +522,24 @@ namespace TeamRadio56.Core.Logic
         }
 
         /// <summary>
+        /// 타이어 문제 — 펑크 경고(슬로우 펑처·점검 리포트의 공기압 누출) 또는 펑크/탈락 바퀴.
+        /// 윙 높이 하락·조향 쏠림은 타이어 탓일 수 있고, 펑크·박스 콜이 우선이라 윙·얼라인 콜은
+        /// 판정도 대기 콜 재시도도 붙든다 (피트 진입이 리셋). 파이썬 _tyre_trouble.
+        /// </summary>
+        private bool TyreTrouble(PlayerInfo p)
+        {
+            if (_punctureWarned.Count > 0)
+                return true;
+            WheelInfo[] wheels = p.Wheels ?? new WheelInfo[0];
+            for (int i = 0; i < Math.Min(wheels.Length, 4); i++)
+            {
+                if (wheels[i].Flat || wheels[i].Detached)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// 기준 임계 이상 충격 — 기준이 아직 없으면 굳히고, 판정 버퍼를 새로 연다.
         /// 기준이 모자라면(5샘플 이상 구간 3개 미만) 이 충격만 판정하지 않고 기준 버퍼를 이 충격
         /// 뒤부터 새로 모은다 (다음 충격이 기준을 굳힐 수 있게 — 스틴트 전체를 끄지 않는다).
@@ -583,7 +601,22 @@ namespace TeamRadio56.Core.Logic
             bool steady = WingCalm(now, speed);
             if (_wingPending.HasValue)
             {
-                // push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+                // push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등). 그 사이 새 충격이
+                // 오면 그 충격의 점검 리포트가 먼저 (같은 damage_report 쿨다운 — 대기 콜이 펑크·박스
+                // 리포트를 밀어내지 않게, 콜은 리포트 쿨다운 뒤 재시도). 타이어 문제 중엔 붙든다
+                if (_reportDue.HasValue)
+                    return;
+                if (TyreTrouble(p))
+                {
+                    if (!_wingTyreLogged)
+                    {
+                        _wingTyreLogged = true;
+                        FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                            "윙 콜 대기 (충격 {0:F0}): 하락 {1}mm → hold-tyre (펑크/휠/공기압 누출 "
+                            + "— 피트 진입까지)", _wingImpactMag, SignedMm(_wingPending.Value)));
+                    }
+                    return;
+                }
                 PushWing(_wingPending.Value, state, bus);
                 return;
             }
@@ -617,14 +650,7 @@ namespace TeamRadio56.Core.Logic
             foreach (int b in matched)
                 names.Add(((int)(WingSampleSpeedKmh + b * WingBinKmh)).ToString(CultureInfo.InvariantCulture));
             string bins = string.Join(",", names);
-            bool tyre = _punctureWarned.Count > 0;
-            WheelInfo[] wheels = p.Wheels ?? new WheelInfo[0];
-            for (int i = 0; i < Math.Min(wheels.Length, 4); i++)
-            {
-                if (wheels[i].Flat || wheels[i].Detached)
-                    tyre = true;
-            }
-            if (tyre)
+            if (TyreTrouble(p))
             {
                 // 높이 하락은 타이어 탓 — 슬로우 펑처/점검 리포트가 부른다. 샘플은 계속 모은다.
                 if (!_wingTyreLogged)
@@ -647,6 +673,7 @@ namespace TeamRadio56.Core.Logic
             if (!call)
                 return;
             _wingPending = drop;
+            _wingTyreLogged = false;                 // 대기 중 타이어 홀드 로그용으로 다시
             PushWing(drop, state, bus);
         }
 
@@ -733,7 +760,21 @@ namespace TeamRadio56.Core.Logic
         {
             if (_alignPending != null)
             {
-                // push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등)
+                // push가 쿨다운으로 거절되면 다음 틱에 재시도 (점검 리포트 직후 등). 새 충격의 점검
+                // 리포트가 먼저, 타이어 문제 중엔 붙든다 (윙 대기 콜과 같은 규칙)
+                if (_reportDue.HasValue)
+                    return;
+                if (TyreTrouble(p))
+                {
+                    if (!_alignTyreLogged)
+                    {
+                        _alignTyreLogged = true;
+                        FileLog.Info(string.Format(CultureInfo.InvariantCulture,
+                            "얼라인 콜 대기 (충격 {0:F0}): call-{1} → hold-tyre (펑크/휠/공기압 누출 "
+                            + "— 피트 진입까지)", _alignImpactMag, _alignPending));
+                    }
+                    return;
+                }
                 PushAlignment(_alignPending, state, bus);
                 return;
             }
@@ -769,13 +810,7 @@ namespace TeamRadio56.Core.Logic
                 _steerPost.RemoveAt(0);
             if (_steerPost.Count < SteerJudgeSamples)
                 return;
-            bool tyre = _punctureWarned.Count > 0;
-            WheelInfo[] wheels = p.Wheels ?? new WheelInfo[0];
-            for (int i = 0; i < Math.Min(wheels.Length, 4); i++)
-            {
-                if (wheels[i].Flat || wheels[i].Detached)
-                    tyre = true;
-            }
+            bool tyre = TyreTrouble(p);
             double post = SteerMedian(_steerPost);
             double shift = post - _preImpactSteer.Value;
             if (tyre)
@@ -803,6 +838,7 @@ namespace TeamRadio56.Core.Logic
             if (decision == null)
                 return;
             _alignPending = decision;
+            _alignTyreLogged = false;            // 대기 중 타이어 홀드 로그용으로 다시
             PushAlignment(decision, state, bus);
         }
 

@@ -1,0 +1,156 @@
+{
+ "cases": [
+  {
+   "b60e335": {
+    "call_t": 156.0,
+    "report_lost": false
+   },
+   "base_n": 301,
+   "bins_kmh": [
+    250,
+    260,
+    270,
+    280
+   ],
+   "call": false,
+   "drop_mm": 14.9,
+   "impact_t": 128.0,
+   "judge_t": 136.2,
+   "n_post": 41,
+   "name": "damage_then_flat",
+   "no_report_wait": {
+    "call_t": null,
+    "report_lost": false
+   },
+   "no_tyre_hold": {
+    "call_t": 180.0,
+    "report_lost": false
+   },
+   "note": "메인 직선 접촉으로 실제 스플리터 손상(h0 −15mm) → 점검 리포트(자국뿐) 직후 콜 판정, 리포트 쿨다운에 걸려 대기. 대기 중 두 번째 충격이 우측 앞 펑크를 남김 → 대기 콜은 피트까지 붙든다 (펑크·박스 리포트가 우선, b60e335: 쿨다운 끝 틱에 윙 콜)",
+   "old_call_t": 133.8,
+   "old_max_drop_mm": 18.22,
+   "pending_hold_t": 152.0,
+   "pending_t": 136.2,
+   "pre_full_bins": 18,
+   "ready_t": 133.4,
+   "report_t": 136.0
+  },
+  {
+   "b60e335": {
+    "call_t": null,
+    "report_lost": true
+   },
+   "base_n": 301,
+   "call": false,
+   "impact_t": 152.0,
+   "name": "flat_during_wait",
+   "no_report_wait": {
+    "call_t": null,
+    "report_lost": false
+   },
+   "no_tyre_hold": {
+    "call_t": null,
+    "report_lost": false
+   },
+   "note": "대기 중 두 번째 충격(첫 리포트 +16초) + 우측 앞 펑크 → 이 충격의 점검 리포트 'Front right puncture. Prepare to box.'가 나간다 (b60e335: 대기 윙 콜이 쿨다운을 차지해 이 리포트를 잃음)",
+   "report_t": 160.0
+  },
+  {
+   "b60e335": {
+    "call_t": 397.2,
+    "report_lost": false
+   },
+   "base_n": 245,
+   "bins_kmh": [
+    270,
+    280,
+    290
+   ],
+   "call": true,
+   "call_t": 421.2,
+   "drop_mm": 15.0,
+   "impact_t": 369.2,
+   "judge_t": 378.8,
+   "n_post": 48,
+   "name": "damage_then_tap",
+   "no_report_wait": {
+    "call_t": 397.2,
+    "report_lost": false
+   },
+   "no_tyre_hold": {
+    "call_t": 421.2,
+    "report_lost": false
+   },
+   "note": "피트 뒤 같은 모양의 실제 스플리터 손상 → 리포트 직후 콜 판정·대기",
+   "old_call_t": 375.0,
+   "old_max_drop_mm": 18.24,
+   "pending_t": 378.8,
+   "pre_full_bins": 16,
+   "report_t": 377.2
+  },
+  {
+   "b60e335": {
+    "call_t": null,
+    "report_lost": true
+   },
+   "base_n": 245,
+   "call": false,
+   "impact_t": 393.2,
+   "name": "tap_during_wait",
+   "no_report_wait": {
+    "call_t": null,
+    "report_lost": true
+   },
+   "no_tyre_hold": {
+    "call_t": null,
+    "report_lost": false
+   },
+   "note": "대기 중 두 번째 가벼운 접촉(첫 리포트 +16초, 타이어 멀쩡) → 이 충격의 점검 리포트가 먼저, 대기 윙 콜은 그 리포트의 쿨다운 뒤 (b60e335: 윙 콜이 먼저 나가 이 리포트를 잃음)",
+   "report_t": 401.2
+  }
+ ],
+ "events": [
+  {
+   "data": {},
+   "message": "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on.",
+   "t": 136.0,
+   "type": "damage_report"
+  },
+  {
+   "data": {},
+   "message": "Check done. Front right puncture. Prepare to box.",
+   "t": 160.0,
+   "type": "damage_report"
+  },
+  {
+   "data": {},
+   "message": "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on.",
+   "t": 377.2,
+   "type": "damage_report"
+  },
+  {
+   "data": {},
+   "message": "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on.",
+   "t": 401.2,
+   "type": "damage_report"
+  },
+  {
+   "data": {},
+   "message": "Front aero down 15 millimetres. Splitter damage. Careful in the fast stuff. Repair call on pace.",
+   "t": 421.2,
+   "type": "damage_report"
+  }
+ ],
+ "keys": [
+  "wing_damage",
+  "dmg_report_128.0",
+  "dmg_report_152.0",
+  "dmg_report_369.2",
+  "dmg_report_393.2"
+ ],
+ "note": "윙 콜 — 제동이 아닌(직전 두 틱 감속 ≤ 0.5g) 150km/h 이상 샘플의 프론트 윙 높이를 10km/h 속도 구간별로 첫 충격 전(301개) ↔ 충격 뒤 비교, 양쪽 5샘플 이상 구간 3개부터 판정, 구간별 중앙값 차의 중앙값 ≥ 10mm면 콜. 기준 부족이면 그 충격만, 타이어 펑크면 콜 없음",
+ "scenario": "wing_report",
+ "types": [
+  "damage_report"
+ ]
+}
