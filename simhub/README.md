@@ -504,6 +504,11 @@ voice_lines/track_names_en.txt에 없으면 무전 체크로 연다; 미스면 �
 (`.truth.json`)과 마지막 랩·체커 콜, 남은 랩 트레이스(`--race-end-trace`, 모든 리플레이에서
 파이썬 ↔ C# 대조)를 tools/race_end_oracle.py가 대조한다
 (생성기 tools/make_race_end_replays.py, 게이트는 `--check`로 재생성 대조).
+`rival_pit`은 경쟁자 피트 콜 경우를 한 레이스에 모은 합성 리플레이다 — 포메이션·카운트다운
+중 피트, 처음 볼 때 이미 피트에 있는 차, 틱 공백, 순위 0, 진입 틱 순위 맞바뀜, 랩 다운 차,
+첫 랩·FCY 피트, 차고 순간이동은 침묵하고 그린/FCY 앞차 피트와 그린 중 바로 뒤차 피트만 콜한다.
+기대 콜(`.expect.json`)과 파이썬·C# 수락 콜을 각각 tools/expect_calls.py가 대조한다 — 두 엔진이
+같이 틀리면 파이썬 ↔ C# 대조만으로는 못 잡는다 (생성기 tools/make_rival_pit_replay.py, `--check`).
 `race_end_restart`는 같은 세션에서 ET만 되감아 두 번 달린다 — 러너는 상태가 리셋되면
 버스 대기열을 비운다(라이브 워커는 이전 레이스 콜을 진작 다 꺼냈다).
 C# 멘트 풀(`PhraseLines.Generated.cs`, en만)이 voice_lines와 같은지는

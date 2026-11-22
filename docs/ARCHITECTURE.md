@@ -92,6 +92,8 @@
 - `tools/make_test_replay.py`  합성 리플레이 생성 (시나리오별)
 - `tools/make_race_end_replays.py`  체커까지 가는 합성 리플레이 + 정답 사이드카 (`--check`)
 - `tools/race_end_oracle.py`  마지막 랩·체커 콜/남은 랩 트레이스를 정답·C#과 대조
+- `tools/make_rival_pit_replay.py`  경쟁자 피트 콜 경우를 모은 합성 리플레이 + 기대 콜 사이드카 (`--check`)
+- `tools/expect_calls.py`  수락 콜을 기대 콜 사이드카(`.expect.json`)와 대조 (파이썬·C# 각각)
 - `tools/diagnose.py`          실차 원시 값 덤프 (필드 부실 진단)
 - `tools/probe_rest.py`        REST 엔드포인트 수집 (스키마 확정용)
 - `tools/pregen_audio.py`      멘트 풀 전체 오디오 사전 합성

@@ -8,6 +8,8 @@
 #   4) 레이스 종료 오라클 — 남은 랩 트레이스 파이썬 ↔ C# 일치, race_end_* 리플레이는
 #      체커까지 가고 정답(.truth.json)과 마지막 랩·체커 콜까지 대조
 #      (tools/make_race_end_replays.py가 만들고 --check로 재생성 대조)
+#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit)는 수락 콜을 정답 목록과
+#      파이썬·C# 각각 대조 (tools/expect_calls.py; 생성기 tools/make_rival_pit_replay.py --check)
 #
 # C# 플러그인 무전은 영어 + kokoro 음성 팩 고정이라 파이썬 ↔ C# 대조는 en만 한다.
 # 파이썬 단독 앱의 한국어·edge 목소리는 파이썬 자체 검사(셀프테스트, ko 스모크)로만 돈다.
@@ -409,6 +411,10 @@ echo
 echo "▶ 레이스 종료 리플레이 재생성 대조"
 python3 tools/make_race_end_replays.py --check || fail=1
 
+echo
+echo "▶ 경쟁자 피트 리플레이 재생성 대조"
+python3 tools/make_rival_pit_replay.py --check || fail=1
+
 for replay in data/replays/*.jsonl.gz; do
     name=$(basename "$replay" .jsonl.gz)
     truth="data/replays/$name.truth.json"
@@ -421,6 +427,17 @@ for replay in data/replays/*.jsonl.gz; do
     if ! python3 tools/compare_calls.py \
         "$OUT/py_${name}_en.jsonl" "$OUT/cs_${name}_en.jsonl"; then
         fail=1
+    fi
+
+    # 기대 콜 — 두 엔진이 같이 틀려도 잡히게 생성기가 적은 정답과 직접 대조
+    expect="data/replays/$name.expect.json"
+    if [ -f "$expect" ]; then
+        echo
+        echo "▶ 기대 콜 대조: $name"
+        if ! python3 tools/expect_calls.py --expect "$expect" \
+            --calls "$OUT/py_${name}_en.jsonl" --calls "$OUT/cs_${name}_en.jsonl"; then
+            fail=1
+        fi
     fi
 
     # 남은 랩 트레이스 파이썬 ↔ C#, 정답이 있으면 마지막 랩·체커 콜까지
