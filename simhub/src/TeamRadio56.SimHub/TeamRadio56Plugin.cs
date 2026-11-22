@@ -50,7 +50,7 @@ namespace TeamRadio56.SimHub
     [PluginName("teamradio56")]
     public class TeamRadio56Plugin : IPlugin, IDataPlugin, IWPFSettingsV2
     {
-        public const string Version = "0.18.0-lite";
+        public const string Version = "0.19.0-lite";
 
         /// <summary>
         /// 플러그인이 무전 엔진을 실제로 돌리는 동안만 쥐는 이름 있는 뮤텍스.
