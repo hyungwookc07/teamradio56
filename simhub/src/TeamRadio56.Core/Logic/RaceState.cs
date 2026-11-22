@@ -60,6 +60,21 @@ namespace TeamRadio56.Core.Logic
             get { return SessionType.HasValue && SessionType.Value >= RaceSessionMin; }
         }
 
+        /// <summary>
+        /// 내 레이스가 끝났다 (체커 피니시 또는 DNF/DQ) — 체커 뒤 무전만 남기고 레이스 중 콜은
+        /// 끈다. 랩 분석기(Observe 뒤)용 (state.race_over).
+        /// </summary>
+        public bool RaceOver
+        {
+            get { return IsRace && (RaceEnd.Finished || RaceEnd.Out); }
+        }
+
+        /// <summary>틱 분석기용 — Observe 전에 돌므로 이번 틱의 피니시 플래그도 본다 (state.race_over_now).</summary>
+        public bool RaceOverNow(VehicleInfo me)
+        {
+            return RaceOver || (IsRace && me != null && me.FinishStatus != 0);
+        }
+
         public void Reset()
         {
             SessionType = null;

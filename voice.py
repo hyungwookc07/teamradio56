@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import string
 from collections import deque
 from typing import Callable, Optional
 
@@ -26,10 +27,13 @@ from messages import (msg, class_display, gap_slot, side_slot,
                       fuel_slot, laps_text, seconds_text,
                       is_ko, set_language, and_list, join_problems,
                       multi_names, penalty_text, split_sentences,
-                      wheel_name, zone_display, brief_length_text)
+                      wheel_name, zone_display, brief_length_text,
+                      variants, variant_keys, ordinal_word)
 from speech_domain import pit_window_ok
 
 log = logging.getLogger("voice")
+
+_FORMATTER = string.Formatter()
 
 # 페르소나 뒤에 붙는 고정 규칙. 페르소나+규칙은 바이트 단위로 불변이어야
 # prompt cache가 유지된다 — 시간/랩 번호 같은 가변 값을 여기 넣지 말 것.
@@ -373,12 +377,23 @@ class VoiceGenerator:
             pool = d.get("pool")
             return (pool, {"side": side_slot(d.get("side", ""))}) if pool else None
         if ev_type == T.RACE_END:
-            return "race_end", {"place": int(min(max(d.get("class_place", 1), 1), 8))}
+            # 실제 클래스 순위 그대로 (예전엔 8로 잘려 P12가 "P8"로 나갔다) — 등급 풀은
+            # race_end.finish_call이 정하고, 범위 밖 순위는 숫자 없는 race_end_plain
+            return (d.get("pool") or "race_end_plain",
+                    {"place": str(int(max(d.get("class_place", 1), 1))),
+                     "gained": str(int(d.get("gained", 0)))})
         if ev_type == T.POSITION_CHANGE:
             pool = d.get("pool")
             if not pool:
                 return None
-            return pool, {"place": int(min(max(d.get("class_place", 1), 1), 8))}
+            return pool, {"place": str(int(max(d.get("class_place", 1), 1)))}
+        if ev_type in (T.RACE_MILESTONE, T.COOLDOWN_LAP, T.POST_RACE_PIT):
+            # 마지막 랩(final_lap/final_lap_lead)과 체커 뒤 콜 — 분석기가 풀 지정
+            pool = d.get("pool")
+            return (pool, {}) if pool else None
+        if ev_type == T.RACE_SUMMARY:
+            pool = d.get("pool")
+            return (pool, {"nth": ordinal_word(int(d.get("rank", 0)))}) if pool else None
         return None
 
     def _render_pool(self, ev_type: str, d: dict, tone: str) -> Optional[str]:
@@ -423,7 +438,19 @@ class VoiceGenerator:
     def _render_position_change(self, d: dict, tone: str = "casual") -> Optional[str]:
         return self._render_pool(EventType.POSITION_CHANGE, d, tone)
 
+    def _render_cooldown_lap(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self._render_pool(EventType.COOLDOWN_LAP, d, tone)
+
+    def _render_race_summary(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self._render_pool(EventType.RACE_SUMMARY, d, tone)
+
+    def _render_post_race_pit(self, d: dict, tone: str = "casual") -> Optional[str]:
+        return self._render_pool(EventType.POST_RACE_PIT, d, tone)
+
     def _render_race_milestone(self, d: dict, tone: str = "casual") -> Optional[str]:
+        if d.get("pool"):
+            # 마지막 랩 — 변형 풀 (render_deterministic은 이 경우 부르지 않는다)
+            return self._render_pool(EventType.RACE_MILESTONE, d, tone)
         m = d.get("remaining_min")
         if m is None:
             return None
@@ -538,7 +565,20 @@ def render_deterministic(ev_type: str, data: dict,
     이 렌더러들은 self(풀/LLM)를 건드리지 않으므로 인스턴스 없이 호출한다."""
     if ev_type not in DETERMINISTIC_TYPES:
         return None
+    if ev_type == EventType.RACE_MILESTONE and data.get("pool"):
+        return None          # 마지막 랩은 변형 풀 (랜덤) — 'say' 대조 대상이 아니다
     return getattr(VoiceGenerator, f"_render_{ev_type}")(None, data, tone)
+
+
+# 분석기가 늘 casual 톤으로 내는 풀 — urgent 폴백 클립을 만들지 않는다 (마지막 랩·체커·
+# 체커 뒤 콜). 다른 풀은 예전처럼 두 톤 다 (톤이 하나뿐인 풀도 다른 톤으로 폴백해 말한다).
+# C# PregenTexts.CasualOnlyPools.
+CASUAL_ONLY_POOLS = frozenset((
+    "final_lap", "final_lap_lead", "race_end_win", "race_end_class_win", "race_end_podium",
+    "race_end_plain", "cooldown_lap", "cooldown_lap_traffic", "cooldown_lap_faster",
+    "race_summary_fastest", "race_summary_fastest_class", "race_summary_pace",
+    "race_summary_pace_class", "race_summary_debrief", "post_race_pit",
+))
 
 
 def iter_pregen_texts(pool: PhrasePool):
@@ -576,12 +616,27 @@ def iter_pregen_texts(pool: PhrasePool):
         "fcy_pit_open": [{}],
         "green_flag": [{}],
         "pit_limiter": [{}],
-        "race_end": [{"place": n} for n in range(1, 9)],
-        "position_up": [{"place": n} for n in range(1, 9)],
-        "position_down": [{"place": n} for n in range(1, 9)],
+        # 마지막 랩 · 체커 · 체커 뒤 — 숫자 없는(또는 몇 개뿐인) 풀은 통문장.
+        # 순위·계단 수가 들어가는 등급(race_end_gained 등)과 순위 변동은 문장 조립
+        # (_segment_pool_slots — 통문장으로 만들면 순위 57 × 계단 55로 폭발한다)
+        "final_lap": [{}],
+        "final_lap_lead": [{}],
+        "race_end_win": [{}],
+        "race_end_class_win": [{}],
+        "race_end_podium": [{"place": str(n)} for n in (2, 3)],
+        "race_end_plain": [{}],
+        "cooldown_lap": [{}],
+        "cooldown_lap_traffic": [{}],
+        "cooldown_lap_faster": [{}],
+        "race_summary_fastest": [{}],
+        "race_summary_fastest_class": [{}],
+        "race_summary_pace": [{"nth": ordinal_word(n)} for n in (2, 3)],
+        "race_summary_pace_class": [{"nth": ordinal_word(n)} for n in (2, 3)],
+        "race_summary_debrief": [{}],
+        "post_race_pit": [{}],
     }
     for pool_key, combos in slot_values.items():
-        for tone in ("casual", "urgent"):
+        for tone in (("casual",) if pool_key in CASUAL_ONLY_POOLS else ("casual", "urgent")):
             for phrase in pool.lines(pool_key, tone):
                 for slots in combos:
                     try:
@@ -620,7 +675,7 @@ def iter_composed_whole_texts():
             yield "casual", msg("rival_pit_base", rel=msg("rival_rel_" + rel), p=p) + tail
     for m in MILESTONES_MIN:
         yield "casual", render_deterministic("race_milestone", {"remaining_min": m})
-    for key in ("stint_brief", "final_lap", "pen_clear", "dmg_no_effect",
+    for key in ("stint_brief", "pen_clear", "dmg_no_effect",
                 "report_marks", "report_clean", "align_mild"):
         yield "casual", msg(key)
     for i in range(4):
@@ -651,17 +706,17 @@ from speech_domain import (SEG_GAPS, SEG_RATES, SEG_PACE,  # noqa: E402,F401
                            SEG_BRIEF_POS, SEG_BRIEF_TEMP, SEG_BRIEF_FUEL,
                            SEG_PIT_WINDOW, SEG_RIVAL_PIT, SEG_COACH,
                            SEG_LAPTIME_T10, SEG_STATUS_POS, SEG_STATUS_FUEL,
-                           SEG_STATUS_TYRES, COACH_SECTORS, load_track_names)
+                           SEG_STATUS_TYRES, COACH_SECTORS)
 
 # 음성 팩에 들어가는 문장 단계 (pregen/pack/CountMissing 기본값). C# PregenSentences.PackMaxTier
 PACK_TIERS = (1, 2, 3)
 
 
-def iter_pregen_sentences(tiers=PACK_TIERS, tracks=()):
+def iter_pregen_sentences(tiers=PACK_TIERS):
     """
     문장 단위 사전 생성 대상 (톤, 문장) — 실제 멘트를 msg()/헬퍼로 슬롯
     도메인 전체에 대해 렌더한 뒤 split_sentences로 쪼갠다 (중복 제거).
-    en 전용. tracks는 2단계(세션 브리핑)용. 3단계는 HUD 대체 리포트(랩타임·상황).
+    en 전용. 3단계는 HUD 대체 리포트(랩타임·상황).
     """
     if is_ko():
         return
@@ -677,11 +732,24 @@ def iter_pregen_sentences(tiers=PACK_TIERS, tracks=()):
         for tone, text in _tier1_messages():
             yield from emit(tone, text)
     if 2 in tiers:
-        for tone, text in _tier2_messages(tracks):
+        for tone, text in _tier2_messages():
             yield from emit(tone, text)
     if 3 in tiers:
         for tone, text in _tier3_messages():
             yield from emit(tone, text)
+
+
+# 문장 조립으로만 말하는 멘트 풀 — 풀의 모든 줄 × 슬롯 도메인을 렌더해 문장으로 쪼갠다
+# (1단계). 체커 콜 등급은 4위~60위(1~3위는 통문장), 올라온 계단은 2~56 (스타트 60위 →
+# 4위), 순위 변동은 1~60위. C# PregenSentences.SegmentPoolSlots.
+def _segment_pool_slots():
+    from speech_domain import SEG_FINISH_GAINED, SEG_FINISH_PLACE, SEG_STATUS_POS
+    yield "race_end_gained", [{"place": str(p), "gained": str(g)}
+                              for p in SEG_FINISH_PLACE for g in SEG_FINISH_GAINED]
+    for key in ("race_end_held", "race_end_lost", "race_end_result"):
+        yield key, [{"place": str(p)} for p in SEG_FINISH_PLACE]
+    for key in ("position_up", "position_down"):
+        yield key, [{"place": str(p)} for p in SEG_STATUS_POS]
 
 
 def _tier1_messages():
@@ -752,9 +820,24 @@ def _tier1_messages():
         tail = msg("rival_pit_undercut") if rel == "behind" else msg("rival_pit_gap")
         for p in SEG_RIVAL_PIT:
             yield "casual", msg("rival_pit_base", rel=msg("rival_rel_" + rel), p=p) + tail
+    # 체커 콜 등급·순위 변동 — 풀 줄 × 순위(·계단) 도메인 (en 풀 고정)
+    pool = PhrasePool(lines_file("en"))
+    for key, combos in _segment_pool_slots():
+        for tone in ("casual", "urgent"):
+            for phrase in (pool.pools.get(key) or {}).get(tone) or []:
+                for slots in combos:
+                    yield tone, phrase.format(**slots)
 
 
-def _tier2_messages(tracks=()):
+# 브리핑 변형 슬롯 → 사전 생성 도메인 (briefing.briefing_parts가 넣는 값)
+def _brief_slot_domain(name: str):
+    if name == "length":
+        return sorted({brief_length_text(m) for m in SEG_BRIEF_MINUTES},
+                      key=lambda x: x)
+    return {"cp": SEG_BRIEF_POS, "t": SEG_BRIEF_TEMP, "f": SEG_BRIEF_FUEL}[name]
+
+
+def _tier2_messages():
     """2단계 도메인의 전체 멘트 (분할 전)."""
     # 차량 상태 — health (윙/브레이크/수리 판단)
     for mm in SEG_WING_MM:
@@ -768,29 +851,21 @@ def _tier2_messages(tracks=()):
     for target in SEG_FUEL_TARGET:
         for d in SEG_FUEL_SAVE:
             yield "casual", msg("fuel_save", target=target, delta=d)
-    # 세션 브리핑 — briefing.compose_session_briefing (트랙 이름은 목록 파일)
-    for kind_key in ("kind_race", "kind_warmup", "kind_quali", "kind_practice"):
-        kind = msg(kind_key)
-        yield "casual", msg("brief_radio", kind=kind)
-        for track in tracks:
-            yield "casual", msg("brief_track", track=track, kind=kind)
-    for m in SEG_BRIEF_MINUTES:
-        length = brief_length_text(m)
-        yield "casual", msg("brief_len_remaining", length=length)
-        yield "casual", msg("brief_len_long", length=length)
+    # 세션 브리핑 — briefing.briefing_parts: 변형 그룹마다 모든 변형 × 슬롯 도메인
+    # (슬롯은 그룹당 하나 — {length}/{cp}/{t:.0f}/{f:.0f}, 없으면 그대로)
+    for key in variant_keys():
+        for tpl in variants(key):
+            names = [f[1].split(":")[0] for f in _FORMATTER.parse(tpl) if f[1]]
+            if not names:
+                yield "casual", tpl
+                continue
+            (name,) = names
+            for x in _brief_slot_domain(name):
+                yield "casual", tpl.format(**{name: x})
     for n in SEG_BRIEF_LAPS:
         yield "casual", msg("brief_lap") if n == 1 else msg("brief_laps", n=n)
     for n in SEG_BRIEF_CARS:
-        for cp in SEG_BRIEF_POS:
-            yield "casual", msg("brief_grid", cp=cp, n=n)
-            yield "casual", msg("brief_grid_mid", cp=cp, n=n)
-    for t in SEG_BRIEF_TEMP:
-        yield "casual", msg("brief_temp", t=t)
-    for f in SEG_BRIEF_FUEL:
-        yield "casual", msg("brief_fuel", f=f)
-    for key in ("brief_rain", "brief_formation", "brief_start_spotter",
-                "brief_carry_on", "brief_calm", "brief_out"):
-        yield "casual", msg(key)
+        yield "casual", msg("brief_cars", n=n)
     # 트레이닝 섹터 피드백 — training.LapCoach.feedback_text
     for n in COACH_SECTORS:
         for d in SEG_COACH:

@@ -272,7 +272,6 @@ _T = {
         # racecontrol
         "sector_yellow": "Yellow in sector {n}. No overtaking, be ready to lift.",
         "pen_clear": "Penalty served. Back to your race.",
-        "final_lap": "Last lap. Bring it home.",
         "penalty_head": "Penalty — {kind}",
         "penalty_advice_drive-through": "Serve it next lap. Mind the limiter.",
         "penalty_advice_stop-and-go": "Hold the stop time in the box. Stay calm.",
@@ -329,30 +328,15 @@ _T = {
         "status_fuel": "Fuel {n}.",
         "status_tyres": "Tyres {n}.",
         "status_tyres_good": "Tyres good.",
-        # 세션 브리핑 (main)
-        "kind_race": "Race", "kind_warmup": "Warmup",
-        "kind_quali": "Qualifying", "kind_practice": "Practice",
-        "brief_track": "{track}. {kind} session.",
-        "brief_radio": "Radio check. {kind} session.",
+        # 세션 브리핑 (briefing.py) — 문장 슬롯마다 변형은 _V 표, 여기는 변형 없는 조각만
         "brief_hours": "{h} hour",
         "brief_hours_plural": "{h} hours",
         "brief_hours_half": "{h} and a half hours",
         "brief_minute": "1 minute",
         "brief_minutes": "{m} minutes",
-        "brief_len_remaining": "{length} remaining.",
-        "brief_len_long": "{length} long.",
         "brief_lap": "1 lap.",
         "brief_laps": "{n} laps.",
-        "brief_grid": "{n} cars in class. We start P{cp}.",
-        "brief_grid_mid": "{n} cars in class. We're P{cp}.",
-        "brief_rain": "It's raining, watch the grip.",
-        "brief_temp": "Track {t:.0f} degrees.",
-        "brief_fuel": "Fuel {f:.0f} litres.",
-        "brief_formation": "Formation lap — hold your slot, I'll call the green.",
-        "brief_start_spotter": "Through the start it's left and right calls only.",
-        "brief_carry_on": "Carry on.",
-        "brief_calm": "Calm first lap.",
-        "brief_out": "Out when you're ready.",
+        "brief_cars": "{n} cars in class.",
         # 렌더러 폴백 (voice.py)
         "milestone_hours": "{h} hour{s} to go. On plan.",
         "milestone_minutes": "{m} minutes to go. Rechecking fuel and tyres.",
@@ -399,7 +383,6 @@ _T = {
         "multi_n": "{name} {n}대",
         "sector_yellow": "섹터{n} 옐로. 추월 금지, 감속 준비.",
         "pen_clear": "페널티 클리어. 다시 니 레이스.",
-        "final_lap": "마지막 랩. 이대로 가져오자.",
         "penalty_head": "페널티 — {kind}",
         "penalty_advice_drive-through": "다음 랩 피트 통과. 리미터 주의.",
         "penalty_advice_stop-and-go": "박스 정지 시간 준수. 침착하게.",
@@ -447,29 +430,14 @@ _T = {
         "status_fuel": "연료 {n}.",
         "status_tyres": "타이어 {n}.",
         "status_tyres_good": "타이어 아직 좋아.",
-        "kind_race": "레이스", "kind_warmup": "웜업",
-        "kind_quali": "퀄리", "kind_practice": "연습",
-        "brief_track": "{track}, {kind} 세션이야.",
-        "brief_radio": "무전 체크. {kind} 세션이야.",
         "brief_hours": "{h}시간",
         "brief_hours_plural": "{h}시간",
         "brief_hours_half": "{h}시간 반",
         "brief_minute": "1분",
         "brief_minutes": "{m}분",
-        "brief_len_remaining": "남은 시간 {length}.",
-        "brief_len_long": "{length}짜리.",
         "brief_lap": "1랩짜리.",
         "brief_laps": "{n}랩짜리.",
-        "brief_grid": "우리 클래스 {n}대 중 P{cp} 스타트.",
-        "brief_grid_mid": "우리 클래스 {n}대 중 P{cp}.",
-        "brief_rain": "비 오고 있어, 노면 조심.",
-        "brief_temp": "노면 {t:.0f}도.",
-        "brief_fuel": "연료 {f:.0f}리터.",
-        "brief_formation": "포메이션 랩 — 자리 지키고, 그린은 내가 부른다.",
-        "brief_start_spotter": "스타트 구간은 좌우 콜 위주로 간다.",
-        "brief_carry_on": "이대로 간다.",
-        "brief_calm": "첫 랩 침착하게.",
-        "brief_out": "준비되면 나가자.",
+        "brief_cars": "우리 클래스 {n}대.",
         "milestone_hours": "남은 시간 {h}시간{s}. 계획대로.",
         "milestone_minutes": "{m}분 남았어. 연료, 타이어 재계산 중.",
         "pit_window": "피트 윈도우 오픈. 늦어도 {n} 안에 박스.",
@@ -492,3 +460,214 @@ _T = {
         "gap_ahead_holding": "앞차 {gap}. 갭 유지. 리듬 그대로.",
     },
 }
+
+
+# -- 결정적 변형 (세션 브리핑) ---------------------------------------------------
+# 문장 슬롯마다 변형 여러 개 — 고르는 건 랜덤이 아니라 스냅샷 값으로 만든 시드의 해시라
+# 파이썬과 C#(Messages.Variant)이 같은 문장을 고르고, 리플레이 대조가 문장 단위로 된다.
+# 시드에 세션 시계·노면 온도·연료가 들어가 같은 트랙·같은 설정이어도 세션마다 달라진다.
+# 변형을 고치면 C# Messages.Variants도 같이 고치고 음성 팩을 다시 렌더한다 (세그먼트).
+# ko 그룹이 없으면 en으로 폴백한다 (msg와 같은 규칙).
+
+_V = {
+    "en": {
+        # 여는 말 — 트랙 이름 대신 항상 무전 체크 (세션 종류 × 시작/중간 합류)
+        "brief_open_practice": (
+            "Radio check. Practice session, we're all set.",
+            "Radio check, one two. This is practice.",
+            "Radio check. Practice is green, the car's yours.",
+            "Radio check. We're in practice.",
+            "Radio check. Practice, let's get some laps in.",
+        ),
+        "brief_open_practice_mid": (
+            "Radio check. Practice is running, I'm with you.",
+            "Radio check. Picking you up mid-session.",
+            "Radio check, one two. Practice still live.",
+        ),
+        "brief_open_quali": (
+            "Radio check. Qualifying session.",
+            "Radio check. Qualifying, here we go.",
+            "Radio check, one two. This is qualifying.",
+            "Radio check. Qualifying, time to show the pace.",
+            "Radio check. Qualifying is live.",
+        ),
+        "brief_open_quali_mid": (
+            "Radio check. Qualifying is running, I'm with you.",
+            "Radio check. Picking you up mid-qualifying.",
+            "Radio check, one two. Qualifying still live.",
+        ),
+        "brief_open_warmup": (
+            "Radio check. Warm-up session.",
+            "Radio check. Warm-up, last look before the race.",
+            "Radio check, one two. This is warm-up.",
+            "Radio check. Short warm-up, nothing fancy.",
+        ),
+        "brief_open_warmup_mid": (
+            "Radio check. Warm-up is running, I'm with you.",
+            "Radio check, one two. Warm-up still live.",
+            "Radio check. Picking you up in warm-up.",
+        ),
+        "brief_open_race": (
+            "Radio check. Race session.",
+            "Radio check, one two. This is the race.",
+            "Radio check. Race day, here we go.",
+            "Radio check. Race time.",
+            "Radio check. Race on, I'm with you all the way.",
+        ),
+        "brief_open_race_mid": (
+            "Radio check. Race is on, I'm with you.",
+            "Radio check. Picking you up mid-race.",
+            "Radio check, one two. Race still running.",
+            "Radio check. Back on the radio, race is live.",
+        ),
+        # 숫자 슬롯 — 변형마다 도메인 전체가 세그먼트로 들어가므로 2~3개만
+        "brief_len_long": ("{length} long.", "{length} on the clock."),
+        "brief_len_remaining": ("{length} remaining.", "{length} to go."),
+        "brief_grid": ("We start P{cp}.", "Starting P{cp}."),
+        "brief_grid_mid": ("We're P{cp}.", "Running P{cp}."),
+        "brief_temp": ("Track {t:.0f} degrees.", "Track temp {t:.0f}.",
+                       "Track's at {t:.0f} degrees."),
+        "brief_fuel": ("Fuel {f:.0f} litres.", "{f:.0f} litres on board."),
+        "brief_rain": (
+            "It's raining, watch the grip.",
+            "Wet out there, grip will be low.",
+            "Rain falling, be gentle early on.",
+        ),
+        # 연습 — 빌드업 런 계획
+        "brief_plan_practice": (
+            "Build it up over a few laps, no need to push yet.",
+            "Bring the tyres in gently, then we start the run.",
+            "Install lap first, then build the pace.",
+            "Settle in, find a rhythm, then tell me about the balance.",
+            "Easy first lap, then we go to work.",
+        ),
+        # 퀄리 — 아웃랩 공간 확보, 트랙 리미트, 마무리 (연료는 말하지 않는다)
+        "brief_gap_quali": (
+            "Find a gap on the out lap, we want clear air.",
+            "Use the out lap to make some space.",
+            "Clear air is everything. Back off if you need to.",
+            "Don't start a lap stuck behind someone. Make a gap first.",
+            "Out lap is about space and tyre temperature.",
+        ),
+        "brief_limits_quali": (
+            "Mind the track limits, we can't afford a deleted lap.",
+            "Four wheels inside the lines, no deleted laps.",
+            "Track limits are being watched. Keep it tidy.",
+            "Stay inside the white lines, a deleted lap costs us everything.",
+        ),
+        "brief_close_quali": (
+            "Make it count.",
+            "One clean lap, that's all we need.",
+            "Go and get it.",
+            "Clean and committed. Off you go.",
+            "Deep breath, then go for it.",
+        ),
+        # 웜업 — 차 점검
+        "brief_plan_warmup": (
+            "Just check the car. Brakes, tyres, balance.",
+            "Systems check before the race, no heroics.",
+            "Feel for the car, save the effort for the race.",
+            "Couple of laps to make sure everything's working.",
+        ),
+        "brief_close_out": (
+            "Out when you're ready.",
+            "Pit exit is yours whenever you're ready.",
+            "Off you go when you're happy.",
+            "Car's ready when you are.",
+            "Head out when you're set.",
+        ),
+        # 레이스 스타트 — 포메이션(타이어·브레이크 온도, 자리 지키기, 그린 콜), 스포터 예고, 첫 랩
+        "brief_formation": (
+            "Formation lap, get heat in the tyres and brakes. Hold your slot, I'll call the green.",
+            "On the formation lap, keep the tyres and brakes warm. "
+            "Stay in your slot, the green comes from me.",
+            "Formation lap. Temperature in the tyres, hold position. I'll call the green.",
+            "Rolling out for the formation lap. Brakes and tyres up to temp, hold your place. "
+            "I'll call it when it's green.",
+            "Formation lap, warm everything up. Keep your slot, I'll call the green.",
+        ),
+        "brief_start_spotter": (
+            "Through the start it's left and right calls only.",
+            "Into turn one I'll give you side calls only.",
+            "At the start, just left and right from me.",
+        ),
+        "brief_close_race": (
+            "Calm first lap.",
+            "Stay out of trouble in turn one.",
+            "Keep your nose clean on lap one.",
+            "Patience on the opening lap.",
+            "No heroes into turn one.",
+        ),
+        "brief_close_mid": (
+            "Carry on.",
+            "Carry on with the plan.",
+            "Keep doing what you're doing.",
+            "Head down, carry on.",
+        ),
+    },
+    "ko": {
+        "brief_open_practice": ("무전 체크. 연습 세션이야.", "무전 체크. 연습이야, 랩 쌓아 보자."),
+        "brief_open_practice_mid": ("무전 체크. 연습 진행 중, 같이 간다.",),
+        "brief_open_quali": ("무전 체크. 퀄리 세션이야.", "무전 체크. 퀄리, 페이스 보여 줄 시간."),
+        "brief_open_quali_mid": ("무전 체크. 퀄리 진행 중, 같이 간다.",),
+        "brief_open_warmup": ("무전 체크. 웜업 세션이야.", "무전 체크. 웜업, 레이스 전 마지막 점검."),
+        "brief_open_warmup_mid": ("무전 체크. 웜업 진행 중, 같이 간다.",),
+        "brief_open_race": ("무전 체크. 레이스 세션이야.", "무전 체크. 레이스 간다."),
+        "brief_open_race_mid": ("무전 체크. 레이스 진행 중, 같이 간다.",),
+        "brief_len_long": ("{length}짜리.",),
+        "brief_len_remaining": ("남은 시간 {length}.",),
+        "brief_grid": ("P{cp} 스타트.",),
+        "brief_grid_mid": ("지금 P{cp}.",),
+        "brief_temp": ("노면 {t:.0f}도.",),
+        "brief_fuel": ("연료 {f:.0f}리터.",),
+        "brief_rain": ("비 오고 있어, 노면 조심.",),
+        "brief_plan_practice": ("몇 랩에 걸쳐 끌어올리자, 아직 밀 필요 없어.",),
+        "brief_gap_quali": ("아웃랩에서 앞뒤 공간 만들어.", "클리어 에어가 전부야, 필요하면 물러서."),
+        "brief_limits_quali": ("트랙 리미트 조심, 랩 삭제되면 끝이야.",),
+        "brief_close_quali": ("한 랩만 깔끔하게.", "가자, 해내자."),
+        "brief_plan_warmup": ("차만 점검하자. 브레이크, 타이어, 밸런스.",),
+        "brief_close_out": ("준비되면 나가자.",),
+        "brief_formation": ("포메이션 랩, 타이어랑 브레이크 데워. 자리 지키고, 그린은 내가 부른다.",),
+        "brief_start_spotter": ("스타트 구간은 좌우 콜 위주로 간다.",),
+        "brief_close_race": ("첫 랩 침착하게.", "1코너 사고만 피하자."),
+        "brief_close_mid": ("이대로 간다.",),
+    },
+}
+
+
+def variants(key: str) -> tuple:
+    """변형 목록 — 현재 언어에 없으면 en (C# Messages.VariantTemplates)."""
+    vs = (_V.get(LANG) or {}).get(key)
+    return vs if vs else _V["en"][key]
+
+
+def variant_keys() -> tuple:
+    """en 변형 그룹 키 전체 (사전 생성 열거용, 정의 순서)."""
+    return tuple(_V["en"])
+
+
+def fnv1a32(text: str) -> int:
+    """FNV-1a 32비트 (UTF-8 바이트) — C# Messages.Fnv1a32와 같은 값.
+    파이썬 hash()는 실행마다 바뀌고 C#과 다르므로 변형 선택에 쓰지 않는다."""
+    h = 0x811C9DC5
+    for b in text.encode("utf-8"):
+        h ^= b
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+def variant_index(key: str, seed: str) -> int:
+    """시드로 고른 변형 번호 — 슬롯(그룹 키)마다 따로 해시해 서로 엮이지 않게."""
+    return fnv1a32(f"{seed}|{key}") % len(variants(key))
+
+
+def variant(key: str, seed: str, **kw) -> str:
+    tpl = variants(key)[variant_index(key, seed)]
+    return tpl.format(**kw) if kw else tpl
+
+
+def ordinal_word(n: int) -> str:
+    """레이스 요약의 {nth} 슬롯 — 2·3만 말한다 (C# Messages.OrdinalWord)."""
+    if LANG == "ko":
+        return {2: "2위", 3: "3위"}.get(n, "")
+    return {2: "second", 3: "third"}.get(n, "")

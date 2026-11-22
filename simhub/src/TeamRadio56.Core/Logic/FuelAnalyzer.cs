@@ -79,8 +79,8 @@ namespace TeamRadio56.Core.Logic
             if (st == null)
                 return null;
             object left = st["race_laps_left"];
-            if (left != null && (int)left == 0)
-                return st;                   // 체커 받은 뒤 연료 콜 무의미
+            if ((left != null && (int)left == 0) || state.RaceOver)
+                return st;                   // 체커(또는 DNF) 뒤 연료 콜 무의미
 
             double fuelLaps = (double)st["fuel_laps"];
             if (fuelLaps <= _criticalLaps)

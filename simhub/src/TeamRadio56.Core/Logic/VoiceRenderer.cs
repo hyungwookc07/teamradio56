@@ -55,6 +55,9 @@ namespace TeamRadio56.Core.Logic
             if (!string.IsNullOrEmpty(ev.Message)
                 || Array.IndexOf(DeterministicTypes, ev.Type) < 0)
                 return null;
+            // 마지막 랩은 변형 풀 (랜덤) — 'say' 대조 대상이 아니다 (voice.render_deterministic)
+            if (ev.Type == EventTypes.RaceMilestone && GetStr(ev.Data, "pool").Length > 0)
+                return null;
             return Render(ev);
         }
 
@@ -241,16 +244,44 @@ namespace TeamRadio56.Core.Logic
                     };
                     return key.Length > 0;
                 case EventTypes.RaceEnd:
-                case EventTypes.PositionChange:
                 {
-                    key = ev.Type == EventTypes.RaceEnd ? "race_end" : GetStr(d, "pool");
-                    int place = Clamp(GetInt(d, "class_place", 1), 1, 8);
+                    // 실제 클래스 순위 그대로 (예전엔 8로 잘려 P12가 "P8"로 나갔다) — 등급 풀은
+                    // RaceEnd.FinishCall이 정하고, 범위 밖 순위는 숫자 없는 race_end_plain
+                    key = GetStr(d, "pool");
+                    if (key.Length == 0)
+                        key = "race_end_plain";
                     slots = new Dictionary<string, string>
                     {
-                        { "place", place.ToString(CultureInfo.InvariantCulture) },
+                        { "place", Math.Max(GetInt(d, "class_place", 1), 1)
+                            .ToString(CultureInfo.InvariantCulture) },
+                        { "gained", GetInt(d, "gained", 0).ToString(CultureInfo.InvariantCulture) },
+                    };
+                    return true;
+                }
+                case EventTypes.PositionChange:
+                {
+                    key = GetStr(d, "pool");
+                    slots = new Dictionary<string, string>
+                    {
+                        { "place", Math.Max(GetInt(d, "class_place", 1), 1)
+                            .ToString(CultureInfo.InvariantCulture) },
                     };
                     return key.Length > 0;
                 }
+                case EventTypes.RaceMilestone:
+                case EventTypes.CooldownLap:
+                case EventTypes.PostRacePit:
+                    // 마지막 랩(final_lap/final_lap_lead)과 체커 뒤 콜 — 분석기가 풀 지정
+                    key = GetStr(d, "pool");
+                    slots = new Dictionary<string, string>();
+                    return key.Length > 0;
+                case EventTypes.RaceSummary:
+                    key = GetStr(d, "pool");
+                    slots = new Dictionary<string, string>
+                    {
+                        { "nth", Messages.OrdinalWord(GetInt(d, "rank", 0)) },
+                    };
+                    return key.Length > 0;
                 default:
                     return false;
             }
@@ -388,13 +419,29 @@ namespace TeamRadio56.Core.Logic
             Add(slotValues, "fcy_pit_open", Empty());
             Add(slotValues, "green_flag", Empty());
             Add(slotValues, "pit_limiter", Empty());
-            Add(slotValues, "race_end", Range("place", 1, 8));
-            Add(slotValues, "position_up", Range("place", 1, 8));
-            Add(slotValues, "position_down", Range("place", 1, 8));
+            // 마지막 랩 · 체커 · 체커 뒤 — 숫자 없는(또는 몇 개뿐인) 풀은 통문장.
+            // 순위·계단 수가 들어가는 등급과 순위 변동은 문장 조립 (PregenSentences.SegmentPoolSlots)
+            Add(slotValues, "final_lap", Empty());
+            Add(slotValues, "final_lap_lead", Empty());
+            Add(slotValues, "race_end_win", Empty());
+            Add(slotValues, "race_end_class_win", Empty());
+            Add(slotValues, "race_end_podium", Range("place", 2, 3));
+            Add(slotValues, "race_end_plain", Empty());
+            Add(slotValues, "cooldown_lap", Empty());
+            Add(slotValues, "cooldown_lap_traffic", Empty());
+            Add(slotValues, "cooldown_lap_faster", Empty());
+            Add(slotValues, "race_summary_fastest", Empty());
+            Add(slotValues, "race_summary_fastest_class", Empty());
+            Add(slotValues, "race_summary_pace", Nth());
+            Add(slotValues, "race_summary_pace_class", Nth());
+            Add(slotValues, "race_summary_debrief", Empty());
+            Add(slotValues, "post_race_pit", Empty());
 
             foreach (KeyValuePair<string, List<Dictionary<string, string>>> entry in slotValues)
             {
-                foreach (string tone in new[] { "casual", "urgent" })
+                string[] tones = Array.IndexOf(CasualOnlyPools, entry.Key) >= 0
+                    ? new[] { "casual" } : new[] { "casual", "urgent" };
+                foreach (string tone in tones)
                 {
                     foreach (string phrase in pool.Lines(entry.Key, tone))
                     {
@@ -412,6 +459,27 @@ namespace TeamRadio56.Core.Logic
             }
             foreach (KeyValuePair<string, string> item in ComposedWhole())
                 yield return item;
+        }
+
+        /// <summary>
+        /// 분석기가 늘 casual 톤으로 내는 풀 — urgent 폴백 클립을 만들지 않는다
+        /// (voice.CASUAL_ONLY_POOLS).
+        /// </summary>
+        internal static readonly string[] CasualOnlyPools =
+        {
+            "final_lap", "final_lap_lead", "race_end_win", "race_end_class_win", "race_end_podium",
+            "race_end_plain", "cooldown_lap", "cooldown_lap_traffic", "cooldown_lap_faster",
+            "race_summary_fastest", "race_summary_fastest_class", "race_summary_pace",
+            "race_summary_pace_class", "race_summary_debrief", "post_race_pit",
+        };
+
+        private static List<Dictionary<string, string>> Nth()
+        {
+            return new List<Dictionary<string, string>>
+            {
+                new Dictionary<string, string> { { "nth", Messages.OrdinalWord(2) } },
+                new Dictionary<string, string> { { "nth", Messages.OrdinalWord(3) } },
+            };
         }
 
         // 페널티 콜 열거 — RaceControlAnalyzer.ParsePenalty가 내는 값 전체
@@ -452,7 +520,7 @@ namespace TeamRadio56.Core.Logic
                     Data = new Dictionary<string, object> { { "remaining_min", m } },
                 }));
             }
-            foreach (string key in new[] { "stint_brief", "final_lap", "pen_clear",
+            foreach (string key in new[] { "stint_brief", "pen_clear",
                                            "dmg_no_effect", "report_marks",
                                            "report_clean", "align_mild" })
                 yield return Casual(Messages.Get(key));
@@ -586,11 +654,10 @@ namespace TeamRadio56.Core.Logic
         public const int PackMaxTier = 3;
 
         /// <summary>
-        /// maxTier 이하 단계의 (톤, 문장). tracks는 2단계(세션 브리핑)용.
-        /// 3단계는 HUD 대체 리포트(랩타임·상황).
+        /// maxTier 이하 단계의 (톤, 문장). 3단계는 HUD 대체 리포트(랩타임·상황).
         /// </summary>
         public static IEnumerable<KeyValuePair<string, string>> Enumerate(
-            int maxTier = PackMaxTier, IEnumerable<string> tracks = null)
+            int maxTier = PackMaxTier)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);
             if (maxTier >= 1)
@@ -606,7 +673,7 @@ namespace TeamRadio56.Core.Logic
             }
             if (maxTier >= 2)
             {
-                foreach (KeyValuePair<string, string> m in Tier2Messages(tracks))
+                foreach (KeyValuePair<string, string> m in Tier2Messages())
                 {
                     foreach (string s in Messages.SplitSentences(m.Value))
                     {
@@ -626,19 +693,6 @@ namespace TeamRadio56.Core.Logic
                     }
                 }
             }
-        }
-
-        /// <summary>트랙 이름 목록 파일 — 한 줄에 하나, 빈 줄과 '#' 주석은 무시.</summary>
-        public static List<string> LoadTracks(string path)
-        {
-            var list = new List<string>();
-            foreach (string line in System.IO.File.ReadAllLines(path, System.Text.Encoding.UTF8))
-            {
-                string t = line.Trim();
-                if (t.Length > 0 && !t.StartsWith("#", StringComparison.Ordinal))
-                    list.Add(t);
-            }
-            return list;
         }
 
         /// <summary>1단계 도메인의 전체 멘트 (분할 전).</summary>
@@ -752,11 +806,62 @@ namespace TeamRadio56.Core.Logic
                         "rel", Messages.Get("rival_rel_" + rel), "p", p) + tail);
                 }
             }
+            // 체커 콜 등급·순위 변동 — 풀 줄 × 순위(·계단) 도메인 (톤 폴백 없이 그 톤의 줄만)
+            var pool = new PhrasePool(new Random(0));
+            foreach (KeyValuePair<string, List<Dictionary<string, string>>> entry in SegmentPoolSlots())
+            {
+                foreach (string tone in new[] { "casual", "urgent" })
+                {
+                    foreach (string phrase in pool.ExactLines(entry.Key, tone))
+                    {
+                        foreach (Dictionary<string, string> slots in entry.Value)
+                            yield return new KeyValuePair<string, string>(tone, PhrasePool.Format(phrase, slots));
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 문장 조립으로만 말하는 멘트 풀 × 슬롯 도메인 (voice._segment_pool_slots) — 체커 콜
+        /// 등급은 4위~60위(1~3위는 통문장), 올라온 계단 2~56, 순위 변동은 1~60위.
+        /// </summary>
+        public static IEnumerable<KeyValuePair<string, List<Dictionary<string, string>>>> SegmentPoolSlots()
+        {
+            CultureInfo ic = CultureInfo.InvariantCulture;
+            var gained = new List<Dictionary<string, string>>();
+            for (int p = SpeechDomain.SegFinishPlaceMin; p <= SpeechDomain.SegFinishPlaceMax; p++)
+            {
+                for (int g = SpeechDomain.SegFinishGainedMin; g <= SpeechDomain.SegFinishGainedMax; g++)
+                {
+                    gained.Add(new Dictionary<string, string>
+                    {
+                        { "place", p.ToString(ic) }, { "gained", g.ToString(ic) },
+                    });
+                }
+            }
+            yield return Entry("race_end_gained", gained);
+            foreach (string key in new[] { "race_end_held", "race_end_lost", "race_end_result" })
+                yield return Entry(key, Places(SpeechDomain.SegFinishPlaceMin, SpeechDomain.SegFinishPlaceMax));
+            foreach (string key in new[] { "position_up", "position_down" })
+                yield return Entry(key, Places(1, SpeechDomain.ClassPosMax));
+        }
+
+        private static KeyValuePair<string, List<Dictionary<string, string>>> Entry(
+            string key, List<Dictionary<string, string>> combos)
+        {
+            return new KeyValuePair<string, List<Dictionary<string, string>>>(key, combos);
+        }
+
+        private static List<Dictionary<string, string>> Places(int lo, int hi)
+        {
+            var list = new List<Dictionary<string, string>>();
+            for (int p = lo; p <= hi; p++)
+                list.Add(new Dictionary<string, string> { { "place", p.ToString(CultureInfo.InvariantCulture) } });
+            return list;
         }
 
         /// <summary>2단계 도메인의 전체 멘트 (분할 전).</summary>
-        private static IEnumerable<KeyValuePair<string, string>> Tier2Messages(
-            IEnumerable<string> tracks)
+        private static IEnumerable<KeyValuePair<string, string>> Tier2Messages()
         {
             // 차량 상태 — HealthAnalyzer (윙/브레이크/수리 판단)
             for (int mm = SegWingMmMin; mm <= SegWingMmMax; mm++)
@@ -772,39 +877,26 @@ namespace TeamRadio56.Core.Logic
                 foreach (double d in SegFuelSave)
                     yield return C(Messages.Get("fuel_save", "target", target, "delta", d));
             }
-            // 세션 브리핑 — SessionBriefer.Compose (트랙 이름은 목록 파일)
-            var trackList = tracks != null ? new List<string>(tracks) : new List<string>();
-            foreach (string kindKey in new[] { "kind_race", "kind_warmup", "kind_quali",
-                                               "kind_practice" })
+            // 세션 브리핑 — SessionBriefer.ComposeParts: 변형 그룹마다 모든 변형 × 슬롯 도메인
+            // (슬롯은 그룹당 하나 — {length}/{cp}/{t:.0f}/{f:.0f}, 없으면 그대로)
+            foreach (string key in Messages.VariantKeys())
             {
-                string kind = Messages.Get(kindKey);
-                yield return C(Messages.Get("brief_radio", "kind", kind));
-                foreach (string track in trackList)
-                    yield return C(Messages.Get("brief_track", "track", track, "kind", kind));
-            }
-            for (int m = 1; m <= SegBriefMinutesMax; m++)
-            {
-                string length = Messages.BriefLengthText(m);
-                yield return C(Messages.Get("brief_len_remaining", "length", length));
-                yield return C(Messages.Get("brief_len_long", "length", length));
+                foreach (string tpl in Messages.VariantTemplates(key))
+                {
+                    string name = SlotName(tpl);
+                    if (name == null)
+                    {
+                        yield return C(tpl);
+                        continue;
+                    }
+                    foreach (object x in BriefSlotDomain(name))
+                        yield return C(Messages.Format(tpl, new[] { name, x }));
+                }
             }
             for (int n = 1; n <= SegBriefLapsMax; n++)
                 yield return C(n == 1 ? Messages.Get("brief_lap") : Messages.Get("brief_laps", "n", n));
             for (int n = SegBriefCarsMin; n <= SegBriefCarsMax; n++)
-            {
-                for (int cp = 1; cp <= SegBriefPosMax; cp++)
-                {
-                    yield return C(Messages.Get("brief_grid", "cp", cp, "n", n));
-                    yield return C(Messages.Get("brief_grid_mid", "cp", cp, "n", n));
-                }
-            }
-            for (int t = 1; t <= SegBriefTempMax; t++)
-                yield return C(Messages.Get("brief_temp", "t", t));
-            for (int f = 1; f <= SegBriefFuelMax; f++)
-                yield return C(Messages.Get("brief_fuel", "f", f));
-            foreach (string key in new[] { "brief_rain", "brief_formation", "brief_start_spotter",
-                                           "brief_carry_on", "brief_calm", "brief_out" })
-                yield return C(Messages.Get(key));
+                yield return C(Messages.Get("brief_cars", "n", n));
             // 트레이닝 섹터 피드백 — 파이썬 training.LapCoach.feedback_text (C#엔 없는 기능이지만
             // 문장 집합은 같아야 팩 파일명 대조가 맞는다)
             foreach (int n in SpeechDomain.CoachSectors)
@@ -815,6 +907,44 @@ namespace TeamRadio56.Core.Logic
                     yield return C(Messages.Get("coach_quicker", "n", n, "d", d));
                     yield return C(Messages.Get("coach_losing", "n", n, "d", d));
                 }
+            }
+        }
+
+        /// <summary>템플릿의 첫 슬롯 이름 ("{t:.0f}" → "t"), 없으면 null.</summary>
+        private static string SlotName(string tpl)
+        {
+            int open = tpl.IndexOf('{');
+            if (open < 0)
+                return null;
+            int close = tpl.IndexOf('}', open + 1);
+            string field = tpl.Substring(open + 1, close - open - 1);
+            int colon = field.IndexOf(':');
+            return colon >= 0 ? field.Substring(0, colon) : field;
+        }
+
+        /// <summary>브리핑 변형 슬롯 → 사전 생성 도메인 (voice._brief_slot_domain).</summary>
+        private static IEnumerable<object> BriefSlotDomain(string name)
+        {
+            switch (name)
+            {
+                case "length":
+                    for (int m = 1; m <= SegBriefMinutesMax; m++)
+                        yield return Messages.BriefLengthText(m);
+                    break;
+                case "cp":
+                    for (int cp = 1; cp <= SegBriefPosMax; cp++)
+                        yield return cp;
+                    break;
+                case "t":
+                    for (int t = 1; t <= SegBriefTempMax; t++)
+                        yield return t;
+                    break;
+                case "f":
+                    for (int f = 1; f <= SegBriefFuelMax; f++)
+                        yield return f;
+                    break;
+                default:
+                    throw new InvalidOperationException("브리핑 변형 슬롯 도메인 없음: " + name);
             }
         }
 

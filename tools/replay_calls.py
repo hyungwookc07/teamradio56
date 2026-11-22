@@ -11,7 +11,8 @@
   - 버스의 시계를 가상 시계(스냅샷 기록 시각)로 패치 — 쿨다운 판정이
     재생 속도와 무관해진다.
   - 설정은 항상 DEFAULTS (config.yaml을 읽지 않음) — 사용자 설정에
-    따라 결과가 달라지지 않게.
+    따라 결과가 달라지지 않게. 리플레이 옆에 <이름>.config.json이 있으면
+    그 키만 덮어쓴다 (리포터 — C# 러너도 같은 파일을 읽는다).
 
 사용법: python tools/replay_calls.py --replay race.jsonl[.gz] [--out calls.jsonl]
                                     [--race-end-trace trace.jsonl]
@@ -62,6 +63,26 @@ def open_replay(path: str):
     return open(path, "r", encoding="utf-8")
 
 
+# 리플레이 설정 사이드카가 덮어쓸 수 있는 키 (C# 러너 ReplayConfig와 같은 목록)
+SIDECAR_KEYS = {"reports.laptime_every_lap": bool, "reports.status_every_laps": int}
+
+
+def replay_sidecar(replay: str) -> dict:
+    """<이름>.config.json — 없으면 빈 dict. 모르는 키·잘못된 타입은 오류 (조용히 무시하지 않게)."""
+    base = replay[:-len(".jsonl.gz")] if replay.endswith(".jsonl.gz") \
+        else os.path.splitext(replay)[0]
+    path = base + ".config.json"
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    for k, v in data.items():
+        want = SIDECAR_KEYS.get(k)
+        if want is None or type(v) is not want:
+            raise SystemExit(f"{path}: 허용되지 않는 키/타입 {k}={v!r}")
+    return data
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--replay", required=True)
@@ -74,6 +95,9 @@ def main() -> int:
 
     # 존재하지 않는 경로 → 항상 DEFAULTS 사용 (회귀 결정성)
     cfg = load_config("__defaults_only__")
+    for key, value in replay_sidecar(args.replay).items():
+        section, name = key.split(".", 1)
+        cfg._data.setdefault(section, {})[name] = value
     from messages import set_language
     set_language(args.lang)
 
@@ -163,7 +187,7 @@ def main() -> int:
                 fuel_status = fuel.on_lap(state, snap, bus)
                 pace.on_lap(state, snap, bus, lap)
                 tyre_status = tyres.on_lap(state, snap, bus)
-                if lap.in_pits and state.is_race:
+                if lap.in_pits and state.is_race and not state.race_over:
                     bus.push(Event(
                         type=EventType.STINT_BRIEFING, priority=Priority.NORMAL,
                         data={}, dedup_key=f"stint_{lap.lap_number}",

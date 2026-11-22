@@ -383,15 +383,237 @@ namespace TeamRadio56.Core.Logic
             },
             new PhraseSet
             {
-                Pool = "race_end",
+                Pool = "final_lap",
                 Tone = "casual",
                 Lines = new[]
                 {
-                    "Checkered flag! P{place} in class. Good job.",
-                    "That's the flag. P{place}.",
-                    "It's done. P{place} in class.",
-                    "Checkered. P{place}. I'll put the debrief together.",
-                    "Finish. P{place}. Well done.",
+                    "Last lap. Bring it home.",
+                    "Final lap. Keep it clean to the flag.",
+                    "Last lap now. Nice and tidy to the line.",
+                    "This is the last one. Stay focused.",
+                    "Final lap. Head down, all the way to the flag.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "final_lap_lead",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Last lap, and we're leading. Bring it home.",
+                    "Final lap, P1. Nothing silly now.",
+                    "Last lap. Leading, no risks now.",
+                    "Final lap, still leading. Smooth to the flag.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_end_win",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Chequered flag! That's the win! Get in there!",
+                    "P1! You've won it! Brilliant drive.",
+                    "Chequered flag, and that's a win. Superb job.",
+                    "Race winner! What a drive.",
+                    "That's it, P1 at the flag. Fantastic job, mate.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_end_class_win",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Chequered flag! Class win! Get in there!",
+                    "P1 in class! You've won it. Brilliant.",
+                    "That's the class win. Superb job, mate.",
+                    "Class victory! What a drive.",
+                    "Chequered flag, P1 in class. Fantastic job.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_end_podium",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Chequered flag. P{place}, that's a podium!",
+                    "P{place}! On the podium. Great job.",
+                    "That's the flag, P{place}. Podium, well driven.",
+                    "Podium! P{place} at the flag. Really strong drive.",
+                    "Chequered flag, P{place}. Podium finish, well done.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_end_gained",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Chequered flag. P{place}. Up {gained} places from the start. Great drive.",
+                    "Across the line. P{place}. That's {gained} places gained. Well done.",
+                    "Chequered flag, we're home. P{place}. Up {gained} places from the start. Lovely job.",
+                    "And that's the race. P{place}. That's {gained} places gained. Really strong.",
+                    "That's the flag. P{place}. Up {gained} places from the start. Good stuff.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_end_held",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Chequered flag. P{place}. About where we started, solid drive.",
+                    "That's the flag. P{place}. Held our ground, good job.",
+                    "Across the line. P{place}. Steady race, well driven.",
+                    "And that's the race. P{place}. Solid result.",
+                    "Chequered flag, we're home. P{place}. Good, consistent job.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_end_lost",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Chequered flag. P{place}. Tough one today, we'll regroup.",
+                    "That's the flag. P{place}. Not the result we wanted, but we brought it home.",
+                    "Across the line. P{place}. Hard race, we'll find more for next time.",
+                    "And that's the race. P{place}. Difficult day, thanks for pushing to the end.",
+                    "Chequered flag, we're home. P{place}. Not our day, we'll go through it together.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_end_result",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Chequered flag. P{place}. Good job.",
+                    "That's the flag. P{place}. Well driven.",
+                    "Chequered flag, we're home. P{place}.",
+                    "And that's the race. P{place}. Nice work.",
+                    "Across the line. P{place}. Thanks for the drive.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_end_plain",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Chequered flag. That's the race done.",
+                    "That's the flag. Race complete, good job.",
+                    "Chequered flag, we're home. Well done.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "cooldown_lap",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Cool-down lap now. Nice and easy.",
+                    "Cool-down lap. Take it steady back to the pits.",
+                    "Ease off now, gentle lap back in.",
+                    "Bring it round gently. Cool-down lap.",
+                    "Easy lap back. Let the brakes cool.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "cooldown_lap_traffic",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Cool-down lap. Cars still finishing, stay off the racing line.",
+                    "Easy lap now, but others are still racing. Keep off the line.",
+                    "Cool-down lap. Some cars still on their last lap, keep it predictable.",
+                    "Take it easy, cars still finishing behind. Stay out of their way.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "cooldown_lap_faster",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Cool-down lap. Faster cars still racing, keep off the line.",
+                    "Ease off, but watch your mirrors. Faster cars still racing.",
+                    "Cool-down lap. Faster cars coming through, hold a predictable line.",
+                    "Easy now, faster class still on track. Stay wide and let them by.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_summary_fastest_class",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "And the fastest lap in class, too. Lovely.",
+                    "Fastest lap in class as well. The pace was there.",
+                    "You set the fastest lap in class. Great stuff.",
+                    "Quickest lap in class on top of that. Nice work.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_summary_fastest",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "And the fastest lap of the race, too. Lovely.",
+                    "Fastest lap of the race as well. The pace was there.",
+                    "You set the fastest lap of the race. Great stuff.",
+                    "Quickest lap of anyone out there. Nice work.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_summary_pace_class",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Our best lap was {nth}-quickest in class. Good pace.",
+                    "Pace was there, {nth}-best lap in class.",
+                    "Decent pace too, {nth}-fastest lap in class.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_summary_pace",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Our best lap was {nth}-quickest of the race. Good pace.",
+                    "Pace was there, {nth}-best lap of the field.",
+                    "Decent pace too, {nth}-fastest lap overall.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "race_summary_debrief",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Good data from that one. We'll go through it in the debrief.",
+                    "Plenty to learn from that. Debrief when you're out of the car.",
+                    "Lots to take from that one. We'll talk it through after.",
+                    "We'll look over the data together. Thanks for the effort.",
+                },
+            },
+            new PhraseSet
+            {
+                Pool = "post_race_pit",
+                Tone = "casual",
+                Lines = new[]
+                {
+                    "Pit lane. Limiter on, bring it into the garage. Thanks, mate.",
+                    "Limiter on, straight to the garage. Thanks for today.",
+                    "In the pit lane, limiter please. Park it in the garage, great work.",
+                    "Limiter on, mind the crews. Bring it home to the garage, thank you.",
+                    "Pit entry, limiter. Into the garage, and cheers for the effort.",
                 },
             },
             new PhraseSet
@@ -400,10 +622,10 @@ namespace TeamRadio56.Core.Logic
                 Tone = "casual",
                 Lines = new[]
                 {
-                    "P{place} in class. Up one.",
+                    "Position gained. P{place}.",
                     "P{place}. Nice.",
                     "P{place}. Keep the rhythm.",
-                    "Position up. P{place}.",
+                    "Good move. P{place}.",
                 },
             },
             new PhraseSet
@@ -412,10 +634,10 @@ namespace TeamRadio56.Core.Logic
                 Tone = "casual",
                 Lines = new[]
                 {
-                    "P{place} now. We'll take it back.",
+                    "Lost a place. P{place}.",
                     "P{place}. One lap at a time.",
                     "P{place}. The pace is there, chances will come.",
-                    "Lost one. P{place}.",
+                    "P{place}. We'll take it back.",
                 },
             },
             new PhraseSet
@@ -431,41 +653,6 @@ namespace TeamRadio56.Core.Logic
                     "Pit lane speed! Limiter!",
                 },
             },
-        };
-
-        /// <summary>voice_lines/track_names_en.txt — en 브리핑이 말할 수 있는 트랙 이름.</summary>
-        public static readonly string[] TrackNamesEn =
-        {
-            "Circuit de la Sarthe",
-            "Circuit de la Sarthe Mulsanne",
-            "Sebring International Raceway",
-            "Sebring School Circuit",
-            "Autodromo Internacional do Algarve",
-            "Algarve International Circuit",
-            "Portimao",
-            "Circuit de Spa-Francorchamps",
-            "Spa-Francorchamps",
-            "Autodromo Nazionale Monza",
-            "Monza",
-            "Monza Curva Grande",
-            "Fuji Speedway",
-            "Fuji Speedway Classic",
-            "Bahrain International Circuit",
-            "Bahrain International Circuit Endurance",
-            "Bahrain International Circuit Outer",
-            "Bahrain International Circuit Paddock",
-            "Lusail International Circuit",
-            "Losail International Circuit",
-            "Autodromo Enzo e Dino Ferrari",
-            "Imola",
-            "Autodromo Jose Carlos Pace",
-            "Interlagos",
-            "Circuit of the Americas",
-            "Circuit of the Americas National",
-            "Silverstone Circuit",
-            "Silverstone",
-            "Circuit de Barcelona-Catalunya",
-            "Circuit Paul Ricard",
         };
     }
 }

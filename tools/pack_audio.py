@@ -45,7 +45,6 @@ KNOWN_NAME_SETS = {
     "kokoro-v015": "2062e3431c563f16b10425be7d3473401a1628096d97057e3ed9dbf24ebd5fda",
     "kokoro-v016": "fb489f503c0a27b88927daddf68c06849d00c62b2a7db06399dc8cc73339c56c",
 }
-DEFAULT_TRACKS = "voice_lines/track_names_en.txt"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -110,23 +109,21 @@ def asset_names() -> tuple:
     return tuple(ASSET_NAMES)
 
 
-def expected_names(tiers=(1, 2, 3), tracks: str = DEFAULT_TRACKS, voice: str = "bm_george") -> set:
+def expected_names(tiers=(1, 2, 3), voice: str = "bm_george") -> set:
     """런타임이 팩에서 찾는 파일 전체 — 통문장 _rfx + 문장 세그먼트 + 조립 자산."""
     _repo_imports()
     import radiofx
     from messages import set_language
     from radio_assemble import ASSET_NAMES, segment_file_name
     from tts import _cache_path
-    from voice import (PhrasePool, iter_pregen_sentences, iter_pregen_texts,
-                       lines_file, load_track_names)
+    from voice import PhrasePool, iter_pregen_sentences, iter_pregen_texts, lines_file
 
     set_language("en")
     names = set()
     for tone, text in set(iter_pregen_texts(PhrasePool(lines_file("en")))):
         raw = os.path.basename(_cache_path("", f"kokoro|{voice}|{tone}|{text}", ext="wav"))
         names.add(os.path.splitext(raw)[0] + f"_rfx{radiofx.VERSION}.wav")
-    track_names = tuple(load_track_names(tracks)) if tracks else ()
-    for tone, s in set(iter_pregen_sentences(tuple(tiers), track_names)):
+    for tone, s in set(iter_pregen_sentences(tuple(tiers))):
         names.add(segment_file_name(s, tone, voice))
     names.update(ASSET_NAMES)
     return names
@@ -522,7 +519,6 @@ def main(argv=None) -> int:
     b.add_argument("--out", required=True)
     b.add_argument("--max-bytes", type=int, default=MAX_BYTES)
     b.add_argument("--tiers", default="1,2,3")
-    b.add_argument("--tracks", default=DEFAULT_TRACKS)
     b.add_argument("--descriptor", default=None)
     b.add_argument("--tag", default=None)
 
@@ -533,7 +529,6 @@ def main(argv=None) -> int:
 
     e = sub.add_parser("expected")
     e.add_argument("--tiers", default="1,2,3")
-    e.add_argument("--tracks", default=DEFAULT_TRACKS)
     e.add_argument("--out", required=True)
 
     d = sub.add_parser("descriptor")
@@ -567,7 +562,7 @@ def main(argv=None) -> int:
             print("✅ 음성 팩 zip 확인 통과")
             return 0
         if args.cmd == "expected":
-            names = expected_names(_tiers(args.tiers), args.tracks)
+            names = expected_names(_tiers(args.tiers))
             with open(args.out, "w", encoding="utf-8", newline="\n") as f:
                 f.write("\n".join(sorted(names)) + "\n")
             print(f"팩 파일 이름 {len(names)}개 → {args.out} (집합 sha256 {name_set_sha(names)})",
@@ -581,7 +576,7 @@ def main(argv=None) -> int:
         old = _read_text(args.descriptor) if args.descriptor else None
         if old is not None:
             parse_descriptor(old)  # 렌더 결과를 쓰기 전에 기술자부터 거부
-        names = expected_names(_tiers(args.tiers), args.tracks)
+        names = expected_names(_tiers(args.tiers))
         assets = build_pack(args.cache, args.pack, args.out, names, args.max_bytes, asset_names())
         for n, s, z in assets:
             print(f"asset={n},{s},{z}")

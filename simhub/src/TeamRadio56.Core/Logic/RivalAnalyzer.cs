@@ -136,8 +136,8 @@ namespace TeamRadio56.Core.Logic
             if (!state.IsRace)
                 return;
             VehicleInfo me = snap.PlayerScoring();
-            if (me == null)
-                return;
+            if (me == null || state.RaceOverNow(me))
+                return;                      // 내 레이스가 끝나면 경쟁자 피트는 무의미
             int phase = snap.Session.GamePhase;
             double tl = snap.Session.TrackLength;
             double t = snap.T;
@@ -312,7 +312,7 @@ namespace TeamRadio56.Core.Logic
 
         public void OnLap(RaceState state, Snapshot snap, EventBus bus)
         {
-            if (!state.IsRace)
+            if (!state.IsRace || state.RaceOver)
                 return;
             VehicleInfo me = snap.PlayerScoring();
             if (me == null)

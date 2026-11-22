@@ -126,7 +126,7 @@ namespace TeamRadio56.Core.Logic
         /// 팩에 없는 멘트 수 — whole: 사전 캐시 대상 중 kokoro 통문장(효과본·원본)이 없는 것,
         /// seg: maxTier 이하 문장 중 세그먼트 파일이 없는 것 (maxTier 0이면 세지 않음).
         /// </summary>
-        public static void CountMissing(VoiceCache cache, int maxTier, IEnumerable<string> tracks,
+        public static void CountMissing(VoiceCache cache, int maxTier,
                                         out int whole, out int seg)
         {
             whole = 0;
@@ -142,7 +142,7 @@ namespace TeamRadio56.Core.Logic
             }
             if (maxTier <= 0 || !cache.Available)
                 return;
-            foreach (KeyValuePair<string, string> item in PregenSentences.Enumerate(maxTier, tracks))
+            foreach (KeyValuePair<string, string> item in PregenSentences.Enumerate(maxTier))
             {
                 if (!File.Exists(Path.Combine(cache.CacheDir,
                         VoiceCache.SegmentFileName(item.Value, item.Key))))

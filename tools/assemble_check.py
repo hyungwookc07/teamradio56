@@ -15,8 +15,7 @@ soundfile이 있으면 read_samples가 libsndfile 복호(sf.read int16)와
 같은지도 확인한다 (μ-law 256개 코드 전체 포함).
 
 파이썬 전용 점검도 곁들인다 (D/engine/, C# 대조와 무관): KokoroPackEngine
-조립본 재사용·팩 교체 감지·임시 폴더 정리, speech_text 소수 읽기,
-load_track_names의 BOM 처리.
+조립본 재사용·팩 교체 감지·임시 폴더 정리, speech_text 소수 읽기.
 
 사용법: python tools/assemble_check.py --dir <폴더>
 종료 코드: 0 = 통과, 1 = 파이썬 쪽 기대와 다름.
@@ -205,7 +204,6 @@ def engine_checks(root: str) -> list[str]:
     """파이썬 엔진 쪽 점검 — 팩 복사본(D/engine)에서만 돌려 C# 대조 입력은 그대로 둔다."""
     from messages import speech_text
     from tts import KokoroPackEngine
-    from voice import load_track_names
 
     errors = []
     cache = os.path.join(root, "engine")
@@ -254,13 +252,6 @@ def engine_checks(root: str) -> list[str]:
                       ("-1.3 on two LMP2s", "-1 point 3 on two LMP twos")]:
         if speech_text(src) != want:
             errors.append(f"speech_text({src!r}) = {speech_text(src)!r}, 기대 {want!r}")
-
-    # 윈도 편집기의 UTF-8 BOM — C# File.ReadAllLines(UTF8)처럼 떼어야 한다
-    tracks = os.path.join(root, "tracks_bom.txt")
-    with open(tracks, "wb") as f:
-        f.write("\ufeff# 주석\nFuji Speedway\n".encode("utf-8"))
-    if load_track_names(tracks) != ["Fuji Speedway"]:
-        errors.append(f"load_track_names BOM 처리 이상: {load_track_names(tracks)!r}")
     return errors
 
 

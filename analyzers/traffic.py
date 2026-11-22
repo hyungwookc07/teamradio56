@@ -38,6 +38,10 @@ THREAT_RANK = {ALONGSIDE: 3, NEARBY_BEHIND: 2, APPROACHING: 1,
                NEARBY_AHEAD: 0, FAR: 0}
 
 GREEN_PHASES = (5, 6)
+PHASE_OVER = 8                 # 체커 게시(리더 피니시) — 레이스에선 나머지 차가 아직 달린다
+# 내 레이스가 끝난 뒤(쿨다운 랩) 남기는 안전 콜 — 나란히/빠른 차 접근, 그 종합, 정지 차량.
+# 배틀·추월 서사(뒤에 붙음·지나감·떨어짐·백마커)는 더 의미가 없다
+OVER_SPEAK_STATES = (ALONGSIDE, APPROACHING)
 MIN_CLOSING_MS = 2.0           # m/s — 이 이상 좁혀질 때만 '접근'
 # 나란히 콜 리드 보정: 판정~재생까지의 지연(5Hz 샘플 + 큐 + 재생 시작)만큼
 # 상대 접근 속도에 비례해 창을 미리 연다. 콜이 '들리는 순간'에 실제로
@@ -161,7 +165,8 @@ class TrafficAnalyzer:
         if self._prev_phase in (3, 4) and phase == 5 and state.is_race:
             self._green_t = snap.t
         self._prev_phase = phase
-        if phase not in GREEN_PHASES:
+        # 레이스의 페이즈 8은 리더만 끝난 것 — 내 마지막 랩과 쿨다운 랩에도 아직 달리는 차가 있다
+        if phase not in GREEN_PHASES and not (state.is_race and phase == PHASE_OVER):
             return
         # 연습/퀄리는 고스트 차가 많아 트래픽 콜이 소음이 되기 쉬움 — 옵션으로 차단
         if self.race_only and not state.is_race:
@@ -170,6 +175,7 @@ class TrafficAnalyzer:
         if track_len <= 0:
             return
         now = snap.t
+        over = state.race_over_now(me)
         # 스타트 직후 혼전: 서사형 콜 대신 스포터 모드 (좌우 점유만 즉시 콜)
         spotter_mode = (self._green_t is not None
                         and now - self._green_t < self.start_spotter_sec)
@@ -216,13 +222,13 @@ class TrafficAnalyzer:
             self._spotter_tick(now, bus)
         elif transitions:
             self._spot = None    # 스포터 모드 종료 → 기준 리셋
-            self._emit(transitions, now, bus)
+            self._emit(transitions, now, bus, over)
 
         # 레이스 서사 이슈: 동클래스 배틀 여부 (LLM 문맥 연속성용).
-        # 랩 차이 나는 트래픽(백마커/랩핑)은 배틀이 아니다.
-        battler = next((t for t in self.tracks.values()
-                        if t.state in (NEARBY_BEHIND, ALONGSIDE)
-                        and not t.faster and not t.backmarker), None)
+        # 랩 차이 나는 트래픽(백마커/랩핑)은 배틀이 아니다. 피니시 뒤엔 배틀이 없다.
+        battler = None if over else next((t for t in self.tracks.values()
+                                          if t.state in (NEARBY_BEHIND, ALONGSIDE)
+                                          and not t.faster and not t.backmarker), None)
         if battler is not None:
             state.set_issue("battle", f"{battler.cls} ({battler.driver})와 포지션 배틀 중")
         else:
@@ -406,10 +412,12 @@ class TrafficAnalyzer:
     # -- 발화 ---------------------------------------------------------------
 
     def _emit(self, transitions: list[tuple[CarTrack, str]], now: float,
-              bus: EventBus) -> None:
+              bus: EventBus, over: bool = False) -> None:
         # 이번 틱에 전이된 차들 중 발화 가치가 있는 것만 추림
         speak: list[tuple[CarTrack, str]] = []
         for t, old in transitions:
+            if over and t.state not in OVER_SPEAK_STATES:
+                continue        # 피니시 뒤: 나란히/빠른 차 접근만 (안전)
             if self._worth_announcing(t, old, now):
                 speak.append((t, old))
         if not speak:

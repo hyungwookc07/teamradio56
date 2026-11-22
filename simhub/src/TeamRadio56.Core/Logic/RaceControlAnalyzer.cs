@@ -9,8 +9,9 @@ namespace TeamRadio56.Core.Logic
     ///
     /// FCY 진입·해제와 FCY 중 피트 오픈, 섹터 로컬 옐로(엣지 트리거),
     /// 레이스 스타트, 남은 시간 마일스톤, 마지막 랩/내 피니시 체커(판단은 RaceEndTracker),
-    /// 피트 리미터 경고,
+    /// 체커 뒤 무전(쿨다운 랩 → 요약 → 피트인), 피트 리미터 경고,
     /// 블루 플래그, 페널티(게임 메시지에서 종류/사유 파싱), 클래스 순위 변동.
+    /// 내 레이스가 끝나면(RaceOver) 블루 플래그·페널티·순위 변동은 끄고 옐로·리미터만 남긴다.
     /// </summary>
     public sealed class RaceControlAnalyzer
     {
@@ -45,6 +46,7 @@ namespace TeamRadio56.Core.Logic
         private string _lastHistoryMsg = "";
         private double? _penDue;               // 페널티 콜 예정 시각
         private int _penCount;
+        private bool _postLanePrev;            // 직전 틱 피트레인 여부 (체커 뒤 피트인 엣지)
 
         public RaceControlAnalyzer(bool sectorYellowCalls = true)
         {
@@ -68,6 +70,7 @@ namespace TeamRadio56.Core.Logic
             _lastHistoryMsg = "";
             _penDue = null;
             _penCount = 0;
+            _postLanePrev = false;
         }
 
         /// <summary>게임 메시지에서 페널티 종류/사유 추출. 아니면 null.</summary>
@@ -127,15 +130,21 @@ namespace TeamRadio56.Core.Logic
             _phase = phase;
             _yellow = yellow;
 
+            // 내 피니시(또는 DNF) 뒤엔 블루 플래그·페널티를 말하지 않는다 (상태 추적은 계속).
+            // 옐로와 피트 리미터는 쿨다운 랩·피트인에서도 안전 콜이다
+            bool over = state.RaceOverNow(me);
             CheckSectorYellow(ses, snap.T, bus);
             CheckPitLimiter(ses, snap, bus);
-            CheckBlueFlag(me, state, bus);
+            CheckBlueFlag(me, state, bus, over);
             CollectMessages(ses, snap.T);
-            CheckPenalties(me, snap.T, state, bus);
+            CheckPenalties(me, snap.T, state, bus, over);
             if (state.IsRace && phase == PhaseGreen)
                 CheckTimeMilestones(ses, bus);
             if (state.IsRace)
+            {
                 CheckRaceEndTick(state, snap, me, bus);
+                CheckPostRace(state, snap, me, bus);
+            }
         }
 
         private void OnPhaseChange(int old, int now, RaceState state, EventBus bus)
@@ -251,11 +260,11 @@ namespace TeamRadio56.Core.Logic
             }
         }
 
-        private void CheckBlueFlag(VehicleInfo me, RaceState state, EventBus bus)
+        private void CheckBlueFlag(VehicleInfo me, RaceState state, EventBus bus, bool over)
         {
             // 내게 블루 플래그가 게시된 순간(mFlag=6 엣지) 양보 안내
             bool blue = me.FlagBlue;
-            if (blue && !_blueFlag)
+            if (blue && !_blueFlag && !over)
             {
                 var ev = new RadioEvent
                 {
@@ -291,9 +300,16 @@ namespace TeamRadio56.Core.Logic
         }
 
         private void CheckPenalties(VehicleInfo me, double now, RaceState state,
-                                    EventBus bus)
+                                    EventBus bus, bool over)
         {
             int n = me.NumPenalties;
+            if (over)
+            {
+                // 피니시 뒤엔 소화할 수도 없다 — 기준만 따라가고 대기 중인 콜도 버린다
+                _penalties = n;
+                _penDue = null;
+                return;
+            }
             if (!_penalties.HasValue)
             {
                 _penalties = n;
@@ -482,27 +498,29 @@ namespace TeamRadio56.Core.Logic
             {
                 return;
             }
-            PushFinalLap(state, me, bus);
+            PushFinalLap(state, snap, me, bus);
         }
 
-        private void PushFinalLap(RaceState state, VehicleInfo me, EventBus bus)
+        private void PushFinalLap(RaceState state, Snapshot snap, VehicleInfo me, EventBus bus)
         {
             int lap = me.TotalLaps;
             RaceEndTracker re = state.RaceEnd;
             int gen = re.Generation;
+            // 클래스 선두면 선두 변형 풀 ("Final lap, P1. Nothing silly now.")
+            string pool = RaceState.ClassPlaceOf(snap, me) == 1 ? "final_lap_lead" : "final_lap";
             // 키는 랩마다 — 예측이 빗나가 다음 랩에 다시 부를 때 앞 콜 키에 막히지 않게.
             // 채널이 밀려 라인을 넘은 뒤에 나가면 안 된다 (안전망 콜은 라인 몇 초 전일 수 있다)
             var ev = new RadioEvent
             {
                 Type = EventTypes.RaceMilestone,
                 Priority = Priority.High,
-                Message = Messages.Get("final_lap"),
                 DedupKey = "final_lap_" + (lap + 1),
                 Ttl = 30.0,
                 ValidFn = () => re.Generation == gen && !re.Finished && re.Lap == lap,
             };
             ev.Data["final_lap"] = true;
             ev.Data["lap"] = lap + 1;
+            ev.Data["pool"] = pool;
             if (bus.Push(ev))
             {
                 re.FinalCalledFor = lap;         // 수락됐을 때만 — 거절되면 안전망이 다시 시도
@@ -516,18 +534,115 @@ namespace TeamRadio56.Core.Logic
             if (re.EndCalled || !re.SeenUnfinished)
                 return;
             int place = RaceState.ClassPlaceOf(snap, me);
+            int start, gained;
+            string pool = RaceEnd.FinishCall(place, re.StartClassPlace ?? 0,
+                RaceEnd.IsMulticlass(snap), out start, out gained);
             var ev = new RadioEvent
             {
                 Type = EventTypes.RaceEnd,
                 Priority = Priority.High,
                 Ttl = 30.0,
             };
-            ev.Data["pool"] = "race_end";
+            ev.Data["pool"] = pool;
             ev.Data["class_place"] = place;
+            ev.Data["start_place"] = start;
+            ev.Data["gained"] = gained;
             if (bus.Push(ev))
             {
                 re.EndCalled = true;
-                state.AddNarrative("(이벤트) 체커, 클래스 P" + place);
+                re.EndT = snap.T;
+                state.AddNarrative("(이벤트) 체커, 클래스 P" + place + " (" + pool + ", 스타트 P"
+                                   + (start != 0 ? start.ToString() : "?") + ")");
+            }
+        }
+
+        // -- 체커 뒤 무전: 쿨다운 랩 → 요약 → 피트인 (racecontrol._check_post_race) ------
+
+        private void CheckPostRace(RaceState state, Snapshot snap, VehicleInfo me, EventBus bus)
+        {
+            PlayerInfo p = snap.Player;
+            bool inLane = (p != null && p.InPitLane) || me.InPits;
+            bool entered = inLane && !_postLanePrev;
+            _postLanePrev = inLane;
+            RaceEndTracker re = state.RaceEnd;
+            if (!re.EndCalled || !re.EndT.HasValue)
+                return;
+            double since = snap.T - re.EndT.Value;
+            int gen = re.Generation;
+            if (entered && !re.PitInCalled)
+            {
+                var ev = new RadioEvent
+                {
+                    Type = EventTypes.PostRacePit,
+                    Priority = Priority.High,
+                    Ttl = 15.0,
+                    ValidFn = () => re.Generation == gen && _postLanePrev,
+                };
+                ev.Data["pool"] = "post_race_pit";
+                if (bus.Push(ev))
+                {
+                    re.PitInCalled = true;
+                    re.CooldownCalled = true;     // 이미 들어오는 중 — 쿨다운 콜은 늦었다
+                    state.AddNarrative("(이벤트) 체커 뒤 피트인");
+                }
+            }
+            if (!re.CooldownCalled && since >= RaceEnd.PostCooldownSec - RaceEnd.PostEps)
+            {
+                if (inLane || me.InGarage)
+                {
+                    re.CooldownCalled = true;
+                }
+                else
+                {
+                    int myRank = TrafficAnalyzer.ClassRank(me.Class);
+                    int racing = 0;
+                    bool faster = false;
+                    foreach (VehicleInfo v in snap.Vehicles)
+                    {
+                        if (v.Id == me.Id || v.FinishStatus != 0 || v.Place <= 0
+                            || v.InPits || v.InGarage)
+                            continue;
+                        racing++;
+                        if (TrafficAnalyzer.ClassRank(v.Class) > myRank)
+                            faster = true;
+                    }
+                    string pool = RaceEnd.CooldownPool(racing, faster);
+                    var ev = new RadioEvent
+                    {
+                        Type = EventTypes.CooldownLap,
+                        Priority = Priority.High,
+                        Ttl = 25.0,
+                        ValidFn = () => re.Generation == gen && !_postLanePrev,
+                    };
+                    ev.Data["pool"] = pool;
+                    ev.Data["still_racing"] = racing;
+                    if (bus.Push(ev))
+                    {
+                        re.CooldownCalled = true;
+                        state.AddNarrative("(이벤트) 쿨다운 랩 (" + pool + ")");
+                    }
+                }
+            }
+            if (re.CooldownCalled && !re.SummaryCalled
+                && since >= RaceEnd.PostSummarySec - RaceEnd.PostEps)
+            {
+                int timed;
+                int rank = RaceEnd.BestLapRank(snap, me, out timed);
+                string pool = RaceEnd.SummaryPool(rank, timed, RaceEnd.IsMulticlass(snap));
+                var ev = new RadioEvent
+                {
+                    Type = EventTypes.RaceSummary,
+                    Priority = Priority.Normal,
+                    Ttl = 45.0,
+                    ValidFn = () => re.Generation == gen,
+                };
+                ev.Data["pool"] = pool;
+                ev.Data["rank"] = rank;
+                if (bus.Push(ev))
+                {
+                    re.SummaryCalled = true;
+                    state.AddNarrative("(이벤트) 레이스 요약 (" + pool + ")");
+                }
             }
         }
 
@@ -542,14 +657,15 @@ namespace TeamRadio56.Core.Logic
             int? prev = _classPlace;
             _classPlace = cp;
             RaceEndTracker re = state.RaceEnd;
-            if (re.Finished)
+            if (state.RaceOver)
             {
-                PushRaceEnd(state, snap, me, bus);
-                return;                      // 피니시 라인: 순위 변동 콜 대신 체커 콜 하나
+                if (re.Finished)
+                    PushRaceEnd(state, snap, me, bus);
+                return;                      // 피니시 라인(과 그 뒤): 순위 변동 콜 대신 체커 콜 하나
             }
             if (re.FinalLap && re.FinalCalledFor != me.TotalLaps)
-                PushFinalLap(state, me, bus);
-            if (!prev.HasValue || cp == prev.Value)
+                PushFinalLap(state, snap, me, bus);
+            if (!prev.HasValue || cp == prev.Value || cp > SpeechDomain.ClassPosMax)
                 return;
             // 피트 사이클 중 순위 출렁임은 무시 (내가 피트 랩이면 침묵)
             if (state.Laps.Count > 0 && state.Laps[state.Laps.Count - 1].InPits)

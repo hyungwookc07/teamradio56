@@ -420,9 +420,6 @@ namespace TeamRadio56.SimHub
             _voice.Enabled = Settings.VoiceEnabled;
             _voice.Start();
             ClaimVoice(true);
-            // 팩 상태가 정해진 뒤에 엔진을 공개한다 — Tick이 새 엔진의 첫 브리핑을
-            // 옛 팩 상태(예: 팩 설치 직후 재시작)로 조립하지 않게
-            chief.BriefingPackOnly = Settings.VoiceEnabled && VoicePolicy.PackUsable(packState);
             _chief = chief;
 
             VoiceCache cache = _radio.Route.Cache;
@@ -466,7 +463,7 @@ namespace TeamRadio56.SimHub
                 {
                     int whole, seg;
                     VoicePolicy.CountMissing(radio.Route.Cache, PregenSentences.PackMaxTier,
-                        PhraseLines.TrackNamesEn, out whole, out seg);
+                        out whole, out seg);
                     if (!ReferenceEquals(radio, _radio))
                         return;          // 그새 엔진이 바뀌었다
                     _voiceMissing = whole + seg;
@@ -726,10 +723,6 @@ namespace TeamRadio56.SimHub
             if (voice != null && Settings != null)
             {
                 voice.Enabled = Settings.VoiceEnabled;
-                // 음성 팩으로 말하는 세션이면 목록 밖 트랙 이름을 뺀다 — 음성을 껐거나
-                // 쓸 수 있는 팩이 없는 자막 전용 세션이면 뺄 이유가 없다 (파이썬
-                // pack_only = voice.enabled and not free_text와 같다)
-                chief.BriefingPackOnly = Settings.VoiceEnabled && VoicePolicy.PackUsable(_packState);
             }
             chief.OnPoll(snap, _reader.Connected);
             StatusText = chief.StatusText;

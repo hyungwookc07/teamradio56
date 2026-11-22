@@ -41,6 +41,8 @@ class LapCoach:
         return _msg("coach_losing", n=sector, d=delta)
 
     def on_lap(self, state: SessionState, bus: EventBus) -> None:
+        if state.race_over:
+            return
         valid = [l for l in state.laps if l.valid and l.s1 > 0 and l.s2 > 0 and l.s3 > 0]
         if len(valid) < 3 or valid[-1] is not state.laps[-1]:
             return
@@ -77,7 +79,7 @@ class TrackHistory:
         self._done = False
 
     def on_lap(self, state: SessionState, bus: EventBus) -> None:
-        if self._done or not state.track:
+        if self._done or not state.track or state.race_over:
             return
         valid = [l for l in state.laps if l.valid]
         if len(valid) < 4:

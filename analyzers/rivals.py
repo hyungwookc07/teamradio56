@@ -115,8 +115,8 @@ class RivalAnalyzer:
         if not state.is_race:
             return
         me = snap.player_scoring()
-        if me is None:
-            return
+        if me is None or state.race_over_now(me):
+            return                       # 내 레이스가 끝나면 경쟁자 피트는 무의미
         ses = snap.session
         phase = ses["game_phase"]
         tl = ses["track_len"]
@@ -227,7 +227,7 @@ class RivalAnalyzer:
     # -- 랩 완료: 페이스 비교 인텔 ----------------------------------------------
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus) -> None:
-        if not state.is_race:
+        if not state.is_race or state.race_over:
             return
         me = snap.player_scoring()
         if me is None:

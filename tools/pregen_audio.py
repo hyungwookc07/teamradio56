@@ -19,7 +19,7 @@ kokoro는 build_pregen_engine으로 항상 kokoro 렌더 (팩/edge로 건너뛰�
 바꾸면 다시 실행할 것. 이미 캐시된 파일은 건너뛴다.
 
 사용법: python tools/pregen_audio.py [--config config.yaml] [--engine kokoro]
-        python tools/pregen_audio.py --segments [--tiers 1,2,3] [--tracks voice_lines/track_names_en.txt]
+        python tools/pregen_audio.py --segments [--tiers 1,2,3]
         python tools/pregen_audio.py --engine kokoro [--segments ...] --shard 2/6
         python tools/pregen_audio.py --ab "Gap behind 6.3 seconds. Closing 1.3 a lap." --tone casual --ab-out ab
 """
@@ -48,7 +48,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import load_config                                # noqa: E402
 from tts import KokoroEngine, build_pregen_engine             # noqa: E402
 from voice import (PhrasePool, iter_pregen_sentences,         # noqa: E402
-                   iter_pregen_texts, lines_file, load_track_names)
+                   iter_pregen_texts, lines_file)
 
 
 def _parse_shard(spec):
@@ -143,7 +143,7 @@ def _db(x: float) -> float:
     return 20.0 * math.log10(max(x, 1e-9))
 
 
-def _segment_pass(cfg, tiers: tuple, tracks: tuple, dry_run: bool,
+def _segment_pass(cfg, tiers: tuple, dry_run: bool,
                   shard=None) -> int:
     import radiofx
     from radio_assemble import segment_file_name
@@ -159,7 +159,7 @@ def _segment_pass(cfg, tiers: tuple, tracks: tuple, dry_run: bool,
     seen: set = set()
     per_tier = []
     for tier in sorted(tiers):
-        items = sorted(set(iter_pregen_sentences((tier,), tracks)) - seen)
+        items = sorted(set(iter_pregen_sentences((tier,))) - seen)
         seen.update(items)
         print(f"{tier}단계 문장: {len(items)}개")
         # 단계 중복 제거는 전체 목록으로 한 뒤 나눈다 — 샤드 합집합 = 전체
@@ -283,8 +283,6 @@ def main() -> int:
                         help="문장 세그먼트 패스 (en, kokoro) + 조립 자산")
     parser.add_argument("--tiers", default="1,2,3",
                         help="--segments 문장 단계 목록 (예: 1 또는 1,2)")
-    parser.add_argument("--tracks", default=None,
-                        help="--segments 트랙 이름 목록 파일 (2단계 세션 브리핑용)")
     parser.add_argument("--ab", metavar="MESSAGE", default=None,
                         help="이 멘트를 통문장/조립본 두 가지로 렌더해 비교")
     parser.add_argument("--tone", default="casual", choices=("casual", "urgent"),
@@ -304,12 +302,7 @@ def main() -> int:
         return _ab(cfg, args.ab, args.tone, args.ab_out)
     if args.segments:
         tiers = tuple(int(t) for t in args.tiers.split(",") if t.strip())
-        tracks: tuple = ()
-        if args.tracks and os.path.exists(args.tracks):
-            tracks = tuple(load_track_names(args.tracks))
-        elif args.tracks:
-            print(f"⚠️  트랙 목록 없음: {args.tracks} — 트랙 이름 문장 없이 진행")
-        return _segment_pass(cfg, tiers, tracks, args.dry_run, shard)
+        return _segment_pass(cfg, tiers, args.dry_run, shard)
     return _whole_pass(cfg, args.dry_run, shard)
 
 

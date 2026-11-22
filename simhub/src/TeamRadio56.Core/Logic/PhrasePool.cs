@@ -60,6 +60,20 @@ namespace TeamRadio56.Core.Logic
             return new string[0];
         }
 
+        /// <summary>그 톤에 적힌 변형만 (폴백 없음) — 문장 세그먼트 열거용.</summary>
+        public string[] ExactLines(string poolKey, string tone)
+        {
+            List<PhraseSet> entry;
+            if (!_pools.TryGetValue(poolKey, out entry))
+                return new string[0];
+            foreach (PhraseSet set in entry)
+            {
+                if (set.Tone == tone && set.Lines != null)
+                    return set.Lines;
+            }
+            return new string[0];
+        }
+
         /// <summary>최근 사용을 피해 하나 뽑아 슬롯을 채운다. 실패 시 null.</summary>
         public string Pick(string poolKey, Dictionary<string, string> slots,
                            string tone = "casual")

@@ -40,6 +40,9 @@ namespace TeamRadio56.Core.Logic
         public const string StatusReport = "status_report";
         public const string RaceStart = "race_start";
         public const string RaceEnd = "race_end";
+        public const string CooldownLap = "cooldown_lap";        // 체커 뒤 쿨다운 랩 안내
+        public const string RaceSummary = "race_summary";        // 체커 뒤 한 번 — 베스트 랩 요약
+        public const string PostRacePit = "post_race_pit";       // 체커 뒤 피트레인 진입
         public const string LapFeedback = "lap_feedback";
         public const string TrackTrend = "track_trend";
         public const string Fcy = "fcy";

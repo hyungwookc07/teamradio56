@@ -93,6 +93,9 @@ namespace TeamRadio56.Core.Logic
         public static readonly double[] SegFuelSave = Tenths(1, 30);
         public const int SegPitWindowMin = PitWindowWholeMax + 1;        // 0~40은 통문장
         public const int SegRivalPitMin = RivalPitWholeMax + 1;          // 1~30은 통문장
+        // 1단계 — 체커 콜 등급 (RaceEnd.FinishCall): 4위~60위, 올라온 계단 2~56 (speech_domain SEG_FINISH_*)
+        public const int SegFinishPlaceMin = 4, SegFinishPlaceMax = ClassPosMax;
+        public const int SegFinishGainedMin = 2, SegFinishGainedMax = ClassPosMax - 4;
         public static readonly double[] SegCoach = Tenths(1, 29);
         public static readonly int[] CoachSectors = { 1, 2, 3 };
 
@@ -196,17 +199,6 @@ namespace TeamRadio56.Core.Logic
         {
             double v = Fixed(f, 0);
             return v >= BriefFuelMin && v <= BriefFuelMax;
-        }
-
-        // -- 트랙 이름 목록 (en 브리핑 첫 문장) ----------------------------------
-
-        private static readonly HashSet<string> Tracks =
-            new HashSet<string>(PhraseLines.TrackNamesEn, StringComparer.Ordinal);
-
-        /// <summary>voice_lines/track_names_en.txt (생성 시 내장) — en 브리핑이 이름을 말할 수 있는가.</summary>
-        public static bool KnownTrackEn(string name)
-        {
-            return name != null && Tracks.Contains(name);
         }
 
         private static double[] Tenths(int lo, int hi)

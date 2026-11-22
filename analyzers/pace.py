@@ -56,8 +56,8 @@ class PaceAnalyzer:
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus,
                lap: LapRecord) -> Optional[dict]:
-        if not lap.valid:
-            return None
+        if not lap.valid or state.race_over:
+            return None                  # 피니시 랩·쿨다운 랩의 페이스/갭 코멘트는 무의미
         valid = [l for l in state.laps if l.valid]
         if len(valid) < MIN_LAPS_FOR_BASELINE:
             return None

@@ -72,8 +72,8 @@ class FuelAnalyzer:
         st = self.status(state, snap)
         if st is None:
             return None
-        if st["race_laps_left"] == 0:
-            return st                    # 체커 받은 뒤 연료 콜 무의미
+        if st["race_laps_left"] == 0 or state.race_over:
+            return st                    # 체커(또는 DNF) 뒤 연료 콜 무의미
 
         if st["fuel_laps"] <= self.critical_laps:
             bus.push(Event(

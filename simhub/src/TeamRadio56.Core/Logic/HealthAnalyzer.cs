@@ -135,6 +135,8 @@ namespace TeamRadio56.Core.Logic
             PlayerInfo p = snap.Player;
             if (p == null)
                 return;
+            // 체커(또는 DNF) 뒤엔 휠 탈락 콜만 — 쿨다운 랩에서도 차를 잃을 수 있는 안전 문제다
+            bool over = state.RaceOverNow(snap.PlayerScoring());
 
             WheelInfo[] wheels = p.Wheels ?? new WheelInfo[0];
 
@@ -165,8 +167,11 @@ namespace TeamRadio56.Core.Logic
                 _wasInPitlane = false;
             }
 
-            TrackWing(p, state, bus);
-            TrackAlignment(p, state, bus);
+            if (!over)
+            {
+                TrackWing(p, state, bus);
+                TrackAlignment(p, state, bus);
+            }
 
             double impactEt = p.LastImpactEt;
             if (impactEt != 0.0 && impactEt > _lastImpactEt + 0.5)
@@ -175,7 +180,7 @@ namespace TeamRadio56.Core.Logic
                 _dents = p.DentSeverity != null ? (byte[])p.DentSeverity.Clone() : new byte[0];
                 _lastImpactEt = impactEt;
                 double mag = p.LastImpactMag;
-                if (mag >= _impactMag)
+                if (mag >= _impactMag && !over)
                 {
                     int nw = Math.Min(wheels.Length, 4);
                     _prePressures = new double[nw];
@@ -193,6 +198,8 @@ namespace TeamRadio56.Core.Logic
                 }
             }
 
+            if (over)
+                _reportDue = null;           // 피니시 전 충격의 점검 리포트도 접는다
             // 충격 후 자동 점검 리포트 — 드라이버가 아니라 우리가 데이터로 확인
             if (_reportDue.HasValue && snap.T >= _reportDue.Value)
             {
@@ -200,6 +207,8 @@ namespace TeamRadio56.Core.Logic
                 DamageReport(p, state, bus);
             }
 
+            if (p.Detached && !_detachedWarned && over)
+                _detachedWarned = true;      // 체커 뒤 — 차고로 들어가는 중이라 말하지 않는다
             // 차체 부품 탈락 — 직전 충격이 리어 쪽이면 리어 윙 가능성 특정
             if (p.Detached && !_detachedWarned)
             {
@@ -250,8 +259,11 @@ namespace TeamRadio56.Core.Logic
                 }
             }
 
-            CheckSlowPuncture(p, wheels, state, bus);
-            CheckInstability(p, snap.T, state, bus);
+            if (!over)
+            {
+                CheckSlowPuncture(p, wheels, state, bus);
+                CheckInstability(p, snap.T, state, bus);
+            }
         }
 
         private void OnImpact(double mag, byte[] prevDents, double now,
@@ -628,7 +640,7 @@ namespace TeamRadio56.Core.Logic
         public void OnLap(RaceState state, Snapshot snap, EventBus bus)
         {
             PlayerInfo p = snap.Player;
-            if (p == null)
+            if (p == null || state.RaceOver)
                 return;
 
             CheckDamagePace(state, bus);

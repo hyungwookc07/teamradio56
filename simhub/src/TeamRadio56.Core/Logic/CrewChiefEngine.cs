@@ -38,13 +38,6 @@ namespace TeamRadio56.Core.Logic
 
         private bool _wasInSession;
 
-        /// <summary>음성 팩으로 말하는 세션 (음성 출력 켜짐 + 쓸 수 있는 팩) — 브리핑이 목록 밖 트랙 이름을 뺀다.</summary>
-        public bool BriefingPackOnly
-        {
-            get { return _briefer.PackOnly; }
-            set { _briefer.PackOnly = value; }
-        }
-
         /// <summary>설정 화면에 보여줄 한 줄 상태.</summary>
         public string StatusText { get; private set; } = "대기 중";
 
@@ -143,7 +136,8 @@ namespace TeamRadio56.Core.Logic
             Dictionary<string, object> fuelStatus = _fuel.OnLap(State, snap, Bus);
             _pace.OnLap(State, snap, Bus, lap);
             Dictionary<string, object> tyreStatus = _tyres.OnLap(State, snap, Bus);
-            if (lap.InPits && State.IsRace)
+            // 체커 뒤 피트인은 새 스틴트가 아니다
+            if (lap.InPits && State.IsRace && !State.RaceOver)
             {
                 Bus.Push(new RadioEvent
                 {

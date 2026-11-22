@@ -35,6 +35,11 @@ class StrategyEngine:
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus,
                fuel_status: Optional[dict], tyre_status: Optional[dict]) -> None:
+        if state.race_over:
+            # 내 레이스가 끝났다 — 전략 이슈를 정리하고 판단 트리거는 내지 않는다
+            for key in ("fuel", "tyres", "weather", "track_wet"):
+                state.clear_issue(key)
+            return
         triggers: list[str] = []
 
         # 1) 피트 윈도우 개방 전이

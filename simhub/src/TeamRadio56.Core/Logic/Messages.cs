@@ -382,6 +382,243 @@ namespace TeamRadio56.Core.Logic
             return Get("brief_minutes", "m", m);
         }
 
+        // -- 결정적 변형 (messages.py variant/fnv1a32 미러) -------------------
+        // 문장 슬롯마다 변형 여러 개 — 랜덤이 아니라 스냅샷 값 시드의 FNV-1a 해시로 고른다.
+        // 파이썬과 같은 문장을 골라야 리플레이가 브리핑을 문장 단위로 대조할 수 있다.
+
+        // 정적 필드는 선언 순서대로 초기화된다 — 아래 VariantTable보다 먼저 만들지 않게 지연 생성
+        private static Dictionary<string, string[]> _variants;
+
+        private static Dictionary<string, string[]> Variants
+        {
+            get { return _variants ?? (_variants = BuildVariants()); }
+        }
+
+        private static Dictionary<string, string[]> BuildVariants()
+        {
+            var d = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, string[]> kv in VariantTable)
+                d.Add(kv.Key, kv.Value);
+            return d;
+        }
+
+        /// <summary>변형 그룹 키 전체 (정의 순서) — 사전 생성 열거용 (messages.variant_keys).</summary>
+        public static IEnumerable<string> VariantKeys()
+        {
+            foreach (KeyValuePair<string, string[]> kv in VariantTable)
+                yield return kv.Key;
+        }
+
+        /// <summary>그룹의 변형 템플릿 (messages.variants).</summary>
+        public static string[] VariantTemplates(string key)
+        {
+            return Variants[key];
+        }
+
+        /// <summary>FNV-1a 32비트 (UTF-8 바이트) — messages.fnv1a32와 같은 값.</summary>
+        public static uint Fnv1a32(string text)
+        {
+            uint h = 2166136261u;
+            foreach (byte b in Encoding.UTF8.GetBytes(text ?? ""))
+            {
+                h ^= b;
+                h = unchecked(h * 16777619u);
+            }
+            return h;
+        }
+
+        /// <summary>시드로 고른 변형 번호 — 슬롯(그룹 키)마다 따로 해시 (messages.variant_index).</summary>
+        public static int VariantIndex(string key, string seed)
+        {
+            return (int)(Fnv1a32(seed + "|" + key) % (uint)Variants[key].Length);
+        }
+
+        /// <summary>Variant("brief_temp", seed, "t", 31.0) — 이름/값 쌍 (messages.variant).</summary>
+        public static string Variant(string key, string seed, params object[] nameValuePairs)
+        {
+            return Format(Variants[key][VariantIndex(key, seed)], nameValuePairs);
+        }
+
+        /// <summary>레이스 요약의 {nth} 슬롯 — 2·3만 말한다 (messages.ordinal_word).</summary>
+        public static string OrdinalWord(int n)
+        {
+            return n == 2 ? "second" : n == 3 ? "third" : "";
+        }
+
+        // -- 결정적 변형 (messages.py _V["en"] 미러, 정의 순서 그대로) ------------
+
+        private static readonly KeyValuePair<string, string[]>[] VariantTable =
+        {
+            new KeyValuePair<string, string[]>("brief_open_practice", new[]
+            {
+                "Radio check. Practice session, we're all set.",
+                "Radio check, one two. This is practice.",
+                "Radio check. Practice is green, the car's yours.",
+                "Radio check. We're in practice.",
+                "Radio check. Practice, let's get some laps in.",
+            }),
+            new KeyValuePair<string, string[]>("brief_open_practice_mid", new[]
+            {
+                "Radio check. Practice is running, I'm with you.",
+                "Radio check. Picking you up mid-session.",
+                "Radio check, one two. Practice still live.",
+            }),
+            new KeyValuePair<string, string[]>("brief_open_quali", new[]
+            {
+                "Radio check. Qualifying session.",
+                "Radio check. Qualifying, here we go.",
+                "Radio check, one two. This is qualifying.",
+                "Radio check. Qualifying, time to show the pace.",
+                "Radio check. Qualifying is live.",
+            }),
+            new KeyValuePair<string, string[]>("brief_open_quali_mid", new[]
+            {
+                "Radio check. Qualifying is running, I'm with you.",
+                "Radio check. Picking you up mid-qualifying.",
+                "Radio check, one two. Qualifying still live.",
+            }),
+            new KeyValuePair<string, string[]>("brief_open_warmup", new[]
+            {
+                "Radio check. Warm-up session.",
+                "Radio check. Warm-up, last look before the race.",
+                "Radio check, one two. This is warm-up.",
+                "Radio check. Short warm-up, nothing fancy.",
+            }),
+            new KeyValuePair<string, string[]>("brief_open_warmup_mid", new[]
+            {
+                "Radio check. Warm-up is running, I'm with you.",
+                "Radio check, one two. Warm-up still live.",
+                "Radio check. Picking you up in warm-up.",
+            }),
+            new KeyValuePair<string, string[]>("brief_open_race", new[]
+            {
+                "Radio check. Race session.",
+                "Radio check, one two. This is the race.",
+                "Radio check. Race day, here we go.",
+                "Radio check. Race time.",
+                "Radio check. Race on, I'm with you all the way.",
+            }),
+            new KeyValuePair<string, string[]>("brief_open_race_mid", new[]
+            {
+                "Radio check. Race is on, I'm with you.",
+                "Radio check. Picking you up mid-race.",
+                "Radio check, one two. Race still running.",
+                "Radio check. Back on the radio, race is live.",
+            }),
+            new KeyValuePair<string, string[]>("brief_len_long", new[]
+            {
+                "{length} long.",
+                "{length} on the clock.",
+            }),
+            new KeyValuePair<string, string[]>("brief_len_remaining", new[]
+            {
+                "{length} remaining.",
+                "{length} to go.",
+            }),
+            new KeyValuePair<string, string[]>("brief_grid", new[]
+            {
+                "We start P{cp}.",
+                "Starting P{cp}.",
+            }),
+            new KeyValuePair<string, string[]>("brief_grid_mid", new[]
+            {
+                "We're P{cp}.",
+                "Running P{cp}.",
+            }),
+            new KeyValuePair<string, string[]>("brief_temp", new[]
+            {
+                "Track {t:.0f} degrees.",
+                "Track temp {t:.0f}.",
+                "Track's at {t:.0f} degrees.",
+            }),
+            new KeyValuePair<string, string[]>("brief_fuel", new[]
+            {
+                "Fuel {f:.0f} litres.",
+                "{f:.0f} litres on board.",
+            }),
+            new KeyValuePair<string, string[]>("brief_rain", new[]
+            {
+                "It's raining, watch the grip.",
+                "Wet out there, grip will be low.",
+                "Rain falling, be gentle early on.",
+            }),
+            new KeyValuePair<string, string[]>("brief_plan_practice", new[]
+            {
+                "Build it up over a few laps, no need to push yet.",
+                "Bring the tyres in gently, then we start the run.",
+                "Install lap first, then build the pace.",
+                "Settle in, find a rhythm, then tell me about the balance.",
+                "Easy first lap, then we go to work.",
+            }),
+            new KeyValuePair<string, string[]>("brief_gap_quali", new[]
+            {
+                "Find a gap on the out lap, we want clear air.",
+                "Use the out lap to make some space.",
+                "Clear air is everything. Back off if you need to.",
+                "Don't start a lap stuck behind someone. Make a gap first.",
+                "Out lap is about space and tyre temperature.",
+            }),
+            new KeyValuePair<string, string[]>("brief_limits_quali", new[]
+            {
+                "Mind the track limits, we can't afford a deleted lap.",
+                "Four wheels inside the lines, no deleted laps.",
+                "Track limits are being watched. Keep it tidy.",
+                "Stay inside the white lines, a deleted lap costs us everything.",
+            }),
+            new KeyValuePair<string, string[]>("brief_close_quali", new[]
+            {
+                "Make it count.",
+                "One clean lap, that's all we need.",
+                "Go and get it.",
+                "Clean and committed. Off you go.",
+                "Deep breath, then go for it.",
+            }),
+            new KeyValuePair<string, string[]>("brief_plan_warmup", new[]
+            {
+                "Just check the car. Brakes, tyres, balance.",
+                "Systems check before the race, no heroics.",
+                "Feel for the car, save the effort for the race.",
+                "Couple of laps to make sure everything's working.",
+            }),
+            new KeyValuePair<string, string[]>("brief_close_out", new[]
+            {
+                "Out when you're ready.",
+                "Pit exit is yours whenever you're ready.",
+                "Off you go when you're happy.",
+                "Car's ready when you are.",
+                "Head out when you're set.",
+            }),
+            new KeyValuePair<string, string[]>("brief_formation", new[]
+            {
+                "Formation lap, get heat in the tyres and brakes. Hold your slot, I'll call the green.",
+                "On the formation lap, keep the tyres and brakes warm. Stay in your slot, the green comes from me.",
+                "Formation lap. Temperature in the tyres, hold position. I'll call the green.",
+                "Rolling out for the formation lap. Brakes and tyres up to temp, hold your place. I'll call it when it's green.",
+                "Formation lap, warm everything up. Keep your slot, I'll call the green.",
+            }),
+            new KeyValuePair<string, string[]>("brief_start_spotter", new[]
+            {
+                "Through the start it's left and right calls only.",
+                "Into turn one I'll give you side calls only.",
+                "At the start, just left and right from me.",
+            }),
+            new KeyValuePair<string, string[]>("brief_close_race", new[]
+            {
+                "Calm first lap.",
+                "Stay out of trouble in turn one.",
+                "Keep your nose clean on lap one.",
+                "Patience on the opening lap.",
+                "No heroes into turn one.",
+            }),
+            new KeyValuePair<string, string[]>("brief_close_mid", new[]
+            {
+                "Carry on.",
+                "Carry on with the plan.",
+                "Keep doing what you're doing.",
+                "Head down, carry on.",
+            }),
+        };
+
         // -- 문장 테이블 (messages.py _T 미러) --------------------------------
 
         private static readonly Dictionary<string, string> En =
@@ -404,7 +641,6 @@ namespace TeamRadio56.Core.Logic
             // racecontrol
             { "sector_yellow", "Yellow in sector {n}. No overtaking, be ready to lift." },
             { "pen_clear", "Penalty served. Back to your race." },
-            { "final_lap", "Last lap. Bring it home." },
             { "penalty_head", "Penalty — {kind}" },
             { "penalty_advice_drive-through", "Serve it next lap. Mind the limiter." },
             { "penalty_advice_stop-and-go", "Hold the stop time in the box. Stay calm." },
@@ -461,30 +697,15 @@ namespace TeamRadio56.Core.Logic
             { "status_fuel", "Fuel {n}." },
             { "status_tyres", "Tyres {n}." },
             { "status_tyres_good", "Tyres good." },
-            // 세션 브리핑
-            { "kind_race", "Race" }, { "kind_warmup", "Warmup" },
-            { "kind_quali", "Qualifying" }, { "kind_practice", "Practice" },
-            { "brief_track", "{track}. {kind} session." },
-            { "brief_radio", "Radio check. {kind} session." },
+            // 세션 브리핑 (SessionBriefer) — 문장 슬롯마다 변형은 VariantTable, 여기는 변형 없는 조각만
             { "brief_hours", "{h} hour" },
             { "brief_hours_plural", "{h} hours" },
             { "brief_hours_half", "{h} and a half hours" },
             { "brief_minute", "1 minute" },
             { "brief_minutes", "{m} minutes" },
-            { "brief_len_remaining", "{length} remaining." },
-            { "brief_len_long", "{length} long." },
             { "brief_lap", "1 lap." },
             { "brief_laps", "{n} laps." },
-            { "brief_grid", "{n} cars in class. We start P{cp}." },
-            { "brief_grid_mid", "{n} cars in class. We're P{cp}." },
-            { "brief_rain", "It's raining, watch the grip." },
-            { "brief_temp", "Track {t:.0f} degrees." },
-            { "brief_fuel", "Fuel {f:.0f} litres." },
-            { "brief_formation", "Formation lap — hold your slot, I'll call the green." },
-            { "brief_start_spotter", "Through the start it's left and right calls only." },
-            { "brief_carry_on", "Carry on." },
-            { "brief_calm", "Calm first lap." },
-            { "brief_out", "Out when you're ready." },
+            { "brief_cars", "{n} cars in class." },
             // 렌더러 폴백
             { "milestone_hours", "{h} hour{s} to go. On plan." },
             { "milestone_minutes", "{m} minutes to go. Rechecking fuel and tyres." },

@@ -13,8 +13,6 @@ C# SpeechDomain.cs와 값·순서가 같아야 한다 (replay-check가 문장 �
 from __future__ import annotations
 
 import math
-import os
-import sys
 
 # -- 표시 반올림 -----------------------------------------------------------------
 
@@ -99,6 +97,9 @@ SEG_BRIEF_CARS = range(BRIEF_CARS_MIN, BRIEF_CARS_MAX + 1)
 SEG_BRIEF_POS = range(1, BRIEF_POS_MAX + 1)
 SEG_BRIEF_TEMP = range(BRIEF_TEMP_MIN, BRIEF_TEMP_MAX + 1)
 SEG_BRIEF_FUEL = range(BRIEF_FUEL_MIN, BRIEF_FUEL_MAX + 1)
+# 1단계 — 체커 콜 등급 (race_end.finish_call): 4위~60위, 올라온 계단 2~56 (스타트 60위 → 4위)
+SEG_FINISH_PLACE = range(4, CLASS_POS_MAX + 1)
+SEG_FINISH_GAINED = range(2, CLASS_POS_MAX - 4 + 1)
 
 # -- 술어 (파이썬 snake_case ↔ C# PascalCase) -------------------------------------
 
@@ -182,39 +183,3 @@ def brief_temp_ok(t: float) -> bool:
 
 def brief_fuel_ok(f: float) -> bool:
     return BRIEF_FUEL_MIN <= fixed(f, 0) <= BRIEF_FUEL_MAX
-
-
-# -- 트랙 이름 목록 (en 브리핑 첫 문장) -------------------------------------------
-
-
-def _base_dir() -> str:
-    # PyInstaller onefile 번들에서는 데이터 파일이 sys._MEIPASS에 풀린다
-    return getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
-
-
-TRACK_NAMES_FILE = os.path.join(_base_dir(), "voice_lines", "track_names_en.txt")
-
-
-def load_track_names(path: str) -> list[str]:
-    """트랙 이름 목록 파일 — 한 줄에 하나, 빈 줄과 '#' 주석은 무시.
-    utf-8-sig: 윈도 편집기가 붙인 BOM을 C# File.ReadAllLines(UTF8)처럼 떼어낸다."""
-    with open(path, "r", encoding="utf-8-sig") as f:
-        return [ln.strip() for ln in f
-                if ln.strip() and not ln.strip().startswith("#")]
-
-
-_TRACKS: tuple | None = None
-
-
-def track_names_en() -> tuple:
-    global _TRACKS
-    if _TRACKS is None:
-        try:
-            _TRACKS = tuple(load_track_names(TRACK_NAMES_FILE))
-        except OSError:
-            _TRACKS = ()
-    return _TRACKS
-
-
-def known_track_en(name: str) -> bool:
-    return name in track_names_en()

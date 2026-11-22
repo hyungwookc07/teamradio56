@@ -126,6 +126,8 @@ namespace TeamRadio56.Core.Logic
             Dictionary<string, object> st = Status(state);
             if (st == null)
                 return null;
+            if (state.RaceOver)
+                return st;                   // 체커 뒤 — 상태만 넘기고 콜은 없다
 
             // 펑크/탈락은 즉시 긴급 콜
             WheelInfo[] wheels = snap.Player != null && snap.Player.Wheels != null

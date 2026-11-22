@@ -195,7 +195,8 @@ namespace TeamRadio56.Core.Logic
             if ((_prevPhase == 3 || _prevPhase == 4) && phase == 5 && state.IsRace)
                 _greenT = snap.T;
             _prevPhase = phase;
-            if (phase != 5 && phase != 6)
+            // 레이스의 페이즈 8은 리더만 끝난 것 — 내 마지막 랩과 쿨다운 랩에도 아직 달리는 차가 있다
+            if (phase != 5 && phase != 6 && !(state.IsRace && phase == 8))
                 return;
             if (_cfg.RaceOnly && !state.IsRace)
                 return;
@@ -203,6 +204,7 @@ namespace TeamRadio56.Core.Logic
             if (trackLen <= 0)
                 return;
             double now = snap.T;
+            bool over = state.RaceOverNow(me);
             bool spotterMode = _greenT.HasValue && now - _greenT.Value < _cfg.StartSpotterSec;
             double mySpeed = (snap.Player != null ? snap.Player.SpeedKmh : 0.0) / 3.6;
 
@@ -261,13 +263,15 @@ namespace TeamRadio56.Core.Logic
             else if (transitions.Count > 0)
             {
                 _spot = null;    // 스포터 모드 종료 → 기준 리셋
-                Emit(transitions, now, bus);
+                Emit(transitions, now, bus, over);
             }
 
-            // 동클래스 배틀 여부 (LLM 문맥 연속성용)
+            // 동클래스 배틀 여부 (LLM 문맥 연속성용) — 피니시 뒤엔 배틀이 없다
             CarTrack battler = null;
             foreach (CarTrack t in OrderedTracks())
             {
+                if (over)
+                    break;
                 if ((t.State == NearbyBehind || t.State == Alongside)
                     && !t.Faster && !t.Backmarker)
                 {
@@ -518,11 +522,14 @@ namespace TeamRadio56.Core.Logic
         // -- 발화 -------------------------------------------------------------
 
         private void Emit(List<KeyValuePair<CarTrack, string>> transitions,
-                          double now, EventBus bus)
+                          double now, EventBus bus, bool over)
         {
             var speak = new List<KeyValuePair<CarTrack, string>>();
             foreach (KeyValuePair<CarTrack, string> pair in transitions)
             {
+                // 피니시 뒤(쿨다운 랩): 나란히/빠른 차 접근만 — 배틀·추월 서사는 의미가 없다
+                if (over && pair.Key.State != Alongside && pair.Key.State != Approaching)
+                    continue;
                 if (WorthAnnouncing(pair.Key, pair.Value, now))
                     speak.Add(pair);
             }

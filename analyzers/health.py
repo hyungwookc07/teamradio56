@@ -13,6 +13,10 @@
 
 충격과 무관한 상시 감시: 휠 탈락(즉시 콜), 슬로우 펑처(공기압 지속 하락).
 임계값 초과 시에만 발화. 쿨다운으로 반복 억제.
+
+내 레이스가 끝나면(체커·DNF) 휠 탈락 콜만 남긴다 — 쿨다운 랩에서도 차를 잃을 수 있는
+안전 문제다. 충격·점검 리포트·윙·얼라인·리어 불안정·슬로우 펑처·부품 탈락·엔진/브레이크
+온도·수리 판단은 차가 곧 차고로 들어가므로 말하지 않는다.
 """
 
 from __future__ import annotations
@@ -182,6 +186,7 @@ class HealthAnalyzer:
         p = snap.player
         if not p:
             return
+        over = state.race_over_now(snap.player_scoring())
 
         wheels = p.get("wheels") or []
 
@@ -205,8 +210,9 @@ class HealthAnalyzer:
         else:
             self._was_in_pitlane = False
 
-        self._track_wing(p, state, bus)
-        self._track_alignment(p, state, bus)
+        if not over:
+            self._track_wing(p, state, bus)
+            self._track_alignment(p, state, bus)
 
         impact_et = p.get("last_impact_et", 0.0)
         if impact_et and impact_et > self._last_impact_et + 0.5:
@@ -214,7 +220,7 @@ class HealthAnalyzer:
             self._dents = list(p.get("dent_severity") or [])
             self._last_impact_et = impact_et
             mag = p.get("last_impact_mag", 0.0)
-            if mag >= self.impact_mag:
+            if mag >= self.impact_mag and not over:
                 self._pre_pressures = [w.get("pressure", 0.0) for w in wheels[:4]]
                 if self._pre_impact_wing is None:    # 다중 충격 시 최초 기준 유지
                     self._pre_impact_wing = self._wing_ema
@@ -224,6 +230,8 @@ class HealthAnalyzer:
                 self._report_due = snap.t + REPORT_DELAY_SEC
                 self._on_impact(mag, prev_dents, snap.t, state, bus)
 
+        if over:
+            self._report_due = None      # 피니시 전 충격의 점검 리포트도 접는다
         # 충격 후 자동 점검 리포트 — 드라이버가 아니라 우리가 데이터로 확인
         if self._report_due is not None and snap.t >= self._report_due:
             self._report_due = None
@@ -232,6 +240,8 @@ class HealthAnalyzer:
         # 차체 부품 탈락 (미러/보닛/윙 등) — 펑크와 별개.
         # 직전 충격이 리어 쪽이면 리어 윙 가능성을 특정해서 부르고,
         # 어느 쪽이든 리어 불안정 감시를 켠다 (에어로 손실 대비).
+        if p.get("detached") and not self._detached_warned and over:
+            self._detached_warned = True     # 체커 뒤 — 차고로 들어가는 중이라 말하지 않는다
         if p.get("detached") and not self._detached_warned:
             self._detached_warned = True
             # 존 이름은 영문("rear left" 등) — 한국어로 검사하면 절대 안 걸린다
@@ -260,8 +270,9 @@ class HealthAnalyzer:
                 ))
                 state.set_issue("damage", f"{WHEEL_NAMES[i]} 휠 탈락 — 즉시 피트 필요")
 
-        self._check_slow_puncture(p, wheels, state, bus)
-        self._check_instability(p, snap.t, state, bus)
+        if not over:
+            self._check_slow_puncture(p, wheels, state, bus)
+            self._check_instability(p, snap.t, state, bus)
 
     def _on_impact(self, mag: float, prev_dents: Optional[list], now: float,
                    state: SessionState, bus: EventBus) -> None:
@@ -495,7 +506,7 @@ class HealthAnalyzer:
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus) -> None:
         p = snap.player
-        if not p:
+        if not p or state.race_over:
             return
 
         self._check_damage_pace(state, bus)

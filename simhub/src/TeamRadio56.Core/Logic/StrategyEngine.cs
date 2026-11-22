@@ -44,6 +44,13 @@ namespace TeamRadio56.Core.Logic
                           Dictionary<string, object> fuelStatus,
                           Dictionary<string, object> tyreStatus)
         {
+            if (state.RaceOver)
+            {
+                // 내 레이스가 끝났다 — 전략 이슈를 정리하고 판단 트리거는 내지 않는다
+                foreach (string key in new[] { "fuel", "tyres", "weather", "track_wet" })
+                    state.ClearIssue(key);
+                return;
+            }
             var triggers = new List<string>();
 
             // 1) 피트 윈도우 개방 전이

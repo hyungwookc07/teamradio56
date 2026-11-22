@@ -307,11 +307,8 @@ class CrewChiefApp:
         if snap.player_scoring() is None:
             return
         self._briefed_session = True
-        # 임의 문장을 못 말하는 목소리(kokoro 팩)면 목록에 없는 트랙 이름은 뺀다 (LLM 게이트와 같은 판단)
-        pack_only = bool(self.cfg.get("voice.enabled", True)) and not self.engine.free_text
         text = compose_session_briefing(
-            snap, self.state, self.cfg.get("thresholds.start_spotter_sec", 45),
-            pack_only=pack_only)
+            snap, self.state, self.cfg.get("thresholds.start_spotter_sec", 45))
         if text is None:
             return
         self.bus.push(Event(
@@ -328,8 +325,8 @@ class CrewChiefApp:
         if fuel_status:
             log.debug("연료: %s", fuel_status)
 
-        # 피트 아웃랩 다음 랩 → 스틴트 브리핑 (LLM)
-        if lap.in_pits and self.state.is_race:
+        # 피트 아웃랩 다음 랩 → 스틴트 브리핑 (LLM) — 체커 뒤 피트인은 스틴트가 아니다
+        if lap.in_pits and self.state.is_race and not self.state.race_over:
             self.bus.push(Event(
                 type=EventType.STINT_BRIEFING, priority=Priority.NORMAL,
                 data={}, dedup_key=f"stint_{lap.lap_number}",

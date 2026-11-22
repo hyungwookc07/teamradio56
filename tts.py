@@ -644,7 +644,6 @@ def _count_pack_missing(cache_dir: str, voice: str) -> tuple[int, int]:
     문장은 PACK_TIERS 세그먼트 파일이 없는 것. C# VoicePolicy.CountMissing(PackMaxTier)."""
     import radiofx
     from radio_assemble import segment_file_name
-    from speech_domain import track_names_en
     from voice import PACK_TIERS, PhrasePool, iter_pregen_sentences, iter_pregen_texts, lines_file
     whole = 0
     for tone, text in set(iter_pregen_texts(PhrasePool(lines_file("en")))):
@@ -652,7 +651,7 @@ def _count_pack_missing(cache_dir: str, voice: str) -> tuple[int, int]:
         rfx = os.path.splitext(raw)[0] + f"_rfx{radiofx.VERSION}.wav"
         if not (os.path.isfile(rfx) or os.path.isfile(raw)):
             whole += 1
-    seg = sum(1 for tone, s in set(iter_pregen_sentences(PACK_TIERS, track_names_en()))
+    seg = sum(1 for tone, s in set(iter_pregen_sentences(PACK_TIERS))
               if not os.path.isfile(os.path.join(cache_dir, segment_file_name(s, tone, voice))))
     return whole, seg
 
@@ -926,6 +925,8 @@ class VoiceWorker(threading.Thread):
         # 세션 목소리가 임의 문장을 말할 수 없으면 LLM을 부르지 않는다 (llm_speakable)
         if not ev.bridge or not getattr(self.voice_gen, "llm_speakable", False):
             return
+        if getattr(self.state, "race_over", False):
+            return       # 체커 뒤엔 후속 설명(LLM)도 없다 — 레이스 중 판단이라 무의미
 
         def worker(src_ev):
             try:

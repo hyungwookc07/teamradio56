@@ -32,11 +32,9 @@ namespace TeamRadio56.Replay
             bool dumpSentences = false;
             bool dumpSegNames = false;
             int maxTier = PregenSentences.PackMaxTier;
-            string tracksPath = null;
             string assembleDir = null;
             double minPct = 0;
             string fuzzCases = null;
-            string checkTracks = null;
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--replay" && i + 1 < args.Length)
@@ -88,14 +86,10 @@ namespace TeamRadio56.Replay
                     dumpSegNames = true;
                 else if (args[i] == "--tier" && i + 1 < args.Length)
                     maxTier = int.Parse(args[++i], CultureInfo.InvariantCulture);
-                else if (args[i] == "--tracks" && i + 1 < args.Length)
-                    tracksPath = args[++i];
                 else if (args[i] == "--assemble-check" && i + 1 < args.Length)
                     assembleDir = args[++i];
                 else if (args[i] == "--fuzz-eval" && i + 1 < args.Length)
                     fuzzCases = args[++i];
-                else if (args[i] == "--check-tracks" && i + 1 < args.Length)
-                    checkTracks = args[++i];
                 else if (args[i] == "--min" && i + 1 < args.Length)
                     minPct = double.Parse(args[++i], CultureInfo.InvariantCulture);
             }
@@ -103,16 +97,12 @@ namespace TeamRadio56.Replay
                 return DumpPregen(outPath);
             if (dumpCacheNames)
                 return DumpCacheNames(outPath);
-            List<string> tracks = tracksPath != null
-                ? PregenSentences.LoadTracks(tracksPath) : new List<string>();
             if (fuzzCases != null)
-                return Fuzz.Eval(fuzzCases, outPath ?? "fuzz_cs.tsv", tracks);
-            if (checkTracks != null)
-                return CheckTracks(checkTracks);
+                return Fuzz.Eval(fuzzCases, outPath ?? "fuzz_cs.tsv");
             if (dumpSentences || dumpSegNames)
-                return DumpSentences(outPath, maxTier, tracks, dumpSegNames);
+                return DumpSentences(outPath, maxTier, dumpSegNames);
             if (checkCacheDir != null)
-                return CheckCache(checkCacheDir, maxTier, tracks);
+                return CheckCache(checkCacheDir, maxTier);
             if (assembleDir != null)
                 return AssembleCheck(assembleDir);
             if (replayPath == null)
@@ -121,12 +111,11 @@ namespace TeamRadio56.Replay
                     "사용법: --replay <file.jsonl[.gz]> [--out calls.jsonl]"
                     + " [--race-end-trace trace.jsonl]"
                     + " | --dump-pregen [--out f] | --dump-cache-names [--out f]"
-                    + " | --dump-sentences|--dump-seg-names [--tier N] [--tracks f] [--out f]"
-                    + " | --replay <f> --coverage [--tier N] [--tracks f] [--min 퍼센트]"
-                    + " | --check-cache <오디오캐시폴더> [--tier N] [--tracks f]"
+                    + " | --dump-sentences|--dump-seg-names [--tier N] [--out f]"
+                    + " | --replay <f> --coverage [--tier N] [--min 퍼센트]"
+                    + " | --check-cache <오디오캐시폴더> [--tier N]"
                     + " | --assemble-check <폴더>"
-                    + " | --fuzz-eval <cases.jsonl> [--tracks f] [--out f]"
-                    + " | --check-tracks <track_names_en.txt>"
+                    + " | --fuzz-eval <cases.jsonl> [--out f]"
                     + " | --update-selftest | --voice-selftest | --settings-selftest"
                     + " | --dump-voice-table [--out f] | --pack-state-check <폴더>"
                     + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f [--audio-dir d]]"
@@ -145,9 +134,12 @@ namespace TeamRadio56.Replay
             var pace = new PaceAnalyzer();
             var tyres = new TyreAnalyzer();
             var strategy = new StrategyEngine();
-            var reporter = new StatusReporter();
+            bool laptimeEveryLap;
+            int statusEveryLaps;
+            if (!ReplayConfig(replayPath, out laptimeEveryLap, out statusEveryLaps))
+                return 2;
+            var reporter = new StatusReporter(laptimeEveryLap, statusEveryLaps);
             var briefer = new SessionBriefer();   // StartSpotterSec 기본 45 = 파이썬 DEFAULTS
-            briefer.PackOnly = coverage;          // 커버리지는 음성 팩 세션 기준 (목록 밖 트랙은 무전 체크)
 
             var lines = new List<string>();
             var accepted = new List<RadioEvent>();
@@ -203,7 +195,7 @@ namespace TeamRadio56.Replay
                     Dictionary<string, object> fuelStatus = fuel.OnLap(state, snap, bus);
                     pace.OnLap(state, snap, bus, lap);
                     Dictionary<string, object> tyreStatus = tyres.OnLap(state, snap, bus);
-                    if (lap.InPits && state.IsRace)
+                    if (lap.InPits && state.IsRace && !state.RaceOver)
                     {
                         bus.Push(new RadioEvent
                         {
@@ -228,7 +220,7 @@ namespace TeamRadio56.Replay
                     tw.WriteLine(line);
             }
             if (coverage)
-                return Coverage(accepted, maxTier, tracks, minPct);
+                return Coverage(accepted, maxTier, minPct);
 
             TextWriter writer = outPath != null
                 ? new StreamWriter(outPath, false, new UTF8Encoding(false))
@@ -247,11 +239,9 @@ namespace TeamRadio56.Replay
         /// <summary>
         /// 리플레이에서 실제로 나갈 발화 문장을 렌더링해 코코로로 나갈 수 있는
         /// 비율을 잰다 — 통문장 클립(KOKORO), 문장이 전부 세그먼트 목록에 있음
-        /// (KOKORO-SEG), 아니면 miss(빠진 문장 출력). 목록에 없는 트랙은 브리핑이
-        /// 무전 체크로 열리므로 트랙 이름 미스는 없다. --min 미만이면 1.
+        /// (KOKORO-SEG), 아니면 miss(빠진 문장 출력). --min 미만이면 1.
         /// </summary>
-        private static int Coverage(List<RadioEvent> accepted, int maxTier,
-                                    List<string> tracks, double minPct)
+        private static int Coverage(List<RadioEvent> accepted, int maxTier, double minPct)
         {
             var pregen = new HashSet<string>(StringComparer.Ordinal);
             foreach (KeyValuePair<string, string> item
@@ -259,7 +249,7 @@ namespace TeamRadio56.Replay
                 pregen.Add(item.Key + "\t" + item.Value);
             var sentences = new HashSet<string>(StringComparer.Ordinal);
             foreach (KeyValuePair<string, string> item
-                     in PregenSentences.Enumerate(maxTier, tracks))
+                     in PregenSentences.Enumerate(maxTier))
                 sentences.Add(item.Key + "\t" + item.Value);
 
             var renderer = new VoiceRenderer(new PhrasePool(new Random(7)));
@@ -372,12 +362,11 @@ namespace TeamRadio56.Replay
         /// "톤\t세그먼트파일명\t문장") 정렬·중복 제거로 출력 — 파이썬
         /// dump_pregen.py --sentences / --seg-names와 diff한다.
         /// </summary>
-        private static int DumpSentences(string outPath, int maxTier,
-                                         List<string> tracks, bool segNames)
+        private static int DumpSentences(string outPath, int maxTier, bool segNames)
         {
             var set = new SortedSet<string>(StringComparer.Ordinal);
             foreach (KeyValuePair<string, string> item
-                     in PregenSentences.Enumerate(maxTier, tracks))
+                     in PregenSentences.Enumerate(maxTier))
             {
                 set.Add(segNames
                     ? item.Key + "\t" + VoiceCache.SegmentFileName(item.Value, item.Key)
@@ -430,7 +419,7 @@ namespace TeamRadio56.Replay
         /// maxTier 이하 문장 세그먼트(_seg1.wav)와 조립 자산 4개도 요구한다 —
         /// 플러그인이 배포 캐시를 몇 개나 찾는지 확인하는 진단 도구.
         /// </summary>
-        private static int CheckCache(string cacheDir, int maxTier, List<string> tracks)
+        private static int CheckCache(string cacheDir, int maxTier)
         {
             var cache = new VoiceCache(cacheDir);
             if (!cache.Available)
@@ -474,7 +463,7 @@ namespace TeamRadio56.Replay
             int segTotal = 0, segHit = 0;
             var segMisses = new List<string>();
             foreach (KeyValuePair<string, string> item
-                     in PregenSentences.Enumerate(maxTier, tracks))
+                     in PregenSentences.Enumerate(maxTier))
             {
                 segTotal++;
                 if (File.Exists(Path.Combine(cacheDir,
@@ -517,21 +506,42 @@ namespace TeamRadio56.Replay
         }
 
         /// <summary>
-        /// 내장 트랙 목록(PhraseLines.TrackNamesEn)이 파일과 같은지 — 다르면
-        /// tools/gen_csharp_phrases.py를 다시 돌려야 한다 (en 브리핑 트랙 판정이 갈린다).
+        /// 리플레이 설정 사이드카 (&lt;이름&gt;.config.json) — tools/replay_calls.py replay_sidecar와
+        /// 같은 키만 받는다 (리포터). 없으면 기본값(꺼짐). 모르는 키·타입은 실패.
         /// </summary>
-        private static int CheckTracks(string path)
+        private static bool ReplayConfig(string replay, out bool laptimeEveryLap, out int statusEveryLaps)
         {
-            List<string> file = PregenSentences.LoadTracks(path);
-            var embedded = new List<string>(PhraseLines.TrackNamesEn);
-            if (string.Join("\n", file) == string.Join("\n", embedded))
+            laptimeEveryLap = false;
+            statusEveryLaps = 0;
+            string baseName = replay.EndsWith(".jsonl.gz", StringComparison.Ordinal)
+                ? replay.Substring(0, replay.Length - ".jsonl.gz".Length)
+                : Path.Combine(Path.GetDirectoryName(replay) ?? "",
+                               Path.GetFileNameWithoutExtension(replay));
+            string path = baseName + ".config.json";
+            if (!File.Exists(path))
+                return true;
+            using System.Text.Json.JsonDocument doc =
+                System.Text.Json.JsonDocument.Parse(File.ReadAllText(path, Encoding.UTF8));
+            foreach (System.Text.Json.JsonProperty p in doc.RootElement.EnumerateObject())
             {
-                Console.WriteLine($"✅ 내장 트랙 목록 일치 — {file.Count}개");
-                return 0;
+                System.Text.Json.JsonValueKind k = p.Value.ValueKind;
+                if (p.Name == "reports.laptime_every_lap"
+                    && (k == System.Text.Json.JsonValueKind.True || k == System.Text.Json.JsonValueKind.False))
+                {
+                    laptimeEveryLap = p.Value.GetBoolean();
+                }
+                else if (p.Name == "reports.status_every_laps" && k == System.Text.Json.JsonValueKind.Number
+                         && p.Value.GetRawText().IndexOf('.') < 0)
+                {
+                    statusEveryLaps = p.Value.GetInt32();
+                }
+                else
+                {
+                    Console.Error.WriteLine(path + ": 허용되지 않는 키/타입 " + p.Name + "=" + p.Value.GetRawText());
+                    return false;
+                }
             }
-            Console.WriteLine($"❌ 내장 트랙 목록({embedded.Count}개)이 {path}({file.Count}개)와 다름"
-                              + " — python tools/gen_csharp_phrases.py 재실행");
-            return 1;
+            return true;
         }
 
         private static string FindOut(string[] args) => ArgValue(args, "--out");

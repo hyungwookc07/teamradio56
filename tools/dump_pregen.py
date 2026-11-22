@@ -8,7 +8,7 @@ C# 러너의 --dump-pregen 출력과 diff해 멘트 데이터/슬롯 포매팅 �
 --seg-names는 그 세그먼트 파일명(C# --dump-seg-names와 diff).
 
 사용법: python tools/dump_pregen.py [--out f]
-        python tools/dump_pregen.py --sentences|--seg-names [--tiers 1,2,3] [--tracks f]
+        python tools/dump_pregen.py --sentences|--seg-names [--tiers 1,2,3]
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from messages import set_language                            # noqa: E402
 from radio_assemble import segment_file_name                  # noqa: E402
 from voice import (PhrasePool, iter_pregen_sentences,         # noqa: E402
-                   iter_pregen_texts, lines_file, load_track_names)
+                   iter_pregen_texts, lines_file)
 
 
 def _cache_name_line(tone: str, text: str) -> str:
@@ -57,16 +57,13 @@ def main() -> int:
                         help="세그먼트 파일명 (C# --dump-seg-names와 diff)")
     parser.add_argument("--tiers", default="1,2,3",
                         help="문장 단계 목록 (예: 1 또는 1,2)")
-    parser.add_argument("--tracks", default=None,
-                        help="트랙 이름 목록 파일 (2단계 세션 브리핑용)")
     args = parser.parse_args()
 
     # C# 대조(replay-check)는 en 고정 — ko는 수동 확인용
     set_language(args.lang)
     if args.sentences or args.seg_names:
         tiers = tuple(int(t) for t in args.tiers.split(",") if t.strip())
-        tracks = load_track_names(args.tracks) if args.tracks else ()
-        pairs = set(iter_pregen_sentences(tiers, tracks))
+        pairs = set(iter_pregen_sentences(tiers))
         if args.seg_names:
             items = sorted(_seg_name_line(tone, s) for tone, s in pairs)
         else:

@@ -76,6 +76,19 @@ class SessionState:
     def is_race(self) -> bool:
         return self.session_type is not None and self.session_type >= RACE_SESSION_MIN
 
+    @property
+    def race_over(self) -> bool:
+        """내 레이스가 끝났다 (체커 피니시 또는 DNF/DQ) — 체커 뒤 무전만 남기고 전략·연료·
+        타이어·라이벌·정기 리포트 같은 레이스 중 콜은 끈다. 랩 분석기(observe 뒤)용.
+        C# RaceState.RaceOver."""
+        return self.is_race and (self.race_end.finished or self.race_end.out)
+
+    def race_over_now(self, me: Optional[dict]) -> bool:
+        """틱 분석기용 — state.update(observe) 전에 돌므로 이번 틱에 켜진 피니시
+        플래그(finish_status)도 본다. C# RaceState.RaceOverNow."""
+        return self.race_over or (self.is_race and me is not None
+                                  and me.get("finish_status", 0) != 0)
+
     def recent_laps(self, n: int = 3, valid_only: bool = True) -> list[LapRecord]:
         laps = [l for l in self.laps if l.valid] if valid_only else self.laps
         return laps[-n:]

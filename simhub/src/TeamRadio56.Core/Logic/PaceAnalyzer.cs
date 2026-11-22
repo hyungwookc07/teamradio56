@@ -55,8 +55,8 @@ namespace TeamRadio56.Core.Logic
 
         public void OnLap(RaceState state, Snapshot snap, EventBus bus, LapRecord lap)
         {
-            if (!lap.Valid)
-                return;
+            if (!lap.Valid || state.RaceOver)
+                return;                      // 피니시 랩·쿨다운 랩의 페이스/갭 코멘트는 무의미
             var valid = new List<LapRecord>();
             foreach (LapRecord l in state.Laps)
             {

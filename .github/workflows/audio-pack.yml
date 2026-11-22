@@ -131,7 +131,7 @@ jobs:
           python tools/pregen_audio.py --engine kokoro --shard "$SHARD" 2>&1 \
             | tee "$RUNNER_TEMP/logs/whole.log"
           python tools/pregen_audio.py --engine kokoro --segments --tiers 1,2,3 \
-            --tracks voice_lines/track_names_en.txt --shard "$SHARD" 2>&1 \
+            --shard "$SHARD" 2>&1 \
             | tee "$RUNNER_TEMP/logs/segments.log"
           # pack이 샤드가 다 모였는지 확인하는 표식 (팩 zip에는 안 들어간다)
           touch "audio_cache/shard-${SHARD/\//-of-}.done"

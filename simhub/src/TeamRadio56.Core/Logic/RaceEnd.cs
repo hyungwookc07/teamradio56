@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using TeamRadio56.Core.Telemetry;
 
 namespace TeamRadio56.Core.Logic
 {
     /// <summary>
-    /// race_end.py 포팅 — 레이스 종료(체커) 판단: 마지막 랩/남은 랩/내 피니시.
+    /// race_end.py 포팅 — 레이스 종료(체커) 판단: 마지막 랩/남은 랩/내 피니시, 그리고
+    /// 체커 뒤 무전의 순수 규칙 (체커 콜 등급·쿨다운 랩·레이스 요약).
     /// rF2/LMU: 시간제는 시계 0 이후 전체 1위(클래스 무관)가 라인을 넘을 때 체커, 나머지는 그 뒤
     /// 각자 첫 라인 통과에서 피니시. 랩제는 1위가 max_laps를 채울 때. 그래서 랩 다운·느린 클래스는
     /// 자기 페이스로 센 것보다 한 랩 더(또는 덜) 돈다. 페이즈 8은 '리더' 피니시다.
@@ -16,6 +18,88 @@ namespace TeamRadio56.Core.Logic
         public const double JustCrossedSec = 5.0;       // 랩 카운트는 넘어갔는데 lap_dist가 아직 안 감긴 순간
         public const double LateMinToLineSec = 10.0;    // 라인까지 이보다 가까우면 늦은 '마지막 랩'은 피니시와 겹친다
         public const int PhaseOver = 8;
+
+        // 체커 뒤 무전 — 체커 콜 수락 시각(EndT)으로부터의 간격 (race_end.py POST_*)
+        public const double PostCooldownSec = 7.0;
+        public const double PostSummarySec = 20.0;
+        public const double PostEps = 1e-6;
+        public const int FinishHeldBand = 1;         // 스타트 대비 ±1계단은 '비슷'
+        public const int FinishPlaceMax = SpeechDomain.ClassPosMax;
+
+        /// <summary>
+        /// 체커 콜 등급 (race_end.finish_call) — pool, startPlace(모르면 0), gained(올라온 계단).
+        /// P1 → 클래스 우승/우승, P2~3 → 포디움, 스타트 모름 → result, ±1 → held, 그 밖 gained/lost,
+        /// 범위 밖 순위 → plain.
+        /// </summary>
+        public static string FinishCall(int place, int start, bool multiclass,
+                                        out int startPlace, out int gained)
+        {
+            startPlace = 0;
+            gained = 0;
+            if (place < 1 || place > FinishPlaceMax)
+                return "race_end_plain";
+            startPlace = start >= 1 && start <= FinishPlaceMax ? start : 0;
+            gained = startPlace != 0 ? startPlace - place : 0;
+            if (place == 1)
+                return multiclass ? "race_end_class_win" : "race_end_win";
+            if (place <= 3)
+                return "race_end_podium";
+            if (startPlace == 0)
+            {
+                gained = 0;
+                return "race_end_result";
+            }
+            if (gained > FinishHeldBand)
+                return "race_end_gained";
+            if (gained < -FinishHeldBand)
+                return "race_end_lost";
+            return "race_end_held";
+        }
+
+        public static bool IsMulticlass(Snapshot snap)
+        {
+            var classes = new HashSet<string>(StringComparer.Ordinal);
+            foreach (VehicleInfo v in snap.Vehicles)
+                classes.Add(v.Class ?? "");
+            return classes.Count > 1;
+        }
+
+        /// <summary>쿨다운 랩 콜 풀 (race_end.cooldown_pool).</summary>
+        public static string CooldownPool(int stillRacing, bool faster)
+        {
+            if (faster)
+                return "cooldown_lap_faster";
+            return stillRacing > 0 ? "cooldown_lap_traffic" : "cooldown_lap";
+        }
+
+        /// <summary>(내 베스트 랩 클래스 순위 — 없으면 0, 베스트 랩 있는 동클래스 수(나 포함)) (race_end.best_lap_rank).</summary>
+        public static int BestLapRank(Snapshot snap, VehicleInfo me, out int timed)
+        {
+            double mine = me.BestLap;
+            timed = 0;
+            int faster = 0;
+            foreach (VehicleInfo v in snap.Vehicles)
+            {
+                if (v.Class != me.Class)
+                    continue;
+                if (v.BestLap > 0)
+                    timed++;
+                if (v.Id != me.Id && v.BestLap > 0 && v.BestLap < mine)
+                    faster++;
+            }
+            return mine <= 0 ? 0 : 1 + faster;
+        }
+
+        /// <summary>레이스 요약 풀 (race_end.summary_pool).</summary>
+        public static string SummaryPool(int rank, int timed, bool multiclass)
+        {
+            string sfx = multiclass ? "_class" : "";
+            if (rank == 1 && timed >= 2)
+                return "race_summary_fastest" + sfx;
+            if (rank == 2 || rank == 3)
+                return "race_summary_pace" + sfx;
+            return "race_summary_debrief";
+        }
 
         /// <summary>그린/FCY/체커 이후(리더만 끝남).</summary>
         public static bool IsRacingPhase(int p)
@@ -99,6 +183,14 @@ namespace TeamRadio56.Core.Logic
         public int? FinalCalledFor;   // '마지막 랩'이 수락된 시점의 내 total_laps
         public bool EndCalled;
         public int Generation;        // Reset마다 증가 — 큐에 남은 콜이 이전 레이스 것인지 가린다
+        // 스타트 클래스 순위 — 그린 전(그리드·포메이션) 마지막 관측값, 중간 합류면 null
+        public int? StartClassPlace;
+        public bool SeenGreen;
+        // 체커 뒤 무전 — 체커 콜 수락 시각(snap.T)과 래치
+        public double? EndT;
+        public bool CooldownCalled;
+        public bool SummaryCalled;
+        public bool PitInCalled;
 
         public bool FinalLap
         {
@@ -115,6 +207,12 @@ namespace TeamRadio56.Core.Logic
             SeenUnfinished = false;
             FinalCalledFor = null;
             EndCalled = false;
+            StartClassPlace = null;
+            SeenGreen = false;
+            EndT = null;
+            CooldownCalled = false;
+            SummaryCalled = false;
+            PitInCalled = false;
             Generation++;
         }
 
@@ -126,6 +224,10 @@ namespace TeamRadio56.Core.Logic
             SessionInfo ses = snap.Session;
             double now = ses.CurrentEt;
             int phase = ses.GamePhase;
+            if (RaceEnd.IsRacingPhase(phase))
+                SeenGreen = true;
+            else if (!SeenGreen && phase < 5 && me.Place > 0)
+                StartClassPlace = RaceState.ClassPlaceOf(snap, me);
             if (!ChequeredEt.HasValue && RaceEnd.FlagOut(snap))
             {
                 // 체커 차의 lap_start_et가 실제 통과 시각 — 같은 틱에 넘은 차들의 선후를 가른다

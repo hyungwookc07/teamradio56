@@ -77,8 +77,9 @@ def generate(seed: int) -> list:
         return sorted(tones)
 
     def n_lines(key, tone):
-        # 두 언어 풀에 모두 있는 변형까지만 (band가 언어와 무관하게 하나로 정해지게)
-        return min(len(p.lines(key, tone)) for p in pools.values())
+        # en 풀 기준 (플러그인 무전) — ko 풀이 더 짧으면 ko 평가에서 NONE이 되고,
+        # ko 검사는 band none → NONE만 본다 (en에만 있는 풀도 케이스가 생긴다)
+        return len(pools["en"].lines(key, tone))
 
     def pool_cases(ev, key, datas):
         for tone in tones_of(key):
@@ -104,10 +105,42 @@ def generate(seed: int) -> list:
         pool_cases(T.RACE_START, key, [{"pool": key}])
     for key in ("alongside_left", "alongside_right", "alongside_both", "side_clear"):
         pool_cases(T.SPOTTER, key, [{"pool": key, "side": s} for s in ("left", "right")])
-    pool_cases(T.RACE_END, "race_end", [{"class_place": p} for p in range(0, 13)])
     for key in ("position_up", "position_down"):
         pool_cases(T.POSITION_CHANGE, key,
-                   [{"pool": key, "class_place": p} for p in range(0, 13)])
+                   [{"pool": key, "class_place": p} for p in range(0, sd.CLASS_POS_MAX + 1)])
+    for key in ("final_lap", "final_lap_lead"):
+        pool_cases(T.RACE_MILESTONE, key, [{"pool": key, "final_lap": True, "lap": 7}])
+    pool_cases(T.POST_RACE_PIT, "post_race_pit", [{"pool": "post_race_pit"}])
+
+    # -- 체커 콜 등급 (race_end.finish_call → 렌더) — 범위 밖 순위는 숫자 없는 plain --
+    from race_end import cooldown_pool, finish_call, summary_pool
+
+    def finish_case(place, start, multi):
+        pool = finish_call(place, start, multi)[0]
+        for line in range(len(pools["en"].lines(pool, "casual"))):
+            add("race_end", "in", place=place, start=start, multiclass=multi, line=line)
+
+    for place in range(0, 66):
+        starts = sorted({0, 1, max(place - 1, 0), place, place + 1, place + 2, place + 9,
+                         min(place + 56, 70), rnd.randint(0, 70)})
+        for start in starts:
+            finish_case(place, start, place % 2 == 1)
+    for _ in range(3000):
+        finish_case(rnd.randint(-2, 70), rnd.randint(-2, 70), rnd.random() < 0.5)
+
+    # -- 체커 뒤 요약 · 쿨다운 랩 --
+    for rank in range(0, 6):
+        for timed in range(1, 4):
+            for multi in (False, True):
+                pool = summary_pool(rank, timed, multi)
+                for line in range(len(pools["en"].lines(pool, "casual"))):
+                    add("race_summary", "in", rank=rank, timed=timed, multiclass=multi,
+                        line=line)
+    for n in range(0, 4):
+        for faster in (False, True):
+            pool = cooldown_pool(n, faster)
+            for line in range(len(pools["en"].lines(pool, "casual"))):
+                add("cooldown_lap", "in", n=n, faster=faster, line=line)
     add("pool", "none", ev=T.TRAFFIC_CLOSE, data={"cls": "GT3"}, tone="urgent", line=0)
 
     # -- 갭 --
@@ -270,14 +303,9 @@ def generate(seed: int) -> list:
                  rnd.choice(SIDES)] for _ in range(n)]
         add("traffic_multi", multi_band(cars), cars=cars)
 
-    # -- 세션 브리핑 --
-    tracks = list(sd.track_names_en())
-
+    # -- 세션 브리핑 (트랙 이름 없이 무전 체크로 연다 — 변형은 시드 해시) --
     def brief_case(**b):
         band = "in"
-        track = (b.get("track") or "").strip()
-        if track and not sd.known_track_en(track):
-            band = "out"
         end_et, cur_et, max_laps = b["end_et"], b["cur_et"], b["max_laps"]
         if 0 < end_et < 86400:
             if max(int(round((end_et - cur_et) / 60)), 1) > sd.BRIEF_MINUTES_MAX:
@@ -289,7 +317,7 @@ def generate(seed: int) -> list:
             band = "out"
         if b["track_temp"] > 0 and not sd.brief_temp_ok(b["track_temp"]):
             band = "out"
-        if b["fuel"] and not sd.brief_fuel_ok(b["fuel"]):
+        if b["session_type"] >= 10 and b["fuel"] and not sd.brief_fuel_ok(b["fuel"]):
             band = "out"
         add("briefing", band, **b)
 
@@ -297,7 +325,6 @@ def generate(seed: int) -> list:
         timed = rnd.random() < 0.6
         return dict(
             session_type=rnd.choice((0, 1, 5, 6, 9, 10, 11)),
-            track=rnd.choice(tracks + ["", "Circuit de Test", "Imaginary Ring"]),
             end_et=_r(rnd.uniform(0, 100000), 1) if timed else 0.0,
             cur_et=_r(rnd.uniform(0, 3000), 1),
             max_laps=rnd.choice((0, 1, 5, 30, 100, 101, 500, 9999, 2147483647)),
@@ -309,7 +336,7 @@ def generate(seed: int) -> list:
 
     for _ in range(30000):
         brief_case(**rand_brief())
-    base = dict(session_type=10, track=tracks[0] if tracks else "", end_et=0.0, cur_et=0.0,
+    base = dict(session_type=10, end_et=0.0, cur_et=0.0,
                 max_laps=0, mid_join=False, cls_count=2, class_place=1, track_temp=25.0,
                 raining=0.0, fuel=50.0, start_spotter_sec=45.0)
     for n in range(0, 81):
@@ -328,6 +355,15 @@ def generate(seed: int) -> list:
     for v in ("nan", "inf", "-inf"):
         add("briefing", "in", **{**base, "track_temp": v})
         add("briefing", "in", **{**base, "fuel": v})
+    # 변형 전부 — 세션 종류 × 시작/중간 합류 × 세션 시계 (시드가 바뀌면 슬롯마다 다른 변형).
+    # 한 번이라도 안 쓰인 변형은 tools/radio_flow_selftest.py가 잡는다
+    for stype in (1, 5, 9, 10):
+        for mid in (False, True):
+            for i in range(300):
+                brief_case(**{**base, "session_type": stype, "mid_join": mid,
+                              "end_et": 3600.0, "cur_et": i * 0.1,
+                              "raining": 0.3 if i % 2 else 0.0,
+                              "start_spotter_sec": 45.0 if i % 3 else 0.0})
 
     # -- HUD 랩타임 / 상황 리포트 --
     for i in range(3000, 40001):
@@ -407,6 +443,21 @@ def _evaluate_case(kind: str, a: dict, ctx: dict):
     from voice import VoiceGenerator, render_deterministic, iter_composed_whole_texts
     from messages import penalty_text
 
+    if kind in ("race_end", "race_summary", "cooldown_lap"):
+        from race_end import cooldown_pool, finish_call, summary_pool
+        if kind == "race_end":
+            pool, start, gained = finish_call(a["place"], a["start"], a["multiclass"])
+            ev, d = T.RACE_END, {"pool": pool, "class_place": a["place"],
+                                 "start_place": start, "gained": gained}
+        elif kind == "race_summary":
+            ev = T.RACE_SUMMARY
+            d = {"pool": summary_pool(a["rank"], a["timed"], a["multiclass"]),
+                 "rank": a["rank"]}
+        else:
+            ev, d = T.COOLDOWN_LAP, {"pool": cooldown_pool(a["n"], a["faster"]),
+                                     "still_racing": a["n"]}
+        a = {"ev": ev, "data": d, "tone": "casual", "line": a["line"]}
+        kind = "pool"
     if kind == "pool":
         call = VoiceGenerator.pool_call(a["ev"], a["data"])
         if call is None:
@@ -528,7 +579,7 @@ def _evaluate_case(kind: str, a: dict, ctx: dict):
         from briefing import BriefingInputs, briefing_text
         a = {k: float(v) if k in ("track_temp", "fuel") and isinstance(v, str) else v
              for k, v in a.items()}
-        return ("voice", "casual", briefing_text(BriefingInputs(**a), pack_only=True))
+        return ("voice", "casual", briefing_text(BriefingInputs(**a)))
     if kind == "lap_time":
         from analyzers.reporter import StatusReporter
         text = StatusReporter.laptime_text(a["lap_time"], a["best"])
@@ -611,8 +662,7 @@ def evaluate(cases_path: str, lang: str, out_path: str) -> int:
     if lang == "en":
         sys.path.insert(0, os.path.join(ROOT, "tools"))
         import pack_audio
-        names = pack_audio.expected_names(
-            PACK_TIERS, tracks=os.path.join(ROOT, "voice_lines", "track_names_en.txt"))
+        names = pack_audio.expected_names(PACK_TIERS)
         set_language(lang)
     memo: dict = {}
 

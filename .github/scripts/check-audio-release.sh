@@ -64,7 +64,7 @@ problem() {
 HAVE_EXPECTED=false
 expected_names() {
     [ "$HAVE_EXPECTED" = false ] || return 0
-    python3 tools/pack_audio.py expected --tiers 1,2,3 --tracks voice_lines/track_names_en.txt \
+    python3 tools/pack_audio.py expected --tiers 1,2,3 \
         --out "$EXPECTED" || err "지금 코드의 멘트 파일 집합을 만들지 못했습니다 (pack_audio.py expected)"
     HAVE_EXPECTED=true
 }

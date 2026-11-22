@@ -22,11 +22,11 @@ namespace TeamRadio56.Replay
         private static readonly HashSet<string> PyOnly =
             new HashSet<string> { "lap_feedback", "track_trend", "llm_gate" };
 
-        public static int Eval(string casesPath, string outPath, List<string> tracks)
+        public static int Eval(string casesPath, string outPath)
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var pool = new PhrasePool(new Random(0));
-            VoiceRoute route = VirtualPack(tracks);
+            VoiceRoute route = VirtualPack();
             var memo = new Dictionary<string, string>(StringComparer.Ordinal);
             List<KeyValuePair<string, string>> fixedTexts =
                 new List<KeyValuePair<string, string>>(PregenTexts.ComposedWhole());
@@ -77,13 +77,13 @@ namespace TeamRadio56.Replay
         }
 
         /// <summary>배포 팩이 담는 파일명 전체 — 통문장 _rfx + 문장 세그먼트 + 조립 자산.</summary>
-        private static VoiceRoute VirtualPack(List<string> tracks)
+        private static VoiceRoute VirtualPack()
         {
             var names = new HashSet<string>(StringComparer.Ordinal);
             foreach (KeyValuePair<string, string> item in PregenTexts.Enumerate(new PhrasePool()))
                 names.Add(VoiceCache.WholeFxFileName(item.Value, item.Key));
             foreach (KeyValuePair<string, string> item
-                     in PregenSentences.Enumerate(PregenSentences.PackMaxTier, tracks))
+                     in PregenSentences.Enumerate(PregenSentences.PackMaxTier))
                 names.Add(VoiceCache.SegmentFileName(item.Value, item.Key));
             foreach (string asset in RadioAssembler.AssetNames)
                 names.Add(asset);
@@ -117,6 +117,54 @@ namespace TeamRadio56.Replay
         {
             switch (kind)
             {
+                case "race_end":
+                case "race_summary":
+                case "cooldown_lap":
+                {
+                    // 순수 규칙(RaceEnd.*) → 이벤트 data → 풀 렌더 (coverage_fuzz의 같은 kind)
+                    var ev = new RadioEvent();
+                    if (kind == "race_end")
+                    {
+                        int start, gained;
+                        int place = Int(a, "place");
+                        string finishPool = RaceEnd.FinishCall(place, Int(a, "start"),
+                            a.GetProperty("multiclass").GetBoolean(), out start, out gained);
+                        ev.Type = EventTypes.RaceEnd;
+                        ev.Data = new Dictionary<string, object>
+                        {
+                            { "pool", finishPool }, { "class_place", place },
+                            { "start_place", start }, { "gained", gained },
+                        };
+                    }
+                    else if (kind == "race_summary")
+                    {
+                        ev.Type = EventTypes.RaceSummary;
+                        ev.Data = new Dictionary<string, object>
+                        {
+                            { "pool", RaceEnd.SummaryPool(Int(a, "rank"), Int(a, "timed"),
+                                a.GetProperty("multiclass").GetBoolean()) },
+                            { "rank", Int(a, "rank") },
+                        };
+                    }
+                    else
+                    {
+                        ev.Type = EventTypes.CooldownLap;
+                        ev.Data = new Dictionary<string, object>
+                        {
+                            { "pool", RaceEnd.CooldownPool(Int(a, "n"), a.GetProperty("faster").GetBoolean()) },
+                            { "still_racing", Int(a, "n") },
+                        };
+                    }
+                    string key;
+                    Dictionary<string, string> slots;
+                    if (!VoiceRenderer.PoolCall(ev, out key, out slots))
+                        return new[] { "none" };
+                    string[] lines = pool.Lines(key, "casual");
+                    int line = Int(a, "line");
+                    if (line >= lines.Length)
+                        return new[] { "none" };
+                    return Voice("casual", PhrasePool.Format(lines[line], slots));
+                }
                 case "pool":
                 {
                     var ev = new RadioEvent { Type = Str(a, "ev"), Data = Dict(a.GetProperty("data")) };
@@ -289,7 +337,6 @@ namespace TeamRadio56.Replay
                     var b = new SessionBriefer.BriefingInputs
                     {
                         SessionType = Int(a, "session_type"),
-                        Track = Str(a, "track"),
                         EndEt = Dbl(a, "end_et"),
                         CurEt = Dbl(a, "cur_et"),
                         MaxLaps = Int(a, "max_laps"),
@@ -301,7 +348,7 @@ namespace TeamRadio56.Replay
                         Fuel = Dbl(a, "fuel"),
                         StartSpotterSec = Dbl(a, "start_spotter_sec"),
                     };
-                    return Voice("casual", SessionBriefer.ComposeText(b, packOnly: true));
+                    return Voice("casual", SessionBriefer.ComposeText(b));
                 }
                 case "lap_time":
                 {

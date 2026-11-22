@@ -54,6 +54,9 @@ class EventType:
     STATUS_REPORT = "status_report"        # HUD 대체: N랩마다 상황 리포트 (옵션)
     RACE_START = "race_start"
     RACE_END = "race_end"
+    COOLDOWN_LAP = "cooldown_lap"       # 체커 뒤 쿨다운 랩 안내 (아직 달리는 차 경고 포함)
+    RACE_SUMMARY = "race_summary"       # 체커 뒤 한 번 — 베스트 랩 클래스 순위 요약
+    POST_RACE_PIT = "post_race_pit"     # 체커 뒤 피트레인 진입 — 리미터·차고·인사
     LAP_FEEDBACK = "lap_feedback"       # 트레이닝: 섹터 델타 피드백
     TRACK_TREND = "track_trend"         # 트레이닝: 과거 세션 대비 추세
     FCY = "fcy"                         # 풀코스옐로/세이프티카 시작

@@ -465,7 +465,7 @@ expect "릴리스 목록 확인 실패 → dry run은 경고만"
 
 # ── check-audio-release.sh ───────────────────────────────────────────────
 echo "  · check-audio-release.sh"
-python3 tools/pack_audio.py expected --tiers 1,2,3 --tracks voice_lines/track_names_en.txt \
+python3 tools/pack_audio.py expected --tiers 1,2,3 \
     --out "$W/expected.txt" 2> /dev/null
 # 가짜 팩: 지금 코드가 찾는 이름 전부(full) / 하나 빠짐(short) — 내용은 작은 가짜 wav.
 # 팩 ID는 KNOWN_NAME_SETS에 없는 test-v* — 실제 표가 팩마다 늘어나도 기대 ID가 그대로다

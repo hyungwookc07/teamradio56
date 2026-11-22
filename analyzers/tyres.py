@@ -93,6 +93,8 @@ class TyreAnalyzer:
         st = self.status(state)
         if st is None:
             return None
+        if state.race_over:
+            return st                    # 체커 뒤 — 상태만 넘기고 콜은 없다
 
         # 펑크/탈락은 즉시 긴급 콜
         wheels = snap.player.get("wheels") or []

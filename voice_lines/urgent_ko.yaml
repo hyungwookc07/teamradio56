@@ -10,7 +10,8 @@
 # 스타일: 실제 팀라디오처럼 단어 위주, 어미 최소, 짧게 끊는다.
 # 슬롯은 이산값만: {cls}=클래스명(하이퍼카/엘엠피 투/GT3/상위 클래스),
 # {gap}=초(정수 1~6), {fuel_laps}=랩(정수 1~4), {side}=왼쪽/오른쪽,
-# {place}=순위(정수 1~8). 연속값 금지(캐시 불가).
+# {place}=실제 클래스 순위(정수), {gained}=스타트 대비 올라온 계단, {nth}=2위/3위.
+# 연속값 금지(캐시 불가). 한국어 무전은 파이썬 단독 앱 전용 (음성 팩 없음).
 
 traffic_approach:            # 접근 예고 (도달 3~10초 전)
   casual:
@@ -241,27 +242,94 @@ green_flag:                  # 리스타트
     - "리스타트 그린. 타이어 온도 체크."
     - "그린! 리스타트에 기회 있어."
 
-race_end:                    # 체커
+final_lap:                   # 마지막 랩
   casual:
-    - "체커! 클래스 {place}등. 수고했어."
-    - "체커드 플래그. P{place}."
-    - "끝났어. 클래스 P{place}. 좋은 레이스."
-    - "체커. P{place}. 디브리핑 정리할게."
-    - "피니시. P{place}. 고생했어."
+    - "마지막 랩. 이대로 가져오자."
+    - "파이널 랩. 체커까지 깔끔하게."
+
+final_lap_lead:              # 마지막 랩 (클래스 선두)
+  casual:
+    - "마지막 랩, 선두야. 무리하지 마."
+
+race_end_win:                # 체커 — 우승 (단일 클래스)
+  casual:
+    - "체커! 우승이야! 최고야!"
+
+race_end_class_win:          # 체커 — 클래스 우승
+  casual:
+    - "체커! 클래스 우승! 최고야!"
+
+race_end_podium:             # 체커 — 포디움 (P2~3)
+  casual:
+    - "체커. P{place}, 포디움이야!"
+
+race_end_gained:             # 체커 — 스타트보다 순위 상승
+  casual:
+    - "체커. P{place}. 스타트보다 {gained}계단 올라왔어. 잘했어."
+
+race_end_held:               # 체커 — 스타트와 비슷
+  casual:
+    - "체커. P{place}. 자리 지켰어, 수고했어."
+
+race_end_lost:               # 체커 — 순위 하락
+  casual:
+    - "체커. P{place}. 힘든 레이스였어, 다시 정리하자."
+
+race_end_result:             # 체커 — 스타트 순위 모름 (중간 합류)
+  casual:
+    - "체커. P{place}. 수고했어."
+
+race_end_plain:              # 체커 — 순위 범위 밖
+  casual:
+    - "체커. 레이스 끝, 수고했어."
+
+cooldown_lap:                # 쿨다운 랩
+  casual:
+    - "쿨다운 랩. 천천히 들어와."
+
+cooldown_lap_traffic:        # 쿨다운 랩 — 아직 달리는 차 있음
+  casual:
+    - "쿨다운 랩. 아직 피니시 전인 차 있어, 라인 비켜."
+
+cooldown_lap_faster:         # 쿨다운 랩 — 빠른 클래스 아직 레이스 중
+  casual:
+    - "쿨다운 랩. 빠른 차들 아직 레이스 중, 라인 비켜."
+
+race_summary_fastest_class:  # 요약 — 클래스 패스티스트 랩
+  casual:
+    - "클래스 패스티스트 랩도 우리 거야. 좋았어."
+
+race_summary_fastest:        # 요약 — 레이스 패스티스트 랩
+  casual:
+    - "패스티스트 랩도 우리 거야. 좋았어."
+
+race_summary_pace_class:     # 요약 — 베스트 랩 클래스 2~3위
+  casual:
+    - "베스트 랩 클래스 {nth}. 페이스 좋았어."
+
+race_summary_pace:           # 요약 — 베스트 랩 2~3위
+  casual:
+    - "베스트 랩 {nth}. 페이스 좋았어."
+
+race_summary_debrief:        # 요약 — 그 밖
+  casual:
+    - "데이터 좋았어. 디브리핑에서 같이 보자."
+
+post_race_pit:               # 체커 뒤 피트인
+  casual:
+    - "피트레인. 리미터 켜고 차고로. 고생했어."
 
 position_up:                 # 클래스 순위 상승
   casual:
-    - "클래스 P{place}. 업."
+    - "포지션 업. P{place}."
     - "P{place}. 좋아."
     - "P{place}. 흐름 유지."
-    - "포지션 업. 클래스 P{place}."
 
 position_down:               # 클래스 순위 하락
   casual:
-    - "클래스 P{place}. 침착하게 되찾자."
+    - "한 자리 내줬어. P{place}."
     - "P{place}. 한 랩씩."
     - "P{place}. 페이스 있으니까 기회 온다."
-    - "한 자리 내줬어. P{place}."
 
 pit_limiter:                 # 피트레인 리미터 미작동
   urgent:

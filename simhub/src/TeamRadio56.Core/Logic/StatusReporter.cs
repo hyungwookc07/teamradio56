@@ -36,8 +36,8 @@ namespace TeamRadio56.Core.Logic
                           Dictionary<string, object> fuelStatus,
                           Dictionary<string, object> tyreStatus)
         {
-            if (!Enabled || state.Laps.Count == 0)
-                return;
+            if (!Enabled || state.Laps.Count == 0 || state.RaceOver)
+                return;                      // 체커 뒤 정기 리포트(HUD 대체)는 무의미
             LapRecord lap = state.Laps[state.Laps.Count - 1];
 
             if (_laptimeOn && lap.Valid && lap.LapTime > 0)

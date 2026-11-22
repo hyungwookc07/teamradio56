@@ -3,7 +3,14 @@
 # Structure: <pool>: { casual: [...], urgent: [...] }
 # Style: real team radio — short, word-first, minimal grammar.
 # Slots (discrete only, for audio caching): {cls}=class name, {gap}=1-6 sec,
-# {fuel_laps}=1-4 laps, {side}=left/right, {place}=1-8.
+# {fuel_laps}=1-4 laps, {side}=left/right, {place}=real class place (1-60),
+# {gained}=places gained since the start (2-56), {nth}=second/third.
+#
+# Whole-clip pools are rendered line by line (voice.iter_pregen_texts). Pools whose
+# numbers would explode the clip count (race_end_gained/held/lost/result,
+# position_up/down) are spoken from sentence segments instead — every line is split
+# on sentence ends and "P{place}." is its own sentence, shared with the HUD reports
+# (voice.SEGMENT_POOL_SLOTS). Keep those numbers in their own sentence.
 
 traffic_approach:
   casual:
@@ -227,27 +234,159 @@ green_flag:
     - "Restart green. Mind the tyre temps."
     - "Green! Use the restart."
 
-race_end:
+final_lap:
   casual:
-    - "Checkered flag! P{place} in class. Good job."
-    - "That's the flag. P{place}."
-    - "It's done. P{place} in class."
-    - "Checkered. P{place}. I'll put the debrief together."
-    - "Finish. P{place}. Well done."
+    - "Last lap. Bring it home."
+    - "Final lap. Keep it clean to the flag."
+    - "Last lap now. Nice and tidy to the line."
+    - "This is the last one. Stay focused."
+    - "Final lap. Head down, all the way to the flag."
+
+final_lap_lead:
+  casual:
+    - "Last lap, and we're leading. Bring it home."
+    - "Final lap, P1. Nothing silly now."
+    - "Last lap. Leading, no risks now."
+    - "Final lap, still leading. Smooth to the flag."
+
+race_end_win:
+  casual:
+    - "Chequered flag! That's the win! Get in there!"
+    - "P1! You've won it! Brilliant drive."
+    - "Chequered flag, and that's a win. Superb job."
+    - "Race winner! What a drive."
+    - "That's it, P1 at the flag. Fantastic job, mate."
+
+race_end_class_win:
+  casual:
+    - "Chequered flag! Class win! Get in there!"
+    - "P1 in class! You've won it. Brilliant."
+    - "That's the class win. Superb job, mate."
+    - "Class victory! What a drive."
+    - "Chequered flag, P1 in class. Fantastic job."
+
+race_end_podium:
+  casual:
+    - "Chequered flag. P{place}, that's a podium!"
+    - "P{place}! On the podium. Great job."
+    - "That's the flag, P{place}. Podium, well driven."
+    - "Podium! P{place} at the flag. Really strong drive."
+    - "Chequered flag, P{place}. Podium finish, well done."
+
+race_end_gained:
+  casual:
+    - "Chequered flag. P{place}. Up {gained} places from the start. Great drive."
+    - "Across the line. P{place}. That's {gained} places gained. Well done."
+    - "Chequered flag, we're home. P{place}. Up {gained} places from the start. Lovely job."
+    - "And that's the race. P{place}. That's {gained} places gained. Really strong."
+    - "That's the flag. P{place}. Up {gained} places from the start. Good stuff."
+
+race_end_held:
+  casual:
+    - "Chequered flag. P{place}. About where we started, solid drive."
+    - "That's the flag. P{place}. Held our ground, good job."
+    - "Across the line. P{place}. Steady race, well driven."
+    - "And that's the race. P{place}. Solid result."
+    - "Chequered flag, we're home. P{place}. Good, consistent job."
+
+race_end_lost:
+  casual:
+    - "Chequered flag. P{place}. Tough one today, we'll regroup."
+    - "That's the flag. P{place}. Not the result we wanted, but we brought it home."
+    - "Across the line. P{place}. Hard race, we'll find more for next time."
+    - "And that's the race. P{place}. Difficult day, thanks for pushing to the end."
+    - "Chequered flag, we're home. P{place}. Not our day, we'll go through it together."
+
+race_end_result:
+  casual:
+    - "Chequered flag. P{place}. Good job."
+    - "That's the flag. P{place}. Well driven."
+    - "Chequered flag, we're home. P{place}."
+    - "And that's the race. P{place}. Nice work."
+    - "Across the line. P{place}. Thanks for the drive."
+
+race_end_plain:
+  casual:
+    - "Chequered flag. That's the race done."
+    - "That's the flag. Race complete, good job."
+    - "Chequered flag, we're home. Well done."
+
+cooldown_lap:
+  casual:
+    - "Cool-down lap now. Nice and easy."
+    - "Cool-down lap. Take it steady back to the pits."
+    - "Ease off now, gentle lap back in."
+    - "Bring it round gently. Cool-down lap."
+    - "Easy lap back. Let the brakes cool."
+
+cooldown_lap_traffic:
+  casual:
+    - "Cool-down lap. Cars still finishing, stay off the racing line."
+    - "Easy lap now, but others are still racing. Keep off the line."
+    - "Cool-down lap. Some cars still on their last lap, keep it predictable."
+    - "Take it easy, cars still finishing behind. Stay out of their way."
+
+cooldown_lap_faster:
+  casual:
+    - "Cool-down lap. Faster cars still racing, keep off the line."
+    - "Ease off, but watch your mirrors. Faster cars still racing."
+    - "Cool-down lap. Faster cars coming through, hold a predictable line."
+    - "Easy now, faster class still on track. Stay wide and let them by."
+
+race_summary_fastest_class:
+  casual:
+    - "And the fastest lap in class, too. Lovely."
+    - "Fastest lap in class as well. The pace was there."
+    - "You set the fastest lap in class. Great stuff."
+    - "Quickest lap in class on top of that. Nice work."
+
+race_summary_fastest:
+  casual:
+    - "And the fastest lap of the race, too. Lovely."
+    - "Fastest lap of the race as well. The pace was there."
+    - "You set the fastest lap of the race. Great stuff."
+    - "Quickest lap of anyone out there. Nice work."
+
+race_summary_pace_class:
+  casual:
+    - "Our best lap was {nth}-quickest in class. Good pace."
+    - "Pace was there, {nth}-best lap in class."
+    - "Decent pace too, {nth}-fastest lap in class."
+
+race_summary_pace:
+  casual:
+    - "Our best lap was {nth}-quickest of the race. Good pace."
+    - "Pace was there, {nth}-best lap of the field."
+    - "Decent pace too, {nth}-fastest lap overall."
+
+race_summary_debrief:
+  casual:
+    - "Good data from that one. We'll go through it in the debrief."
+    - "Plenty to learn from that. Debrief when you're out of the car."
+    - "Lots to take from that one. We'll talk it through after."
+    - "We'll look over the data together. Thanks for the effort."
+
+post_race_pit:
+  casual:
+    - "Pit lane. Limiter on, bring it into the garage. Thanks, mate."
+    - "Limiter on, straight to the garage. Thanks for today."
+    - "In the pit lane, limiter please. Park it in the garage, great work."
+    - "Limiter on, mind the crews. Bring it home to the garage, thank you."
+    - "Pit entry, limiter. Into the garage, and cheers for the effort."
 
 position_up:
   casual:
-    - "P{place} in class. Up one."
+    - "Position gained. P{place}."
     - "P{place}. Nice."
     - "P{place}. Keep the rhythm."
-    - "Position up. P{place}."
+    - "Good move. P{place}."
 
 position_down:
   casual:
-    - "P{place} now. We'll take it back."
+    - "Lost a place. P{place}."
     - "P{place}. One lap at a time."
     - "P{place}. The pace is there, chances will come."
-    - "Lost one. P{place}."
+    - "P{place}. We'll take it back."
 
 pit_limiter:
   urgent:

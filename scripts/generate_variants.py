@@ -159,10 +159,100 @@ POOL_SPECS: dict[str, dict] = {
         "slots": [], "required": [],
         "tones": {"urgent": "짧게. 리스타트 집중 당부."},
     },
-    "race_end": {
-        "situation": "체커드 플래그. 클래스 {place}등으로 완주했다.",
+    "final_lap": {
+        "situation": "마지막 랩이 시작됐다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "짧게. 실수 없이 체커까지."},
+    },
+    "final_lap_lead": {
+        "situation": "클래스 선두로 마지막 랩이 시작됐다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "짧게. 무리하지 말고 지키자."},
+    },
+    "race_end_win": {
+        "situation": "체커드 플래그. 우승했다 (단일 클래스).",
+        "slots": [], "required": [],
+        "tones": {"casual": "기쁨 + 치하."},
+    },
+    "race_end_class_win": {
+        "situation": "체커드 플래그. 클래스 우승했다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "기쁨 + 치하."},
+    },
+    "race_end_podium": {
+        "situation": "체커드 플래그. 클래스 {place}등, 포디움이다.",
         "slots": ["place"], "required": ["place"],
-        "tones": {"casual": "수고 치하 + 결과 언급."},
+        "tones": {"casual": "포디움 축하."},
+    },
+    "race_end_gained": {
+        "situation": "체커드 플래그. 클래스 {place}등, 스타트보다 {gained}계단 올라왔다.",
+        "slots": ["place", "gained"], "required": ["place", "gained"],
+        "tones": {"casual": "결과 + 상승 칭찬."},
+    },
+    "race_end_held": {
+        "situation": "체커드 플래그. 클래스 {place}등, 스타트와 비슷한 순위다.",
+        "slots": ["place"], "required": ["place"],
+        "tones": {"casual": "결과 + 꾸준함 치하."},
+    },
+    "race_end_lost": {
+        "situation": "체커드 플래그. 클래스 {place}등, 스타트보다 순위를 잃었다.",
+        "slots": ["place"], "required": ["place"],
+        "tones": {"casual": "결과 + 탓하지 않는 격려. 잃은 계단 수는 말하지 않는다."},
+    },
+    "race_end_result": {
+        "situation": "체커드 플래그. 클래스 {place}등 (스타트 순위는 모른다).",
+        "slots": ["place"], "required": ["place"],
+        "tones": {"casual": "결과 + 수고 치하."},
+    },
+    "race_end_plain": {
+        "situation": "체커드 플래그. 순위는 말하지 않는다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "수고 치하."},
+    },
+    "cooldown_lap": {
+        "situation": "체커 뒤 쿨다운 랩. 트랙에 달리는 차가 없다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "천천히 들어오라."},
+    },
+    "cooldown_lap_traffic": {
+        "situation": "체커 뒤 쿨다운 랩. 아직 피니시 전인 차들이 달린다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "레이싱 라인 비키고 예측 가능하게."},
+    },
+    "cooldown_lap_faster": {
+        "situation": "체커 뒤 쿨다운 랩. 빠른 클래스 차들이 아직 레이스 중이다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "미러 보고 라인 비키라."},
+    },
+    "race_summary_fastest": {
+        "situation": "레이스 패스티스트 랩을 우리가 기록했다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "짧은 칭찬."},
+    },
+    "race_summary_fastest_class": {
+        "situation": "클래스 패스티스트 랩을 우리가 기록했다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "짧은 칭찬."},
+    },
+    "race_summary_pace": {
+        "situation": "우리 베스트 랩이 레이스 {nth}였다.",
+        "slots": ["nth"], "required": ["nth"],
+        "tones": {"casual": "페이스 좋았다."},
+    },
+    "race_summary_pace_class": {
+        "situation": "우리 베스트 랩이 클래스 {nth}였다.",
+        "slots": ["nth"], "required": ["nth"],
+        "tones": {"casual": "페이스 좋았다."},
+    },
+    "race_summary_debrief": {
+        "situation": "레이스가 끝났다. 디브리핑에서 데이터를 같이 보자.",
+        "slots": [], "required": [],
+        "tones": {"casual": "차분하게 마무리."},
+    },
+    "post_race_pit": {
+        "situation": "체커 뒤 피트레인에 들어왔다.",
+        "slots": [], "required": [],
+        "tones": {"casual": "리미터 켜고 차고로, 수고 인사."},
     },
     "position_up": {
         "situation": "클래스 순위가 올라 {place}등이 됐다.",

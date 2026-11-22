@@ -28,7 +28,7 @@ dotnet build src/TeamRadio56.SimHub/TeamRadio56.SimHub.csproj -c Release -v q --
 # 경량 플러그인 — 무전은 내장 엔진 + 영어 + kokoro 음성 팩 한 목소리뿐이다. 빠진 기능
 # (파이썬 엔진 모드, edge 온라인 TTS·mp3 재생, Windows 음성, 목소리 섞임, 한국어 무전)이
 # 되살아나면 여기서 멈춘다. 되살리려면 이 목록과 문서를 함께 고친다.
-REMOVED='System\.Speech|System\.Management|EdgeTts|ClientWebSocket|MediaPlayer|TeamRadio56\.Core\.Engine|VoiceKind|IFallbackSpeaker|Messages\.IsKo|SetLanguage|PhraseLines\.Ko\b'
+REMOVED='System\.Speech|System\.Management|EdgeTts|ClientWebSocket|MediaPlayer|TeamRadio56\.Core\.Engine|VoiceKind|IFallbackSpeaker|Messages\.IsKo|SetLanguage|PhraseLines\.Ko\b|TrackNamesEn|KnownTrackEn|BriefingPackOnly'
 LEFTOVERS=$(grep -rnE "$REMOVED" src --include=*.cs --include=*.csproj | grep -v '/bin/\|/obj/' || true)
 if [ -n "$LEFTOVERS" ]; then
     echo "❌ 경량 플러그인에서 뺀 기능이 다시 들어왔습니다:"

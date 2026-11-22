@@ -40,8 +40,8 @@ class StatusReporter:
 
     def on_lap(self, state: SessionState, snap: Snapshot, bus: EventBus,
                fuel_status: Optional[dict], tyre_status: Optional[dict]) -> None:
-        if not self.enabled or not state.laps:
-            return
+        if not self.enabled or not state.laps or state.race_over:
+            return                       # 체커 뒤 정기 리포트(HUD 대체)는 무의미
         lap = state.laps[-1]
 
         if self.laptime_on and lap.valid and lap.lap_time > 0:
