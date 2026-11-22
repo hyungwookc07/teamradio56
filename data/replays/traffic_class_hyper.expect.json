@@ -1,0 +1,313 @@
+{
+ "cases": [
+  {
+   "backmarker": false,
+   "calls": [
+    "nearby_behind",
+    "alongside_right",
+    "pass_complete"
+   ],
+   "car": "하이퍼 동료",
+   "cls": "Hyper",
+   "faster": false,
+   "kind": "pass",
+   "me": "Hyper",
+   "note": "같은 \"Hyper\" 하이퍼카가 뒤에서 붙음 — 빠른 차 아님, 호칭 Hypercar",
+   "old": "근접·나란히·지나감 호칭이 faster car",
+   "show": "Hypercar"
+  },
+  {
+   "backmarker": false,
+   "calls": [
+    "nearby_behind",
+    "alongside_right",
+    "pass_complete"
+   ],
+   "car": "LMP2 드라이버",
+   "cls": "LMP2",
+   "faster": false,
+   "kind": "pass",
+   "me": "Hyper",
+   "note": "LMP2가 뒤에서 붙음 (내 페이스가 떨어진 구간) — 빠른 차 아님",
+   "old": null,
+   "show": "LMP2"
+  },
+  {
+   "backmarker": false,
+   "calls": [
+    "nearby_behind",
+    "alongside_right",
+    "pass_complete"
+   ],
+   "car": "LMP3 드라이버",
+   "cls": "LMP3",
+   "faster": false,
+   "kind": "pass",
+   "me": "Hyper",
+   "note": "LMP3가 뒤에서 붙음 — 빠른 차 아님, 호칭 LMP3",
+   "old": "서열 모름 → 빠른 차: 접근 예고 + 호칭 faster car",
+   "show": "LMP3"
+  },
+  {
+   "backmarker": false,
+   "calls": [
+    "nearby_behind",
+    "alongside_right",
+    "pass_complete"
+   ],
+   "car": "GT3 드라이버",
+   "cls": "LMGT3",
+   "faster": false,
+   "kind": "pass",
+   "me": "Hyper",
+   "note": "LMGT3가 뒤에서 붙음 — 빠른 차 아님",
+   "old": null,
+   "show": "GT3"
+  },
+  {
+   "backmarker": true,
+   "calls": [
+    "backmarker_ahead",
+    "alongside_right",
+    "dropped"
+   ],
+   "car": "GT3 백마커",
+   "cls": "LMGT3",
+   "faster": false,
+   "kind": "catch",
+   "me": "Hyper",
+   "note": "앞 LMGT3를 잡음 — 백마커 예고 (느린 계열)",
+   "old": null,
+   "show": "GT3"
+  }
+ ],
+ "events": [
+  {
+   "data": {
+    "cls": "Hyper",
+    "driver": "하이퍼 동료",
+    "pool": "nearby_behind"
+   },
+   "t": 282.6,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "nearby_behind",
+    "slots": {
+     "cls": "Hypercar"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "Hyper",
+    "driver": "하이퍼 동료",
+    "pool": "alongside_right"
+   },
+   "t": 287.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "alongside_right",
+    "slots": {
+     "cls": "Hypercar"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "Hyper",
+    "pool": "pass_complete"
+   },
+   "t": 290.0,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "pass_complete",
+    "slots": {
+     "cls": "Hypercar"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMP2",
+    "driver": "LMP2 드라이버",
+    "pool": "nearby_behind"
+   },
+   "t": 352.6,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "nearby_behind",
+    "slots": {
+     "cls": "LMP2"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMP2",
+    "driver": "LMP2 드라이버",
+    "pool": "alongside_right"
+   },
+   "t": 357.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "alongside_right",
+    "slots": {
+     "cls": "LMP2"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMP2",
+    "pool": "pass_complete"
+   },
+   "t": 360.0,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "pass_complete",
+    "slots": {
+     "cls": "LMP2"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMP3",
+    "driver": "LMP3 드라이버",
+    "pool": "nearby_behind"
+   },
+   "t": 422.6,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "nearby_behind",
+    "slots": {
+     "cls": "LMP3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMP3",
+    "driver": "LMP3 드라이버",
+    "pool": "alongside_right"
+   },
+   "t": 427.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "alongside_right",
+    "slots": {
+     "cls": "LMP3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMP3",
+    "pool": "pass_complete"
+   },
+   "t": 430.0,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "pass_complete",
+    "slots": {
+     "cls": "LMP3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "driver": "GT3 드라이버",
+    "pool": "nearby_behind"
+   },
+   "t": 496.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "nearby_behind",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "driver": "GT3 드라이버",
+    "pool": "alongside_right"
+   },
+   "t": 503.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "alongside_right",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "pool": "pass_complete"
+   },
+   "t": 506.4,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "pass_complete",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "pool": "backmarker_ahead"
+   },
+   "t": 566.8,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "backmarker_ahead",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "driver": "GT3 백마커",
+    "pool": "alongside_right"
+   },
+   "t": 573.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "alongside_right",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "pool": "dropped"
+   },
+   "t": 583.4,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "dropped",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  }
+ ],
+ "note": "트래픽 클래스 판정 — 같은 클래스(문자열·계열)는 랩핑일 때만 빠른 차, 다른 계열은 서열, 계열을 모르면 관측 페이스(2%), 그것도 없으면 빠른 차도 백마커도 아님. 모르는 클래스는 호칭 없이 말한다 (예전 \"faster car\")",
+ "scenario": "traffic_class_hyper",
+ "types": [
+  "traffic_approach",
+  "traffic_close",
+  "traffic_update",
+  "traffic_multi"
+ ]
+}

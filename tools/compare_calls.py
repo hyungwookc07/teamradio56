@@ -1,7 +1,7 @@
 """
 리플레이 회귀 비교 — 파이썬(tools/replay_calls.py)과 C#(tests/TeamRadio56.Replay)
 출력을 대조한다. t는 부동소수 라운딩 차이를 감안해 ±0.011초 허용,
-나머지 필드(type/prio/tone/key/message/say/data)는 완전 일치를 요구한다.
+나머지 필드(type/prio/tone/key/message/say/data, 변형 풀 콜의 풀·슬롯 voice)는 완전 일치를 요구한다.
 
 사용법: python tools/compare_calls.py python_calls.jsonl csharp_calls.jsonl
 종료 코드: 0 = 일치, 1 = 불일치.
@@ -48,6 +48,8 @@ def main() -> int:
                 diffs.append(f"{k} {ra.get(k)!r} != {rb.get(k)!r}")
         if ra.get("data") != rb.get("data"):
             diffs.append(f"data {ra.get('data')} != {rb.get('data')}")
+        if ra.get("voice") != rb.get("voice"):
+            diffs.append(f"voice {ra.get('voice')} != {rb.get('voice')}")
         if diffs:
             problems.append(f"#{i}: " + "; ".join(diffs))
 

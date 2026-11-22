@@ -5,7 +5,8 @@
 "수락한" 이벤트를 JSONL로 출력한다. C# 러너 출력과 이 출력이 같으면
 포팅이 파이썬과 같은 판단·타이밍·데이터를 낸다는 뜻이다.
 (변형 풀 랜덤 멘트는 비교 대상이 아니다. 대신 결정적 템플릿 렌더러
- — voice.DETERMINISTIC_TYPES — 의 문장은 "say"로 기록해 C#과 대조한다.)
+ — voice.DETERMINISTIC_TYPES — 의 문장은 "say"로, 변형 풀 콜이 고른 풀과 슬롯
+ — VoiceGenerator.pool_call, 클래스 호칭·갭 등 — 은 "voice"로 기록해 C#과 대조한다.)
 
 결정성:
   - 버스의 시계를 가상 시계(스냅샷 기록 시각)로 패치 — 쿨다운 판정이
@@ -124,8 +125,12 @@ def main() -> int:
         if ok:
             say = (None if ev.message else voice.render_deterministic(
                 ev.type, copy.deepcopy(ev.data), ev.tone))
+            # 변형 풀 콜이 고른 풀과 슬롯 (랜덤 문장 대신 결정적인 부분 — 클래스 호칭 등)
+            call = (None if ev.message else voice.VoiceGenerator.pool_call(
+                ev.type, copy.deepcopy(ev.data)))
             accepted.append({
                 "say": say,
+                "voice": None if call is None else {"pool": call[0], "slots": call[1]},
                 "t": round(vclock.t, 2),
                 "type": ev.type,
                 "prio": int(ev.priority),

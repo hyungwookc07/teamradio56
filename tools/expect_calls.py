@@ -7,7 +7,8 @@
   calls 파일마다 types에 든 종류의 수락 이벤트만 골라 events와 순서·개수까지 같아야 한다
   (사이드카에 "keys"가 있으면 그 dedup 키의 이벤트만 — 같은 종류의 다른 콜은 범위 밖, 예: 얼라인)
   (t ±0.011초, data 완전 일치, say·message가 있으면 문장도 일치 — 세션 브리핑은 조립 문장
-  message). 기대 목록에 없는 콜 하나도 실패.
+  message, voice가 있으면 변형 풀 콜의 풀·슬롯도 일치 — 트래픽 클래스 호칭). 기대 목록에 없는
+  콜 하나도 실패.
 
 사용법: python tools/expect_calls.py --expect f.expect.json --calls py.jsonl [--calls cs.jsonl ...]
 종료 코드: 0 = 전부 일치, 1 = 불일치.
@@ -75,6 +76,9 @@ def check(calls, expect):
             d.append(f"say «{g.get('say')}» != «{w['say']}»")
         if "message" in w and g.get("message") != w["message"]:
             d.append(f"message «{g.get('message')}» != «{w['message']}»")
+        if "voice" in w and g.get("voice") != w["voice"]:
+            d.append(f"voice {json.dumps(g.get('voice'), ensure_ascii=False, sort_keys=True)} != "
+                     f"{json.dumps(w['voice'], ensure_ascii=False, sort_keys=True)}")
         if d:
             probs.append(f"#{i}: " + "; ".join(d))
     return got, probs

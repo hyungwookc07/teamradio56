@@ -1,0 +1,209 @@
+{
+ "cases": [
+  {
+   "backmarker": false,
+   "calls": [
+    "traffic_approach",
+    "nearby_behind",
+    "alongside_right",
+    "pass_complete"
+   ],
+   "car": "하이퍼 리더",
+   "cls": "Hyper",
+   "faster": true,
+   "kind": "pass",
+   "me": "LMP3",
+   "note": "\"Hyper\"가 빠르게 옴 — 접근 예고, 호칭 Hypercar",
+   "old": "호칭 faster car",
+   "show": "Hypercar"
+  },
+  {
+   "backmarker": false,
+   "calls": [
+    "nearby_behind",
+    "alongside_right",
+    "pass_complete"
+   ],
+   "car": "GT3 드라이버",
+   "cls": "LMGT3",
+   "faster": false,
+   "kind": "pass",
+   "me": "LMP3",
+   "note": "LMGT3가 뒤에서 붙음 — 빠른 차 아님 (LMP3 > GT3)",
+   "old": "내 클래스 서열 모름 → 빠른 차: 접근 예고",
+   "show": "GT3"
+  },
+  {
+   "backmarker": true,
+   "calls": [
+    "backmarker_ahead",
+    "alongside_right",
+    "dropped"
+   ],
+   "car": "GT3 백마커",
+   "cls": "LMGT3",
+   "faster": false,
+   "kind": "catch",
+   "me": "LMP3",
+   "note": "앞 LMGT3를 잡음 — 백마커 예고",
+   "old": "내 클래스 서열 모름 → 백마커 아님: 예고 없음, 빠른 차라 떨어짐 콜도 없음",
+   "show": "GT3"
+  }
+ ],
+ "events": [
+  {
+   "data": {
+    "cls": "Hyper",
+    "gap_sec": 6
+   },
+   "t": 278.8,
+   "type": "traffic_approach",
+   "voice": {
+    "pool": "traffic_approach",
+    "slots": {
+     "cls": "Hypercar",
+     "gap": "6 seconds"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "Hyper",
+    "driver": "하이퍼 리더",
+    "pool": "nearby_behind"
+   },
+   "t": 282.6,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "nearby_behind",
+    "slots": {
+     "cls": "Hypercar"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "Hyper",
+    "driver": "하이퍼 리더",
+    "pool": "alongside_right"
+   },
+   "t": 287.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "alongside_right",
+    "slots": {
+     "cls": "Hypercar"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "Hyper",
+    "pool": "pass_complete"
+   },
+   "t": 290.0,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "pass_complete",
+    "slots": {
+     "cls": "Hypercar"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "driver": "GT3 드라이버",
+    "pool": "nearby_behind"
+   },
+   "t": 356.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "nearby_behind",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "driver": "GT3 드라이버",
+    "pool": "alongside_right"
+   },
+   "t": 363.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "alongside_right",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "pool": "pass_complete"
+   },
+   "t": 366.4,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "pass_complete",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "pool": "backmarker_ahead"
+   },
+   "t": 426.8,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "backmarker_ahead",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "driver": "GT3 백마커",
+    "pool": "alongside_right"
+   },
+   "t": 433.8,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "alongside_right",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "pool": "dropped"
+   },
+   "t": 443.4,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "dropped",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  }
+ ],
+ "note": "트래픽 클래스 판정 — 같은 클래스(문자열·계열)는 랩핑일 때만 빠른 차, 다른 계열은 서열, 계열을 모르면 관측 페이스(2%), 그것도 없으면 빠른 차도 백마커도 아님. 모르는 클래스는 호칭 없이 말한다 (예전 \"faster car\")",
+ "scenario": "traffic_class_lmp3",
+ "types": [
+  "traffic_approach",
+  "traffic_close",
+  "traffic_update",
+  "traffic_multi"
+ ]
+}

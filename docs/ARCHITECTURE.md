@@ -13,6 +13,9 @@
   state.py            SessionState — 랩 히스토리(LapRecord), 이슈(issues),
                       레이스 서사(narrative), 클래스 순위/동클래스 갭 계산
                       → LLM 프롬프트의 문맥이 여기서 나온다
+  vehicle_class.py    클래스 문자열(mVehicleClass) → 계열(hypercar/lmp2/lmp3/gte/gt3/unknown)·
+                      서열·호칭 단일 출처 + 관측 페이스(클래스별 베스트 랩 중앙값) 비교 —
+                      트래픽·다중 종합·체커 뒤 쿨다운·음성 렌더가 공유 (C# VehicleClass)
   race_end.py         RaceEndTracker — 리더 기준 체커 모델: 라인 통과마다 남은 랩,
                       리더 체커 시각, 내 피니시, 스타트 클래스 순위 (state.update가 매 틱
                       observe) + 체커 콜 등급·쿨다운 랩·요약의 순수 규칙.
@@ -21,6 +24,7 @@
 [분석 계층]  (Snapshot + SessionState → Event)
   analyzers/
     traffic.py        per-car 상태 머신, 랩핑/백마커/정지차, 다중 차량 종합
+                      (빠른 차/백마커 = vehicle_class.class_relation, 클래스 진단 로그)
     racecontrol.py    페이즈/플래그(FCY·섹터·블루)/패널티(메시지 파싱)/
                       마일스톤/마지막 랩·내 체커(등급)/체커 뒤 쿨다운·요약·피트인/
                       피트 리미터/클래스 순위 변동

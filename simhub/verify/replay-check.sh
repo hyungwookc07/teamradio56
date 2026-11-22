@@ -9,10 +9,11 @@
 #      체커 뒤까지 가고 정답(.truth.json)과 마지막 랩·체커 콜(등급)·체커 뒤 무전(쿨다운·
 #      요약·피트인)·피니시 뒤 침묵까지 대조 (tools/make_race_end_replays.py가 만들고
 #      --check로 재생성 대조; <이름>.config.json은 두 하니스가 읽는 설정 덮어쓰기)
-#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit, align*, wing*, session_*)는 수락
-#      콜을 정답 목록과 파이썬·C# 각각 대조 (tools/expect_calls.py — 세션 브리핑은 문장까지;
-#      생성기 tools/make_rival_pit_replay.py · tools/make_align_replay.py ·
-#      tools/make_wing_replay.py · tools/make_session_replays.py --check)
+#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit, align*, wing*, session_*, traffic_class_*)는
+#      수락 콜을 정답 목록과 파이썬·C# 각각 대조 (tools/expect_calls.py — 세션 브리핑은 문장까지,
+#      트래픽 클래스는 변형 풀의 풀·슬롯(클래스 호칭)까지; 생성기 tools/make_rival_pit_replay.py ·
+#      tools/make_align_replay.py · tools/make_wing_replay.py · tools/make_session_replays.py ·
+#      tools/make_traffic_class_replay.py --check)
 #
 # C# 플러그인 무전은 영어 + kokoro 음성 팩 고정이라 파이썬 ↔ C# 대조는 en만 한다.
 # 파이썬 단독 앱의 한국어·edge 목소리는 파이썬 자체 검사(셀프테스트, ko 스모크)로만 돈다.
@@ -173,6 +174,20 @@ else
     echo "❌ 숫자 표기 불일치:"
     paste "$OUT/fixed_in.tsv" "$OUT/fixed_py.txt" "$OUT/fixed_cs.txt" \
         | awk -F'\t' '$3 != $4' | head -10
+    fail=1
+fi
+
+# 클래스 정규화 — 실제 LMU 클래스 문자열 후보를 계열·서열·호칭·빠른 클래스·진단 로그로
+# 판정한 결과가 파이썬 vehicle_class와 C# VehicleClass에서 바이트 단위로 같아야 한다
+echo
+echo "▶ 클래스 정규화 대조 (vehicle_class ↔ VehicleClass)"
+python3 tools/class_check.py --in "$OUT/class_in.tsv" --expect "$OUT/class_py.tsv"
+"$RUNNER" --class-check "$OUT/class_in.tsv" --out "$OUT/class_cs.tsv"
+if [ -s "$OUT/class_py.tsv" ] && cmp -s "$OUT/class_py.tsv" "$OUT/class_cs.tsv"; then
+    echo "✅ 일치 — $(wc -l < "$OUT/class_py.tsv")줄 동일 (계열·서열·호칭·같은 클래스·빠른 클래스·진단·페이스)"
+else
+    echo "❌ 클래스 정규화 불일치 (또는 빈 출력):"
+    diff "$OUT/class_py.tsv" "$OUT/class_cs.tsv" | head -10
     fail=1
 fi
 
@@ -417,6 +432,10 @@ python3 tools/make_wing_replay.py --check || fail=1
 echo
 echo "▶ 세션 브리핑 리플레이 재생성 대조 (연습·퀄리·웜업, 시작·중간 합류)"
 python3 tools/make_session_replays.py --check || fail=1
+
+echo
+echo "▶ 트래픽 클래스 리플레이 재생성 대조 (Hyper·LMP3·LMP2 계열·모르는 클래스 페이스)"
+python3 tools/make_traffic_class_replay.py --check || fail=1
 
 # 브리핑 변형(FNV-1a 시드)·체커 콜 등급·체커 뒤 무전 규칙·피니시 뒤 침묵 (파이썬 단위 검사 —
 # C#은 퍼즈·리플레이 대조가 같은 결과를 요구한다)

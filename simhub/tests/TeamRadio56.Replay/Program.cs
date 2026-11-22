@@ -62,6 +62,8 @@ namespace TeamRadio56.Replay
                     checkCacheDir = args[++i];
                 else if (args[i] == "--fixed-check" && i + 1 < args.Length)
                     return FixedCheck(args[++i], outPath ?? FindOut(args));
+                else if (args[i] == "--class-check" && i + 1 < args.Length)
+                    return ClassCheck(args[++i], outPath ?? FindOut(args));
                 else if (args[i] == "--update-selftest")
                     return UpdateSelfTest.Run();
                 else if (args[i] == "--voice-selftest")
@@ -116,6 +118,7 @@ namespace TeamRadio56.Replay
                     + " | --check-cache <오디오캐시폴더> [--tier N]"
                     + " | --assemble-check <폴더>"
                     + " | --fuzz-eval <cases.jsonl> [--out f]"
+                    + " | --class-check <classes_in.tsv> [--out f]"
                     + " | --update-selftest | --voice-selftest | --settings-selftest"
                     + " | --dump-voice-table [--out f] | --pack-state-check <폴더>"
                     + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f [--audio-dir d]]"
@@ -578,6 +581,76 @@ namespace TeamRadio56.Replay
             return 0;
         }
 
+        /// <summary>
+        /// tools/class_check.py가 쓴 입력 줄을 VehicleClass로 판정 — 파이썬 기대 출력과 바이트
+        /// 단위로 diff한다 (계열·서열·호칭·같은 클래스·빠른 클래스·진단 로그·페이스 중앙값).
+        /// </summary>
+        private static int ClassCheck(string inPath, string outPath)
+        {
+            var sb = new StringBuilder();
+            foreach (string line in File.ReadAllLines(inPath, new UTF8Encoding(false)))
+            {
+                if (line.Length == 0)
+                    continue;
+                sb.Append(ClassCheckLine(line)).Append('\n');
+            }
+            if (outPath != null)
+                File.WriteAllText(outPath, sb.ToString(), new UTF8Encoding(false));
+            else
+                Console.Out.Write(sb.ToString());
+            return 0;
+        }
+
+        private static string ClassCheckLine(string line)
+        {
+            string[] f = line.Split('\t');
+            switch (f[0])
+            {
+                case "F":
+                    return string.Join("\t", line, VehicleClass.Family(f[1]),
+                        VehicleClass.Rank(f[1]).ToString(CultureInfo.InvariantCulture),
+                        VehicleClass.Display(f[1]), Messages.MultiClassName(f[1]));
+                case "R":
+                {
+                    double pa = double.Parse(f[3], NumberStyles.Float, CultureInfo.InvariantCulture);
+                    double pb = double.Parse(f[4], NumberStyles.Float, CultureInfo.InvariantCulture);
+                    var pace = new Dictionary<string, double>();
+                    if (pa > 0)
+                        pace[f[1]] = pa;
+                    if (pb > 0 && !pace.ContainsKey(f[2]))
+                        pace[f[2]] = pb;
+                    return string.Join("\t", line, VehicleClass.SameClass(f[1], f[2]) ? "1" : "0",
+                        VehicleClass.Relation(f[1], f[2], pace).ToString(CultureInfo.InvariantCulture));
+                }
+                case "D":
+                    return string.Join("\t", line, TrafficAnalyzer.ClassDiagLine(f[1], f[2]),
+                        TrafficAnalyzer.ClassDiagLine(f[1], null));
+                case "M":
+                {
+                    var cars = new List<VehicleInfo>();
+                    foreach (string item in f[1].Split(';'))
+                    {
+                        int eq = item.LastIndexOf('=');
+                        cars.Add(new VehicleInfo
+                        {
+                            Class = item.Substring(0, eq),
+                            BestLap = double.Parse(item.Substring(eq + 1), NumberStyles.Float,
+                                                   CultureInfo.InvariantCulture),
+                        });
+                    }
+                    Dictionary<string, double> med = VehicleClass.Pace(cars);
+                    var keys = new List<string>(med.Keys);
+                    keys.Sort(StringComparer.Ordinal);
+                    var parts = new List<string>();
+                    foreach (string k in keys)
+                        parts.Add(k + "=" + Messages.PyFixed(med[k], 6));
+                    return line + "\t" + string.Join(";", parts);
+                }
+                default:
+                    throw new FormatException("class-check 입력 줄: " + line);
+            }
+        }
+
         private static string Format(double t, RadioEvent ev, string say)
         {
             // 파이썬 쪽과 같은 형식: 키 정렬된 JSON 한 줄
@@ -598,6 +671,24 @@ namespace TeamRadio56.Replay
             AppendKv(sb, "tone", ev.Tone);
             sb.Append(',');
             AppendKv(sb, "type", ev.Type);
+            sb.Append(',');
+            // 변형 풀 콜이 고른 풀과 슬롯 (replay_calls "voice") — 랜덤 문장 대신 결정적인 부분
+            string poolKey;
+            Dictionary<string, string> slots;
+            if (string.IsNullOrEmpty(ev.Message) && VoiceRenderer.PoolCall(ev, out poolKey, out slots))
+            {
+                var slotObj = new Dictionary<string, object>();
+                foreach (KeyValuePair<string, string> kv in slots)
+                    slotObj[kv.Key] = kv.Value;
+                AppendKv(sb, "voice", DataJson(new Dictionary<string, object>
+                {
+                    { "pool", poolKey }, { "slots", slotObj },
+                }), raw: true);
+            }
+            else
+            {
+                AppendKv(sb, "voice", "null", raw: true);
+            }
             sb.Append('}');
             return sb.ToString();
         }

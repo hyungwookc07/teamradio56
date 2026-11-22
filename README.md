@@ -34,7 +34,8 @@ it means — not a stream of raw numbers.
 - **Radio effect** — bandpass, saturation, band-limited noise and squelch
   for a real team-radio texture
 - **English radio** with a bilingual (Korean/English) settings UI
-- **Multiclass aware** — faster-class approach warnings, in-class positions
+- **Multiclass aware** — faster-class approach warnings (named Hypercar /
+  LMP2 / LMP3 / GTE / GT3), in-class positions
 - **Protects game performance** — 5 Hz polling, audio on its own thread, no
   GPU-based TTS
 - **One-way voice output** — no speech recognition or conversation
@@ -121,6 +122,7 @@ analyzers/
   tyres.py         # temp imbalance / wear trend / life estimate
   pace.py          # lap-time trend / gap rates
   traffic.py       # nearby-car detection (5 Hz)
+vehicle_class.py   # class string → family / rank / spoken name (single source)
 events.py          # priority event queue (dedup, cooldowns)
 voice.py           # line generation (pre-generated pools / live LLM)
 tts.py             # TTS playback thread + audio cache
@@ -145,6 +147,16 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
 - [x] Per-car traffic state machine — speaks only on state transitions, and
   chains lines about the same car into a narrative ("closing" → "alongside" →
   "past you"); multiple cars get one combined sentence ordered by threat
+- [x] Class normalisation — the game's class string (`mVehicleClass`) is
+  folded into a family (`Hyper`/`HY`/`LMH`/`LMDh` → Hypercar, `LMP2_ELMS`/
+  `LMP2 Pro-Am` → LMP2, `LMP3`, `LMGTE Am` → GTE, `LMGT3` → GT3). Only a
+  faster family (Hypercar > LMP2 > LMP3 > GTE > GT3), or a same-class car a
+  lap up, gets the "faster traffic" approach call; a car of the same family
+  is a battle, never "faster car". An unknown class string is compared by
+  observed pace (median best lap per class, 2 % margin) and otherwise is
+  neither faster traffic nor a backmarker; it is spoken without a class name
+  (multi-car summary: "car"). Each session logs every raw class string it
+  sees with its family/rank/name (`클래스 진단:` lines in the log)
 - [x] Tone tags on the phrase pools (casual/urgent) +
   `scripts/generate_variants.py` (LLM bulk regeneration)
 - [x] Bridge technique — an urgent cached call (zero latency) followed
@@ -242,8 +254,9 @@ Shared-memory quirks confirmed on the real game (the code defends against
 each):
 
 - `mEstimatedLapTime`: every vehicle gets the same track default → unused;
-  faster-class detection uses the class hierarchy instead
-  (Hypercar > LMP2 > GTE > GT3)
+  faster-class detection uses the class family hierarchy instead
+  (Hypercar > LMP2 > LMP3 > GTE > GT3), and the observed best laps for a
+  class string it doesn't recognise
 - `mSectorFlag`: garbage values (e.g. 11) appear constantly → only 0→1..2
   transitions (edges) are trusted
 - Extended `mCurrentPitSpeedLimit`: sometimes left at 0 → 80 km/h fallback
