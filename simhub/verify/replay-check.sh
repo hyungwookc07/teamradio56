@@ -9,11 +9,12 @@
 #      체커 뒤까지 가고 정답(.truth.json)과 마지막 랩·체커 콜(등급)·체커 뒤 무전(쿨다운·
 #      요약·피트인)·피니시 뒤 침묵까지 대조 (tools/make_race_end_replays.py가 만들고
 #      --check로 재생성 대조; <이름>.config.json은 두 하니스가 읽는 설정 덮어쓰기)
-#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit, align*, wing*, session_*, traffic_class_*)는
-#      수락 콜을 정답 목록과 파이썬·C# 각각 대조 (tools/expect_calls.py — 세션 브리핑은 문장까지,
-#      트래픽 클래스는 변형 풀의 풀·슬롯(클래스 호칭)까지; 생성기 tools/make_rival_pit_replay.py ·
-#      tools/make_align_replay.py · tools/make_wing_replay.py · tools/make_session_replays.py ·
-#      tools/make_traffic_class_replay.py --check)
+#   5) 기대 콜 — <이름>.expect.json이 있는 리플레이(rival_pit, align*, wing*, session_*, traffic_class_*,
+#      sector_yellow_*)는 수락 콜을 정답 목록과 파이썬·C# 각각 대조 (tools/expect_calls.py — 세션
+#      브리핑은 문장까지, 트래픽 클래스는 변형 풀의 풀·슬롯(클래스 호칭)까지, 섹터 옐로는 콜 문장까지;
+#      생성기 tools/make_rival_pit_replay.py · tools/make_align_replay.py · tools/make_wing_replay.py ·
+#      tools/make_session_replays.py · tools/make_traffic_class_replay.py ·
+#      tools/make_sector_flag_replays.py --check)
 #
 # C# 플러그인 무전은 영어 + kokoro 음성 팩 고정이라 파이썬 ↔ C# 대조는 en만 한다.
 # 파이썬 단독 앱의 한국어·edge 목소리는 파이썬 자체 검사(셀프테스트, ko 스모크)로만 돈다.
@@ -471,6 +472,10 @@ python3 tools/make_session_replays.py --check || fail=1
 echo
 echo "▶ 트래픽 클래스 리플레이 재생성 대조 (Hyper·LMP3·LMP2 계열·모르는 클래스 페이스·LMP3 단일 클래스·같은 클래스 섞인 다중 종합)"
 python3 tools/make_traffic_class_replay.py --check || fail=1
+
+echo
+echo "▶ 섹터 옐로 리플레이 재생성 대조 (LMU 11 → 1 · 첫 샘플 · rF2 0 → 1 · 1 아닌 값 · FCY 억제 · 같은 섹터 120초 · 두 섹터 동시)"
+python3 tools/make_sector_flag_replays.py --check || fail=1
 
 # 브리핑 변형(FNV-1a 시드)·체커 콜 등급·체커 뒤 무전 규칙·피니시 뒤 침묵 (파이썬 단위 검사 —
 # C#은 퍼즈·리플레이 대조가 같은 결과를 요구한다)

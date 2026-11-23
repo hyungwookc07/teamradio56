@@ -1,0 +1,23 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Yellow in sector 1. No overtaking, be ready to lift.",
+   "t": 20.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 3. No overtaking, be ready to lift.",
+   "t": 80.0,
+   "type": "sector_yellow"
+  }
+ ],
+ "note": "같은 틱 S1·S2 → 1이면 낮은 번호 하나만 (S2는 종류 쿨다운에 거절·기록, 1로 남은 동안 다시 안 부름), 60초 뒤 S3 → 1은 콜",
+ "old_rule_calls_cs": [],
+ "old_rule_calls_py": [],
+ "scenario": "sector_yellow_double",
+ "types": [
+  "sector_yellow"
+ ]
+}

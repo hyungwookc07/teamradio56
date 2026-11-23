@@ -79,7 +79,8 @@ DEFAULTS: dict[str, Any] = {
                                       # 다른 참가자가 물리적으로 없는데 좌표는
                                       # 스트리밍돼 유령 콜이 난다 (실차 확인).
                                       # 트랙을 공유하는 세션이면 false로.
-        "sector_yellow_calls": True,  # LMU가 mSectorFlag를 이상하게 채우면 false로
+        "sector_yellow_calls": True,  # 섹터 로컬 옐로 콜 (mSectorFlag 1 = 옐로, LMU 11 = 깨끗함).
+                                      # 실차에서 엉뚱하게 나오면 false로
         "proximity_m": 50.0,          # 근접(NEARBY) 진입 거리 (m)
         "alongside_m": 4.6,           # 나란히 기준 거리 (m) = 차 한 대 길이 (진짜 오버랩).
                                       # 접근 속도 × 0.5초 리드 보정이 자동으로 붙어

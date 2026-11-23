@@ -1,0 +1,47 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Yellow in sector 2. No overtaking, be ready to lift.",
+   "t": 30.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {
+    "pool": "fcy_start"
+   },
+   "t": 90.0,
+   "type": "fcy"
+  },
+  {
+   "data": {
+    "pool": "fcy_pit_open"
+   },
+   "t": 130.0,
+   "type": "fcy_pit_open"
+  },
+  {
+   "data": {
+    "pool": "green_flag"
+   },
+   "t": 190.0,
+   "type": "green_flag"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 1. No overtaking, be ready to lift.",
+   "t": 270.0,
+   "type": "sector_yellow"
+  }
+ ],
+ "note": "FCY(페이즈 6)·리스타트 준비(그린 + 옐로 상태 6) 동안 전 섹터 1이어도 섹터 콜 없음, FCY가 끝난 순간 1로 남은 섹터도 침묵, 끝난 뒤 새 옐로(S1)는 콜",
+ "old_rule_calls_cs": [],
+ "old_rule_calls_py": [],
+ "scenario": "sector_yellow_fcy",
+ "types": [
+  "sector_yellow",
+  "fcy",
+  "fcy_pit_open",
+  "green_flag"
+ ]
+}

@@ -71,7 +71,7 @@ thresholds:
   gap_change_sec_per_lap: 0.4  # 앞뒤 갭 변화율 (초/랩)
   traffic_eta_sec: 10.0        # 접근 예고: 도달 예상 N초 이내
   traffic_race_only: false     # true면 연습/퀄리(고스트 차 많음)에선 트래픽 콜 끔
-  sector_yellow_calls: true    # 섹터 옐로 콜이 이상하게 반복되면 false
+  sector_yellow_calls: true    # 섹터 로컬 옐로 콜 (FCY 중엔 안 함) — 엉뚱하게 나오면 false
   proximity_m: 50.0            # 근접(NEARBY) 진입 거리 (m)
   alongside_m: 4.6             # 나란히 기준 (m) = 차 한 대 길이 (실제 오버랩).
                                # 접근 속도 비례 리드 보정 자동 (빠르면 일찍 들림)

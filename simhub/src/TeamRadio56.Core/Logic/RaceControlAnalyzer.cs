@@ -21,6 +21,10 @@ namespace TeamRadio56.Core.Logic
         private const int YPitClosed = 2;
         private const int YPitLeadLap = 3;
         private const int YPitOpen = 4;
+        private const int YFcyMin = 1;              // mYellowFlagState 풀코스 하위 상태 1..7
+        private const int YFcyMax = 7;
+        private const int SectorFlagYellow = 1;     // mSectorFlag[i] = 섹터 i+1, 원시값 1만 로컬 옐로
+        private const double SectorYellowRearmSec = 120.0;  // 같은 섹터 재콜 최소 간격
 
         internal static readonly int[] MilestonesMin = { 60, 30, 10 };
         private const double PitLimitMarginKmh = 5.0;
@@ -227,9 +231,32 @@ namespace TeamRadio56.Core.Logic
             }
         }
 
+        /// <summary>
+        /// 풀코스옐로 진행 중 — 페이즈 6, 또는 FCY 하위 상태(mYellowFlagState 1..7).
+        /// LMU는 페이즈가 그린으로 돌아온 뒤에도 리스타트 준비(6)를 잠깐 남긴다 (CrewChief LMU 매퍼가
+        /// 이 경우도 FCY로 친다). 상한 7은 부호 없는 바이트로 읽은 -1(=255, 무효)을 FCY로 세지 않게.
+        /// racecontrol.fcy_active.
+        /// </summary>
+        internal static bool FcyActive(int phase, int yellow)
+        {
+            return phase == PhaseFcy || (yellow >= YFcyMin && yellow <= YFcyMax);
+        }
+
         private void CheckSectorYellow(SessionInfo ses, double now, EventBus bus)
         {
-            // 엣지 트리거: 0 → (1|2) 전이만 콜. 첫 샘플/쓰레기 값(>2)은 무시.
+            // 섹터 로컬 옐로 — 엣지 트리거: 섹터 값이 '옐로 아님 → 옐로'로 바뀌는 순간만 콜한다.
+            // mSectorFlag[i]는 섹터 i+1이고 원시값 1이 그 섹터의 로컬 옐로다. 깨끗한 섹터는 LMU가 11,
+            // rF2 헤더 기준 0 — LMU의 깨끗함 11은 lmu-pitwall 인게임 측정(LMU 1.4)과 LmuOverlay 검증
+            // 목록에 있고, CrewChief·TinyPedal·SimHub·pitwall 모두 '== 1'만 옐로로 본다. 그래서 1 말고는
+            // 전부 옐로 아님이다 (0·11·2·7·255 등 — 2를 옐로로 본 자료는 확인 안 된 포럼 글뿐). 예전
+            // '0 이하 → 1..2' 규칙은 LMU의 11 → 1을 못 잡아 콜이 한 번도 안 나갔다. '== 1' 비교라
+            // 파이썬 int와 C# byte, 부호 있는 -1과 부호 없는 255가 결과를 가르지 않는다.
+            // 첫 샘플(리셋 직후)은 기록만 한다 — 붙기 전부터 켜져 있던 옐로는 언제 났는지 몰라 부르지 않는다.
+            // FCY 중(FcyActive)에는 콜하지 않는다: FCY·피트 오픈·그린 콜이 따로 있고, LMU가 FCY 동안
+            // 섹터 값을 어떻게 쓰는지 측정한 자료가 없다 (전 섹터를 1로 올리면 FCY 콜에 섹터 콜이 겹친다 —
+            // CrewChief는 그린 페이즈에서만, LmuOverlay는 FCY 배너가 섹터 옐로보다 먼저).
+            // 직전 값은 억제 중에도 매 틱 갱신한다 — FCY 동안 1이 된 섹터가 FCY가 끝나는 순간 가짜
+            // 엣지로 나가지 않게. racecontrol._check_sector_yellow.
             if (!_sectorCalls)
                 return;
             byte[] flags = ses.SectorFlags ?? new byte[0];
@@ -239,15 +266,18 @@ namespace TeamRadio56.Core.Logic
             Array.Copy(flags, cur, n);
             _prevSectorFlags = cur;
             if (prev == null)
-                return;
+                return;                                 // 첫 샘플: 이미 켜져 있던 플래그는 신뢰하지 않음
+            if (FcyActive(ses.GamePhase, ses.YellowState))
+                return;                                 // FCY는 FCY 콜이 맡는다 (직전 값은 위에서 이미 갱신)
             for (int i = 0; i < n; i++)
             {
-                int was = i < prev.Length ? prev[i] : 0;
-                int flag = cur[i];
-                if (!(was <= 0 && flag > 0 && flag <= 2))
-                    continue;
+                bool was = i < prev.Length && prev[i] == SectorFlagYellow;
+                bool flag = cur[i] == SectorFlagYellow;
+                if (was || !flag)
+                    continue;                           // 옐로 아님 → 옐로(1) 전이만
                 double last;
-                if (_sectorYellowAnnounced.TryGetValue(i, out last) && now - last < 120)
+                if (_sectorYellowAnnounced.TryGetValue(i, out last)
+                    && now - last < SectorYellowRearmSec)
                     continue;
                 _sectorYellowAnnounced[i] = now;
                 bus.Push(new RadioEvent

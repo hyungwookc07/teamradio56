@@ -1,0 +1,17 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Yellow in sector 2. No overtaking, be ready to lift.",
+   "t": 60.0,
+   "type": "sector_yellow"
+  }
+ ],
+ "note": "첫 샘플에 이미 켜진 S2·S3는 침묵, S2가 풀렸다 다시 1이면 콜, 끝까지 1인 S3는 침묵",
+ "old_rule_calls_cs": [],
+ "old_rule_calls_py": [],
+ "scenario": "sector_yellow_join",
+ "types": [
+  "sector_yellow"
+ ]
+}

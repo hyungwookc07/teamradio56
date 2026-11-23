@@ -1,0 +1,23 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Yellow in sector 1. No overtaking, be ready to lift.",
+   "t": 20.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 3. No overtaking, be ready to lift.",
+   "t": 182.0,
+   "type": "sector_yellow"
+  }
+ ],
+ "note": "같은 섹터 120초 — S3 60초 엣지는 종류 쿨다운에 거절돼도 기록, 125·175초(65·115초 뒤) 침묵, 182초(122초 뒤) 콜",
+ "old_rule_calls_cs": [],
+ "old_rule_calls_py": [],
+ "scenario": "sector_yellow_cooldown",
+ "types": [
+  "sector_yellow"
+ ]
+}

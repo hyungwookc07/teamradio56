@@ -1,0 +1,41 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Yellow in sector 2. No overtaking, be ready to lift.",
+   "t": 20.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 1. No overtaking, be ready to lift.",
+   "t": 80.0,
+   "type": "sector_yellow"
+  }
+ ],
+ "note": "rF2식 0 기준 0 → 1은 그대로 콜 (예전 규칙과 같은 결과 — 회귀 방지)",
+ "old_rule_calls_cs": [
+  {
+   "sector": 2,
+   "t": 20.0
+  },
+  {
+   "sector": 1,
+   "t": 80.0
+  }
+ ],
+ "old_rule_calls_py": [
+  {
+   "sector": 2,
+   "t": 20.0
+  },
+  {
+   "sector": 1,
+   "t": 80.0
+  }
+ ],
+ "scenario": "sector_yellow_rf2",
+ "types": [
+  "sector_yellow"
+ ]
+}

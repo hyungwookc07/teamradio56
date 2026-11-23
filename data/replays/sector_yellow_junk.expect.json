@@ -1,0 +1,43 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Yellow in sector 2. No overtaking, be ready to lift.",
+   "t": 80.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 3. No overtaking, be ready to lift.",
+   "t": 140.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 1. No overtaking, be ready to lift.",
+   "t": 200.0,
+   "type": "sector_yellow"
+  }
+ ],
+ "note": "1 아닌 값(2·7·255·0·-1) 사이 전이는 침묵, 255 → 1 · -1 → 1 · 2 → 1은 콜 (-1은 원시 JSON — 파이썬 -1, C# 바이트 255; 예전 규칙은 -1 → 1에서 엔진이 갈렸다)",
+ "old_rule_calls_cs": [
+  {
+   "sector": 1,
+   "t": 50.0
+  }
+ ],
+ "old_rule_calls_py": [
+  {
+   "sector": 1,
+   "t": 50.0
+  },
+  {
+   "sector": 3,
+   "t": 140.0
+  }
+ ],
+ "scenario": "sector_yellow_junk",
+ "types": [
+  "sector_yellow"
+ ]
+}

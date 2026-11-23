@@ -48,7 +48,7 @@ def dump(snap) -> None:
     ses = snap.session
     print("=" * 100)
     print(f"phase={ses['game_phase']} yellow={ses['yellow_state']} "
-          f"sector_flags={ses.get('sector_flags')} "
+          f"sector_flags={ses.get('sector_flags')} "      # 1=옐로, LMU 11·rF2 0=깨끗함, i=섹터 i+1
           f"track_len={ses['track_len']} pit_limit={ses.get('pit_speed_limit')} "
           f"num_vehicles={ses['num_vehicles']} session_type={ses['session_type']} "
           f"ET={ses['current_et']:.0f}/{ses['end_et']:.0f}")
