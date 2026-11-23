@@ -16,7 +16,7 @@
 (vehicle_class.spoken_class), 변형 풀은 {cls} 없는 변형, 접근 예고는 traffic_approach_any, 다중 차량
 종합은 중립어 "car".
 
-리플레이 여섯 개 (data/replays/traffic_class_<이름>.jsonl.gz + .expect.json — tools/expect_calls.py가
+리플레이 일곱 개 (data/replays/traffic_class_<이름>.jsonl.gz + .expect.json — tools/expect_calls.py가
 파이썬·C# 둘 다 트래픽 콜만 대조, 풀·슬롯 "voice"와 다중 종합 문장까지 — 클래스 호칭을 엔진별로 확인):
   · hyper   — 나 "Hyper": 같은 "Hyper"(호칭 없음)·LMP2·LMP3·LMGT3가 뒤에서 붙어 지나감 (전부 빠른
               차 아님 → 접근 예고 없음, 근접 콜 호칭 없음/LMP2/LMP3/GT3), 앞 LMGT3를 잡음 (백마커)
@@ -31,10 +31,12 @@
   · single  — LMP3 단일 클래스 경기 (전부 "LMP3"): 같은 랩 차가 뒤에서 붙어 지나감, 한 랩 앞선 리더가
               랩 돌리러 옴 (traffic_approach_any), 한 랩 뒤진 차를 잡음 (호칭 없는 backmarker_ahead),
               같은 랩 앞 차를 잡음 (나란히·떨어짐), 두 대가 나란히 뒤에서 붙음 (다중 종합 "two cars
-              behind." → "car on your right.") — 어느 콜에도 클래스 이름이 없다
+              behind.") — 어느 콜에도 클래스 이름이 없다
   · mixed   — 나 "LMP3", 멀티클래스: 같은 클래스 LMP3와 LMGT3가 같이 뒤에서 붙음 ("one car, one GT3
-              behind." → "car on your right."), LMGT3와 같은 계열 "LMP3_ELMS"가 같이 붙음 ("one GT3,
-              one car behind." → "GT3 on your right.", 지나감 호칭 GT3)
+              behind." → 지나감 호칭 없음)
+  · meet    — 나 "LMP3": 같은 계열 "LMP3_ELMS"가 뒤에서 붙고(호칭 없는 근접) 앞 LMGT3를 잡는 순간
+              셋이 나란히 ("car on your right." → 지나감 호칭 없음, 떨어짐 호칭 GT3)
+  (하니스는 버스를 비우지 않아 다중 종합 키 "multi"는 리플레이마다 한 번만 받는다 — 나란히 절은 meet에서)
 
 규칙 (기대값의 근거 — analyzers/traffic.py · vehicle_class.py, C# 같은 값):
   · 같은 클래스(문자열이 같거나 같은 계열)는 한 랩 가까이(0.9랩) 앞서 랩 돌리러 올 때만 빠른 차.
