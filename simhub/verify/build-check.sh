@@ -72,5 +72,9 @@ if bad:
 print(f"✅ 설정 화면 문자열 {len(k)}개 (ko/en 일치, 음성 팩 안내 확인)")
 PY
 
+# LMU 내장 공유 메모리 명세 — pack(4) 오프셋·크기 재계산, rF2 공통 필드가 rf2data.py와 같은지.
+# C# 리더와의 대조(합성 덤프)는 러너가 필요해 replay-check.sh에서 한다.
+python3 -I ../tools/lmu_native_blob.py verify-spec
+
 echo
 echo "✅ 컴파일 검증 통과 — 실제 SimHub API 일치는 사용자 PC 빌드에서 확인"

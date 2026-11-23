@@ -246,6 +246,41 @@ if ! "$RUNNER" --settings-selftest; then
     fail=1
 fi
 
+# LMU 내장 공유 메모리(LMU_Data) — 기계가 읽는 명세(docs/lmu_native_layout.json)로 파이썬이 합성
+# 덤프를 만들고, 실제 C# 리더가 읽은 스냅샷을 파이썬이 같은 명세로 계산한 기대값과 대조한다 (C#
+# 오프셋·타입 실수를 C# 코드와 독립적으로 잡는다). 같은 상태를 rF2 플러그인 버퍼로 읽은 스냅샷과도
+# 같아야 하고(동등성), 원천 선택·대체 규칙(매핑 없음·찢김·멈춤·값 검증 …)은 러너 셀프테스트로
+echo
+echo "▶ LMU 내장 공유 메모리 교차 검증 (명세 → 합성 덤프 → C# 리더 · rF2 동등성 · 대체 규칙)"
+LMU="$OUT/lmu"
+if python3 -I tools/lmu_native_blob.py verify-spec \
+    && python3 -I tools/lmu_native_blob.py pack --dir "$LMU"; then
+    "$RUNNER" --lmu-native-dump "$LMU/native.bin" --extended "$LMU/rf2_extended.bin" \
+        --out "$LMU/cs_native.tsv" \
+        && python3 -I tools/lmu_native_blob.py check --expect "$LMU/expected.tsv" \
+            --got "$LMU/cs_native.tsv" --label "내장 덤프 → 스냅샷 (+ rF2 Extended 보충)" \
+        || fail=1
+    "$RUNNER" --lmu-native-dump "$LMU/native.bin" --out "$LMU/cs_native_noext.tsv" \
+        && python3 -I tools/lmu_native_blob.py check --expect "$LMU/expected_noext.tsv" \
+            --got "$LMU/cs_native_noext.tsv" --label "내장 덤프 → 스냅샷 (DLL 없음)" \
+        || fail=1
+    "$RUNNER" --rf2-dump "$LMU/rf2_scoring.bin" "$LMU/rf2_telemetry.bin" \
+        --extended "$LMU/rf2_extended.bin" --out "$LMU/cs_rf2.tsv" \
+        && python3 -I tools/lmu_native_blob.py check --expect "$LMU/expected.tsv" \
+            --got "$LMU/cs_rf2.tsv" --label "같은 상태의 rF2 버퍼 → 스냅샷" \
+        || fail=1
+    if [ -s "$LMU/cs_native.tsv" ] && cmp -s "$LMU/cs_native.tsv" "$LMU/cs_rf2.tsv"; then
+        echo "✅ 동등성 — 내장 메모리와 rF2 버퍼가 같은 스냅샷 ($(wc -l < "$LMU/cs_rf2.tsv")줄 바이트 동일)"
+    else
+        echo "❌ 내장 메모리와 rF2 버퍼의 스냅샷이 다름:"
+        diff "$LMU/cs_native.tsv" "$LMU/cs_rf2.tsv" | head -10 || true
+        fail=1
+    fi
+    "$RUNNER" --lmu-native-selftest "$LMU/native.bin" --extended "$LMU/rf2_extended.bin" || fail=1
+else
+    fail=1
+fi
+
 # 릴리스 도구 — 음성 팩 기술자와 매니페스트 형식을 Core 파서로 대조하고, pwsh가 있으면
 # release.ps1을 검증 모드(빌드·게시 없음)로 돌려 그 출력으로 사용자 업데이트 흐름을 재현한다.
 # TEAMRADIO56_AUDIO_DIR에 팩 zip 폴더를 주면 음성 팩 설치 흐름까지 돈다 (선택).

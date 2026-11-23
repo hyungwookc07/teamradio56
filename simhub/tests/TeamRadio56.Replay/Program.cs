@@ -74,6 +74,13 @@ namespace TeamRadio56.Replay
                     return VoiceSelfTest.PackStateCheck(args[++i]);
                 else if (args[i] == "--settings-selftest")
                     return SettingsSelfTest.Run();
+                else if (args[i] == "--lmu-native-dump" && i + 1 < args.Length)
+                    return LmuNativeSelfTest.DumpNative(args[i + 1], ArgValue(args, "--extended"), FindOut(args));
+                else if (args[i] == "--rf2-dump" && i + 2 < args.Length)
+                    return LmuNativeSelfTest.DumpRf2(args[i + 1], args[i + 2], ArgValue(args, "--extended"),
+                                                     FindOut(args));
+                else if (args[i] == "--lmu-native-selftest" && i + 1 < args.Length)
+                    return LmuNativeSelfTest.Run(args[i + 1], ArgValue(args, "--extended"));
                 else if (args[i] == "--release-check" && i + 1 < args.Length)
                     return ReleaseCheck.Run(args[++i],
                         ArgValue(args, "--plugin-source")
@@ -121,6 +128,9 @@ namespace TeamRadio56.Replay
                     + " | --class-check <classes_in.tsv> [--out f]"
                     + " | --update-selftest | --voice-selftest | --settings-selftest"
                     + " | --dump-voice-table [--out f] | --pack-state-check <폴더>"
+                    + " | --lmu-native-dump <native.bin> [--extended ext.bin] [--out f]"
+                    + " | --rf2-dump <scoring.bin> <telemetry.bin> [--extended ext.bin] [--out f]"
+                    + " | --lmu-native-selftest <native.bin> [--extended ext.bin]"
                     + " | --release-check <audio_pack.txt> [--plugin-source f] [--manifest f [--audio-dir d]]"
                     + "  (무전은 영어 고정 — --lang은 en만 받는다)");
                 return 2;
