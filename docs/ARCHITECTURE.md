@@ -113,6 +113,8 @@
 - `tools/make_wing_replay.py`  프론트 윙(스플리터 높이) 콜 경우를 모은 합성 리플레이 + 기대 콜 사이드카
   (`--check`; wing · wing_rebase(기준 없는 충격 뒤 재판정, 첫 기준 유지) · wing_report(대기 콜 중 다음
   충격 — 그 충격 점검 리포트 먼저, 펑크면 붙듦))
+- `tools/make_sector_flag_replays.py`  섹터 로컬 옐로 합성 리플레이 + 기대 콜 사이드카 (`--check`; LMU 11 → 1 ·
+  첫 샘플 · rF2 0 → 1 · 1 아닌 값 · FCY 억제 · 같은 섹터 120초 · 두 섹터 동시)
 - `tools/expect_calls.py`  수락 콜을 기대 콜 사이드카(`.expect.json`)와 대조 (파이썬·C# 각각)
 - `tools/diagnose.py`          실차 원시 값 덤프 (필드 부실 진단)
 - `tools/probe_rest.py`        REST 엔드포인트 수집 (스키마 확정용)
