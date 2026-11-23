@@ -66,7 +66,9 @@ namespace TeamRadio56.SimHub
             { "hint_laptime", "\"Last lap 2 01.8. Best lap.\"" },
             { "row_status_report", "상황 리포트" },
             { "fmt_every_laps", "{0:0}랩마다" },
-            { "hint_status_report", "0 = 끔. 순위/갭/연료/타이어" },
+            // 슬라이더 값이 0일 때 보이는 글 — "0랩마다"가 아니라 꺼져 있다고 바로 읽히게
+            { "fmt_off", "끔" },
+            { "hint_status_report", "정해진 랩마다 순위/갭/연료/타이어를 불러줍니다" },
             { "row_realtime", "주행 중에만 발화" },
             { "hint_realtime", "모니터/메뉴에선 침묵" },
             { "conn_on", "● LMU 연결됨" },
@@ -140,7 +142,8 @@ namespace TeamRadio56.SimHub
             { "upd_err_AccessDenied", "폴더에 쓸 권한이 없습니다 — SimHub을 관리자 권한으로 실행하거나 릴리스 페이지에서 직접 설치하세요" },
             { "upd_err_Io", "파일을 쓰지 못했습니다 (다른 프로그램이 사용 중일 수 있습니다)" },
             { "upd_err_Cancelled", "취소했습니다" },
-            { "upd_err_RollbackFailed", "원래 DLL로 되돌리지 못했습니다 — 아래 복구 안내를 따르세요" },
+            // 되돌리기 실패(UpdateErrorKind.RollbackFailed)는 upd_err_ 줄이 아니라
+            // 수동 복구 안내(upd_rollback_failed)와 상단 배너(upd_banner_rollback)로 보인다
             { "upd_see_log", "자세한 내용은 teamradio56.log에 있습니다." },
             { "upd_rollback_failed", "플러그인 업데이트 실패 — 원래 DLL로 되돌리지도 못했습니다. 플러그인 폴더에 새 DLL과 이전 DLL이 섞여 있을 수 있습니다.\n"
                                      + "SimHub을 재시작하기 전에 직접 복구하세요: SimHub을 끄고, 폴더 {0} 에서 아래 각 줄의 오른쪽 파일을 지운 뒤 왼쪽 파일을 오른쪽 이름으로 바꾸세요 ({1}에도 적어 두었습니다).\n{2}" },
@@ -200,7 +203,8 @@ namespace TeamRadio56.SimHub
             { "hint_laptime", "\"Last lap 2 01.8. Best lap.\"" },
             { "row_status_report", "Status report" },
             { "fmt_every_laps", "every {0:0} laps" },
-            { "hint_status_report", "0 = off. Position/gaps/fuel/tyres" },
+            { "fmt_off", "off" },
+            { "hint_status_report", "Position/gaps/fuel/tyres every N laps" },
             { "row_realtime", "Speak only while driving" },
             { "hint_realtime", "silent in monitor/menus" },
             { "conn_on", "● LMU connected" },
@@ -273,7 +277,6 @@ namespace TeamRadio56.SimHub
             { "upd_err_AccessDenied", "no write permission for the folder — run SimHub as administrator or install from the releases page" },
             { "upd_err_Io", "could not write a file (another program may be using it)" },
             { "upd_err_Cancelled", "cancelled" },
-            { "upd_err_RollbackFailed", "the old DLLs could not be restored — follow the recovery steps below" },
             { "upd_see_log", "Details are in teamradio56.log." },
             { "upd_rollback_failed", "Plugin update failed, and the old DLLs could not be restored. The plugin folder may now hold a mix of new and old DLLs.\n"
                                      + "Fix it by hand before restarting SimHub: close SimHub, then in the folder {0} delete each right-hand file below and rename the left-hand file to it (also written to {1}).\n{2}" },

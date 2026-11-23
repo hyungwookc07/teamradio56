@@ -39,8 +39,10 @@ fi
 # 설정 화면 문자열 — ko/en 키가 같고, 코드가 쓰는 키가 다 있고, 코드가 안 쓰는 키가 없고,
 # 음성 팩이 없을 때의 안내는 [음성 팩 업데이트]를 가리킨다 (다른 목소리로 대신 말한다고 하지 않는다).
 # 호버 설명 — hint_*/*_hint 키는 툴팁 전용이라 늘 보이는 글씨로 그리면 실패한다. 툴팁을 단 패널은
-# 투명 배경(틈에서 툴팁이 닫혔다 다시 뜨지 않게)과 스크린 리더용 reader가 있어야 하고, 엔진이 시작할 때만
-# 읽는 설정은 전부 [엔진 재시작] 안내의 지문(EngineInputs)에 들어가야 한다.
+# 투명 배경(틈에서 툴팁이 닫혔다 다시 뜨지 않게)과 스크린 리더용 reader가 있어야 하고, 콤보 줄은 드랍다운이
+# 열린 동안 줄 툴팁을 끄며(선택지를 덮지 않게), 엔진이 시작할 때만 읽는 설정은 전부 [엔진 재시작] 안내의
+# 지문(EngineInputs)에 들어가야 한다. 접두사 + Core 값으로 조립하는 키는 조립 코드를 감싼 if가 거르는 값
+# (!= Enum.X)을 빼고 센다 — 화면에 못 나오는 키를 "쓰는 키"로 치지 않게.
 python3 - <<'PY'
 import re, sys
 def read(p):
@@ -68,6 +70,41 @@ notes = [n.replace("-", "_") for n in
          re.findall(r'const string Note\w+ = "([^"]+)"', read(core + "Logic/VoicePolicy.cs"))]
 chatter = re.findall(r'"([^"]+)"', re.search(r"ChatterChoices = \{([^}]*)\}",
                                              read(core + "Config/PluginSettings.cs")).group(1))
+def blank(m):
+    return re.sub(r"[^\n]", " ", m.group(0))
+# 문자열·문자·주석 속 괄호에 속지 않게 같은 길이 공백으로 지운 사본에서 괄호를 센다
+STRIP = r'@"(?:[^"]|"")*"|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)+\'|//[^\n]*|/\*.*?\*/'
+def flatten(text):
+    return re.sub(STRIP, blank, text, flags=re.S)
+flat = flatten(ui)
+def guarded_out(marker, enum_name):
+    # 조립 코드(marker)를 감싼 if 조건에 && 로만 이어진 "!= Enum.X"가 있으면 X는 그 키로 안 간다
+    # (예: RollbackFailed는 upd_err_ 줄 대신 수동 복구 안내로). 조립 코드가 여러 곳이면 모든 곳에서
+    # 빠진 값만 뺀다. if가 아닌 블록(메서드·반복문)에서 멈춘다 — 모르면 빼지 않는 쪽(키를 요구)으로
+    out = None
+    for m in re.finditer(re.escape(marker), ui):
+        excl, i = set(), m.start()
+        while True:
+            depth, i = 0, i - 1
+            while i >= 0 and not (flat[i] == "{" and depth == 0):
+                depth += {"}": 1, "{": -1}.get(flat[i], 0)
+                i -= 1
+            head = flat[:max(i, 0)].rstrip()
+            if i < 0 or not head.endswith(")"):
+                break
+            depth, j = 0, len(head) - 1
+            while j >= 0:
+                depth += {")": 1, "(": -1}.get(head[j], 0)
+                if depth == 0:
+                    break
+                j -= 1
+            if j < 0 or not re.search(r"\bif\s*$", head[:j]):
+                break
+            cond = head[j + 1:-1]
+            if "||" not in cond:
+                excl |= set(re.findall(r"!=\s*" + enum_name + r"\.(\w+)\b", cond))
+        out = excl if out is None else out & excl
+    return out or set()
 activities = enum("Update/UpdateController.cs", "UpdateActivity")
 errors = enum("Update/UpdateException.cs", "UpdateErrorKind")
 if not (notes and chatter and activities and errors):
@@ -75,7 +112,8 @@ if not (notes and chatter and activities and errors):
 families = (  # (조립 코드, 키들, 전부 있어야 하나 — 없으면 화면에 키 이름이 그대로 보인다)
     ('L("voice_note_" +', ["voice_note_" + n for n in notes], True),
     ('L("upd_failed_" +', ["upd_failed_" + a for a in activities if a != "Idle"], True),
-    ('L("upd_err_" +', ["upd_err_" + x for x in errors], True),
+    ('L("upd_err_" +', ["upd_err_" + x for x in errors
+                        if x not in guarded_out('L("upd_err_" +', "UpdateErrorKind")], True),
     ('Choice("choice_")', ["choice_" + c for c in chatter], False),  # 없으면 값 그대로 보인다
 )
 dynamic = set()
@@ -102,13 +140,6 @@ for key, text in list(k.items()) + list(e.items()):
 # 거슬러 올라가 그 글이 들어가는 호출과 인자 위치를 본다: Tip(el, ●[, reader]) / Row(…, …, …, ●) /
 # Section(…, …, ●) / UpdateTip(…, …, ref …, ●, reader)만 허용 (string.Format·+ 이어 붙이기는 통과).
 # TextBlock.Text·SetText·Content 등 늘 보이는 글씨로 가면 실패한다.
-def blank(m):
-    return re.sub(r"[^\n]", " ", m.group(0))
-# 문자열·문자·주석 속 괄호에 속지 않게 같은 길이 공백으로 지운 사본에서 괄호를 센다
-STRIP = r'@"(?:[^"]|"")*"|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)+\'|//[^\n]*|/\*.*?\*/'
-def flatten(text):
-    return re.sub(STRIP, blank, text, flags=re.S)
-flat = flatten(ui)
 TIP_SINKS = {"Tip": 1, "Row": 3, "Section": 2, "UpdateTip": 3}   # 호출 → 설명 인자 위치(0부터)
 def sink_of(pos):
     while True:
@@ -160,6 +191,13 @@ for sink, param in (("Row", "hint"), ("Section", "hint"), ("UpdateTip", "text"))
         bad.append(sink + "(): " + param + "를 Tip(…)으로 넘기지 않음")
     elif re.search(r"\b(?:Text|Content)\s*=\s*" + param + r"\b", b):
         bad.append(sink + "(): " + param + "를 늘 보이는 글씨로 그림")
+# 콤보 줄 — 드랍다운 항목에서 툴팁 찾기가 콤보를 거쳐 줄까지 올라오므로, 열린 동안 줄 툴팁을 꺼야
+# 줄 설명이 선택지(choice_*) 이름을 덮지 않는다
+row_b, mute = body(r"(?:StackPanel|void)\s+Row"), body(r"void\s+MuteTipWhileOpen")
+if (row_b is None or not re.search(r"\bMuteTipWhileOpen\(\s*\w+\s*,\s*row\s*\)", row_b)
+        or mute is None or "DropDownOpened" not in mute
+        or not re.search(r"ToolTipService\.SetIsEnabled\(\s*\w+\s*,\s*false\s*\)", mute)):
+    bad.append("Row(): 콤보 드랍다운이 열린 동안 줄 툴팁을 끄지 않음 (MuteTipWhileOpen) — 선택지를 덮는다")
 tip = body(r"void\s+Tip")
 if tip is None or "ToolTip" not in tip or "SetShowDuration" not in tip:
     bad.append("Tip(): 툴팁을 달지 않음 (ToolTip + ShowDuration)")
@@ -231,7 +269,7 @@ if bad:
     sys.exit(1)
 tips = len(re.findall(HINT_KEY, ui))
 print(f"✅ 설정 화면 문자열 {len(k)}개 (ko/en 일치, 안 쓰는 키 없음, 음성 팩 안내 확인, 호버 설명 {tips}곳은 툴팁으로만,"
-      " 툴팁 패널 배경·reader, 엔진 재시작 안내 지문)")
+      " 툴팁 패널 배경·reader, 콤보 줄 툴팁, 엔진 재시작 안내 지문)")
 PY
 
 # LMU 내장 공유 메모리 명세 — pack(4) 오프셋·크기 재계산, rF2 공통 필드가 rf2data.py와 같은지.

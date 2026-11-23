@@ -369,10 +369,12 @@ namespace TeamRadio56.SimHub
                 S.LapTimeEveryLap = v;
             }), L("hint_laptime"));
 
+            // 기본값 0은 "0랩마다"가 아니라 "끔"으로 보인다 — 0의 뜻을 툴팁에만 두면 화면이
+            // 0랩마다 리포트를 약속하는 것처럼 읽힌다
             Row(box, L("row_status_report"), MakeSlider(0, 10, 1, S.StatusEveryLaps, v =>
             {
                 S.StatusEveryLaps = (int)Math.Round(v);
-            }, L("fmt_every_laps")), L("hint_status_report"));
+            }, L("fmt_every_laps"), L("fmt_off")), L("hint_status_report"));
         }
 
         private void BuildBehaviour(StackPanel root)
@@ -733,6 +735,7 @@ namespace TeamRadio56.SimHub
             }
             else if (st.ErrorKind.HasValue && st.ErrorKind.Value != UpdateErrorKind.RollbackFailed)
             {
+                // 되돌리기 실패는 이 줄 대신 아래 수동 복구 안내(ManualRestorePending)로 — upd_err_RollbackFailed 키는 없다.
                 // Core의 상세 문구는 한국어 진단용이라 로그에만 — 화면엔 Loc 문구만
                 status = L("upd_failed_" + st.FailedActivity) + L("upd_err_" + st.ErrorKind.Value);
                 if (st.ErrorKind.Value != UpdateErrorKind.Cancelled)
@@ -932,8 +935,30 @@ namespace TeamRadio56.SimHub
             if (focus != null)
                 AutomationProperties.SetLabeledBy(focus, text);
             Tip(row, hint, focus ?? text);
+            // 콤보 줄 — 드랍다운이 열려 있는 동안은 줄 툴팁이 선택지 위를 덮지 않게 끈다
+            var combo = focus as ComboBox;
+            if (combo != null && hasHint)
+                MuteTipWhileOpen(combo, row);
             parent.Children.Add(row);
             return row;   // 호출부가 Visibility를 토글할 수 있게
+        }
+
+        /// <summary>
+        /// 드랍다운이 열려 있는 동안 owner(콤보를 품은 줄)의 툴팁을 끈다. 항목은 Popup 안에 있지만
+        /// WPF의 툴팁 찾기는 항목 → Popup → 콤보 → 줄로 올라온다 — 열린 목록 위에서 다른 툴팁(바로 위
+        /// 섹션 제목 등)을 거쳐 오거나 키보드로 목록을 열면, 줄 툴팁이 항목 위에 떠 선택지 이름을 가린다
+        /// (선택지는 늘 보여야 한다). 끄는 순간 이미 떠 있던 줄 툴팁도 닫는다. 닫히면 다시 켠다.
+        /// </summary>
+        private static void MuteTipWhileOpen(ComboBox combo, FrameworkElement owner)
+        {
+            combo.DropDownOpened += (s, e) =>
+            {
+                ToolTipService.SetIsEnabled(owner, false);
+                var tip = owner.ToolTip as ToolTip;
+                if (tip != null && tip.IsOpen)
+                    tip.IsOpen = false;
+            };
+            combo.DropDownClosed += (s, e) => owner.ClearValue(ToolTipService.IsEnabledProperty);
         }
 
         /// <summary>컨트롤이면 그 자신, 패널이면 그 안의 첫 컨트롤 (슬라이더 줄의 Slider). 없으면 null.</summary>
@@ -959,6 +984,8 @@ namespace TeamRadio56.SimHub
         /// 밝은 툴팁 위에서 글씨가 안 보인다. 긴 설명은 TipMaxWidth에서 줄바꿈.
         /// 같은 글을 스크린 리더용 HelpText로 reader(없으면 el)에 — 패널은 AutomationPeer가 없어
         /// 거기 단 HelpText는 아무도 읽지 못하므로, 툴팁을 패널에 달 때는 컨트롤·TextBlock을 넘긴다.
+        /// ToolTip 객체를 직접 달아 둔다 — 글이 바뀌면 그 안의 TextBlock만 고쳐 떠 있는 툴팁도 새 글을
+        /// 보이고, 콤보 줄(MuteTipWhileOpen)은 떠 있는 툴팁을 닫을 수 있다.
         /// </summary>
         private static void Tip(FrameworkElement el, string text, UIElement reader = null)
         {
@@ -971,12 +998,18 @@ namespace TeamRadio56.SimHub
                 help.ClearValue(AutomationProperties.HelpTextProperty);
                 return;
             }
-            el.ToolTip = new TextBlock
+            var tip = el.ToolTip as ToolTip;
+            var content = tip != null ? tip.Content as TextBlock : null;
+            if (content == null)
             {
-                Text = text,
-                TextWrapping = TextWrapping.Wrap,
-                MaxWidth = TipMaxWidth,
-            };
+                content = new TextBlock
+                {
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = TipMaxWidth,
+                };
+                el.ToolTip = new ToolTip { Content = content };
+            }
+            content.Text = text;
             ToolTipService.SetShowDuration(el, TipShowMs);
             ToolTipService.SetInitialShowDelay(el, TipDelayMs);
             ToolTipService.SetShowOnDisabled(el, true);
@@ -1057,9 +1090,17 @@ namespace TeamRadio56.SimHub
             return box;
         }
 
+        /// <summary>
+        /// 슬라이더 + 오른쪽 값 글. zero가 있으면 값이 0일 때 숫자 대신 그 글을 보인다
+        /// ("0랩마다" 대신 "끔") — 0이 꺼짐을 뜻하는 설정은 화면만 봐도 꺼져 있다고 읽혀야 한다.
+        /// </summary>
         private UIElement MakeSlider(double min, double max, double step, double value,
-                                     Action<double> setter, string format)
+                                     Action<double> setter, string format, string zero = null)
         {
+            // 눈금에 붙는 슬라이더라 0 근처(눈금 반 칸 안)면 0이다
+            Func<double, string> show = v => zero != null && Math.Abs(v) < step / 2
+                ? zero
+                : string.Format(format, v);
             var panel = new StackPanel { Orientation = Orientation.Horizontal };
             var slider = new Slider
             {
@@ -1073,7 +1114,7 @@ namespace TeamRadio56.SimHub
             };
             var label = new TextBlock
             {
-                Text = string.Format(format, slider.Value),
+                Text = show(slider.Value),
                 Width = 90,
                 Foreground = Fg,
                 Margin = new Thickness(10, 0, 0, 0),
@@ -1081,7 +1122,7 @@ namespace TeamRadio56.SimHub
             };
             slider.ValueChanged += (s, e) =>
             {
-                label.Text = string.Format(format, slider.Value);
+                label.Text = show(slider.Value);
                 setter(slider.Value);
                 Save();
             };
