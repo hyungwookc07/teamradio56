@@ -1,12 +1,17 @@
-﻿# Microsoft Defender 검사 — 릴리스 게이트 (GitHub Actions Windows 빌드 러너 전용).
+﻿# Microsoft Defender 검사 — 릴리스 게이트 (GitHub Actions Windows 러너 전용).
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File simhub\ci\scan-defender.ps1 `
-#       -AssetsDir dist\ci\assets -ReportPath dist\ci\meta\av-scan.txt -WorkDir dist\av-scan [-ExtraDir dist\audio]
+#       -AssetsDir dist\ci\assets -AudioDir dist\audio-current -ReportPath dist\ci\meta\av-scan.txt -WorkDir dist\av-scan
+#       release 워크플로 build 잡: 게시할 플러그인 파일 + 그 매니페스트가 가리키는 음성 팩 zip (매 실행, dry run도)
+#   powershell -NoProfile -ExecutionPolicy Bypass -File simhub\ci\scan-defender.ps1 `
+#       -AudioDir dist\audio\<pack> -ReportPath dist\audio-scan\av-scan.txt -WorkDir dist\av-scan
+#       audio-pack 워크플로 scan 잡: 새 음성 팩만 — 팩 릴리스·기술자 커밋(publish 잡) 전에
 #   pwsh -NoProfile -File simhub/ci/scan-defender.ps1 -SelfTest
 #       순수 함수 셀프테스트만 (Defender를 건드리지 않는다 — 리눅스 게이트에서 돈다)
-#   pwsh -NoProfile -File simhub/ci/scan-defender.ps1 -SampleReport -AssetsDir <폴더> -ReportPath <파일>
+#   pwsh -NoProfile -File simhub/ci/scan-defender.ps1 -SampleReport [-AssetsDir <폴더>] [-AudioDir <폴더>] -ReportPath <파일>
 #       검증 게이트 전용: Defender 없이 같은 코드로 보고서 형식만 만든다 — 릴리스 흐름 검사가 이것을
-#       bash 검사기(release-lib.sh av_report_problem)에 넣어 형식 계약을 확인한다. 워크플로에서 쓰지 않는다
+#       bash 검사기(release-lib.sh av_report_problem·av_pack_report_problem)에 넣어 형식 계약을 확인한다.
+#       워크플로에서 쓰지 않는다
 #
 # 침묵을 믿지 않는다. 러너 이미지는 속도 때문에 Defender를 느슨하게 설정해 둔다 (실시간 보호 끔,
 # C:\·D:\ 제외 경로, 압축 파일 검사 끔, 시작 시 서명 갱신 끔). 그래서 이 스크립트는:
@@ -20,12 +25,13 @@
 #      파일을 만들어 검사한다. 탐지(종료 코드 2 + 위협 목록)가 아니면 '검사기가 동작하지 않음'으로 실패.
 #      EICAR 문자열은 조각을 이어 실행 중에만 만든다 (저장소 파일이 백신에 걸리지 않게). 검사 후 지운다.
 #      zip 안의 EICAR도 검사해 압축 파일 검사가 되는지 기록한다 (압축은 따로 풀어 검사하므로 경고만)
-#   6. 대상 검사: -AssetsDir의 파일 각각, 그 안의 zip은 새 폴더에 풀어 내용까지, -ExtraDir(새 음성 팩)도
-#      같게. MpCmdRun -Scan -ScanType 3 -File <경로> -DisableRemediation — 0 + 위협 없음 = 깨끗함,
-#      2 = 위협(실패, 자세히 출력), 그 밖 = 검사 오류(실패). 끝나고 Get-MpThreatDetection에 대상 경로가
-#      하나라도 있어도 실패
-#   7. 보고서 (-ReportPath, key=value, UTF-8 BOM 없음, LF) — 게시 자산마다 asset=<이름>,<sha256>,<크기>.
-#      verify-artifact·attest·publish가 이 sha256을 게시할 파일과 대조한다 (검사한 바이트 = 게시할 바이트).
+#   6. 대상 검사: -AssetsDir의 파일 각각, -AudioDir(음성 팩 zip만 있는 폴더, 하위 폴더 없음)의 zip 각각,
+#      그리고 모든 zip을 새 폴더에 풀어 내용까지. MpCmdRun -Scan -ScanType 3 -File <경로> -DisableRemediation
+#      — 0 + 위협 없음 = 깨끗함, 2 = 위협(실패, 자세히 출력), 그 밖 = 검사 오류(실패). 끝나고
+#      Get-MpThreatDetection에 대상 경로가 하나라도 있어도 실패
+#   7. 보고서 (-ReportPath, key=value, UTF-8 BOM 없음, LF) — 게시 자산마다 asset=<이름>,<sha256>,<크기>,
+#      음성 팩 zip마다 audio_file=<이름>,<sha256>,<크기>. 게시 쪽이 이 줄을 게시할 파일·매니페스트의
+#      audio_*·팩 기술자와 대조한다 (검사한 바이트 = 게시하거나 가리키는 바이트).
 #      보고서는 전부 통과했을 때만 쓴다 (result=clean)
 #
 # Windows PowerShell 5 호환으로 쓴다 (검증 게이트 ps-check가 막는다). StrictMode.
@@ -33,7 +39,7 @@ param(
     [string]$AssetsDir = "",
     [string]$ReportPath = "",
     [string]$WorkDir = "",
-    [string[]]$ExtraDir = @(),
+    [string]$AudioDir = "",
     [int]$MaxSignatureAgeDays = 3,
     [switch]$SelfTest,
     [switch]$SampleReport
@@ -213,9 +219,9 @@ function Format-AvReport([string[]]$lines) {
     return ((@($lines) -join "`n") + "`n")
 }
 
-# 보고서 줄 전부 — 키 이름은 release-lib.sh av_report_problem·release_verify_section과의 계약이다
-# ($info: Product Engine SigVer SigIso UpdateHow Mode ScanIso Removed SelfThreat SelfArchive Scanned Extracted)
-function New-AvReportLines($info, $assetFiles, [string[]]$extraDirs) {
+# 보고서 줄 전부 — 키 이름은 release-lib.sh av_report_problem·av_pack_report_problem·release_verify_section과의
+# 계약이다 ($info: Product Engine SigVer SigIso UpdateHow Mode ScanIso Removed SelfThreat SelfArchive Scanned Extracted)
+function New-AvReportLines($info, $assetFiles, $audioFiles) {
     $lines = @(
         (New-ReportLine "format" "1"),
         (New-ReportLine "scanner" "Microsoft Defender"),
@@ -238,14 +244,23 @@ function New-AvReportLines($info, $assetFiles, [string[]]$extraDirs) {
     foreach ($f in @($assetFiles)) {
         $lines += (New-AssetLine "asset" $f.Name (Get-FileSha256 $f.FullName) $f.Length)
     }
-    foreach ($d in @($extraDirs)) {
-        if ("$d" -eq "") { continue }
-        foreach ($f in @(Get-ChildItem -LiteralPath $d -Recurse -File -Force | Sort-Object FullName)) {
-            $rel = $f.FullName.Substring($d.Length).TrimStart('\', '/').Replace('\', '/')
-            $lines += (New-AssetLine "extra_file" $rel (Get-FileSha256 $f.FullName) $f.Length)
-        }
+    foreach ($f in @($audioFiles)) {
+        if ($null -eq $f) { continue }
+        $lines += (New-AssetLine "audio_file" $f.Name (Get-FileSha256 $f.FullName) $f.Length)
     }
     return $lines
+}
+
+# 음성 팩 폴더(-AudioDir)의 항목 — 팩 zip만, 하위 폴더 없이. 문제가 없으면 빈 문자열
+# (보고서의 audio_file 줄이 매니페스트·기술자의 zip 이름과 그대로 대조되게 평평해야 한다)
+function Get-AudioDirProblem($items) {
+    $all = @($items | Where-Object { $null -ne $_ })
+    if ($all.Count -eq 0) { return "음성 팩 폴더가 비었습니다" }
+    foreach ($i in $all) {
+        if ($i.PSIsContainer) { return "음성 팩 폴더에 하위 폴더가 있습니다: $($i.Name) (팩 zip만 평평하게)" }
+        if ($i.Extension -ne '.zip') { return "음성 팩 폴더에 zip이 아닌 파일이 있습니다: $($i.Name)" }
+    }
+    return ""
 }
 
 function Get-FileSha256([string]$path) {
@@ -346,25 +361,37 @@ function Invoke-SelfTest {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
     }
 
-    # 보고서 줄 전체 — 자산 줄과 새 음성 팩 폴더의 상대 경로 줄
+    # 보고서 줄 전체 — 자산 줄과 음성 팩 zip 줄, 음성 팩 폴더 모양 판정
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("scan-defender-selftest-" + [guid]::NewGuid().ToString("N"))
     try {
         $ad = Join-Path $tmpDir "assets"
         $xd = Join-Path $tmpDir "audio"
-        $xsub = Join-Path $xd "pack"
-        New-Item -ItemType Directory -Force -Path $ad, $xsub | Out-Null
+        New-Item -ItemType Directory -Force -Path $ad, $xd | Out-Null
         [System.IO.File]::WriteAllBytes((Join-Path $ad "b.zip"), [System.Text.Encoding]::ASCII.GetBytes("abc"))
         [System.IO.File]::WriteAllBytes((Join-Path $ad "a.txt"), [byte[]]@())
-        [System.IO.File]::WriteAllBytes((Join-Path $xsub "p.zip"), [System.Text.Encoding]::ASCII.GetBytes("x"))
+        [System.IO.File]::WriteAllBytes((Join-Path $xd "p_2of2.zip"), [System.Text.Encoding]::ASCII.GetBytes("y"))
+        [System.IO.File]::WriteAllBytes((Join-Path $xd "p_1of2.zip"), [System.Text.Encoding]::ASCII.GetBytes("x"))
         $info = @{ Product = "4.18"; Engine = "1.1"; SigVer = "1.4"; SigIso = "2026-01-02T03:04:05Z"; UpdateHow = "Update-MpSignature"
-            Mode = "Normal"; ScanIso = "2026-01-02T04:04:05Z"; Removed = 2; SelfThreat = "t"; SelfArchive = "detected"; Scanned = 3; Extracted = 1 }
-        $rl = @(New-AvReportLines $info @(Get-ChildItem -LiteralPath $ad -File | Sort-Object Name) @($xd))
+            Mode = "Normal"; ScanIso = "2026-01-02T04:04:05Z"; Removed = 2; SelfThreat = "t"; SelfArchive = "detected"; Scanned = 4; Extracted = 1 }
+        $audio = @(Get-ChildItem -LiteralPath $xd -Force | Sort-Object Name)
+        Check ((Get-AudioDirProblem $audio) -eq "") "음성 팩 폴더: zip만 → 문제 없음"
+        $rl = @(New-AvReportLines $info @(Get-ChildItem -LiteralPath $ad -File | Sort-Object Name) $audio)
         Check ($rl[0] -eq "format=1" -and $rl -contains "result=clean" -and $rl -contains "selftest=detected") "보고서 머리 줄 (format·result·selftest)"
         Check ($rl -contains "scanner=Microsoft Defender" -and $rl -contains "exclusions_removed=2" -and $rl -contains "signature_updated=2026-01-02T03:04:05Z") "보고서 값 줄"
         Check ($rl -contains "asset=b.zip,ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad,3") "보고서 asset 줄 (zip)"
         Check ($rl -contains "asset=a.txt,e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,0") "보고서 asset 줄 (빈 파일)"
-        Check ($rl -contains "extra_file=pack/p.zip,2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881,1") "보고서 extra_file 줄 (상대 경로 /)"
-        Check (@($rl | Where-Object { $_ -like "asset=*" }).Count -eq 2) "asset 줄은 assets 파일 수만큼"
+        Check ($rl -contains "audio_file=p_1of2.zip,2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881,1") "보고서 audio_file 줄 (zip 이름 그대로)"
+        Check (@($rl | Where-Object { $_ -like "asset=*" }).Count -eq 2 -and @($rl | Where-Object { $_ -like "audio_file=*" }).Count -eq 2) "asset·audio_file 줄은 파일 수만큼"
+        $pa = @(New-AvReportLines $info @() $audio)
+        Check (@($pa | Where-Object { $_ -like "asset=*" }).Count -eq 0 -and @($pa | Where-Object { $_ -like "audio_file=*" }).Count -eq 2) "팩만 검사한 보고서: asset 줄 없음, audio_file 줄 2개"
+        $pl = @(New-AvReportLines $info @(Get-ChildItem -LiteralPath $ad -File | Sort-Object Name) @())
+        Check (@($pl | Where-Object { $_ -like "audio_file=*" }).Count -eq 0) "팩 없이 검사한 보고서: audio_file 줄 없음"
+        Check ((Get-AudioDirProblem @()) -like "*비었습니다*") "음성 팩 폴더: 비었으면 문제"
+        New-Item -ItemType Directory -Force -Path (Join-Path $xd "sub") | Out-Null
+        Check ((Get-AudioDirProblem @(Get-ChildItem -LiteralPath $xd -Force)) -like "*하위 폴더*sub*") "음성 팩 폴더: 하위 폴더 → 문제"
+        Remove-Item -LiteralPath (Join-Path $xd "sub") -Force
+        [System.IO.File]::WriteAllBytes((Join-Path $xd "audio_pack.txt"), [byte[]]@())
+        Check ((Get-AudioDirProblem @(Get-ChildItem -LiteralPath $xd -Force)) -like "*zip이 아닌*audio_pack.txt*") "음성 팩 폴더: zip 아닌 파일 → 문제"
     } finally {
         Remove-Item -LiteralPath $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -383,15 +410,24 @@ if ($SelfTest) {
 }
 
 if ($SampleReport) {
-    if ($AssetsDir -eq "" -or $ReportPath -eq "") { Fail "-SampleReport에는 -AssetsDir와 -ReportPath가 필요합니다" }
+    if (($AssetsDir -eq "" -and $AudioDir -eq "") -or $ReportPath -eq "") {
+        Fail "-SampleReport에는 -AssetsDir 또는 -AudioDir와 -ReportPath가 필요합니다"
+    }
     $now = Get-Date
-    $files = @(Get-ChildItem -LiteralPath $AssetsDir -File -Force | Sort-Object Name)
+    $files = @()
+    if ($AssetsDir -ne "") { $files = @(Get-ChildItem -LiteralPath $AssetsDir -File -Force | Sort-Object Name) }
+    $audio = @()
+    if ($AudioDir -ne "") {
+        $audio = @(Get-ChildItem -LiteralPath $AudioDir -Force | Sort-Object Name)
+        $why = Get-AudioDirProblem $audio
+        if ($why -ne "") { Fail $why }
+    }
     $info = @{
         Product = "0.0.0.0"; Engine = "0.0.0.0"; SigVer = "0.0.0.0"; SigIso = (ConvertTo-IsoUtc $now.AddHours(-1))
         UpdateHow = "sample"; Mode = "sample"; ScanIso = (ConvertTo-IsoUtc $now); Removed = 0
-        SelfThreat = "sample"; SelfArchive = "detected"; Scanned = $files.Count; Extracted = 0
+        SelfThreat = "sample"; SelfArchive = "detected"; Scanned = ($files.Count + $audio.Count); Extracted = 0
     }
-    $lines = @(New-AvReportLines $info $files @())
+    $lines = @(New-AvReportLines $info $files $audio)
     [System.IO.File]::WriteAllText($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ReportPath),
         (Format-AvReport $lines), $Utf8NoBom)
     exit 0
@@ -467,7 +503,9 @@ function Invoke-MpScan([string]$mp, [string]$path) {
     return (Invoke-Native $mp @('-Scan', '-ScanType', '3', '-File', $path, '-DisableRemediation'))
 }
 
-# 위협·오류 자세히 — MpCmdRun 출력, 위협 자원의 sha256 (같은 커밋을 로컬에서 빌드해 비교할 수 있게)
+# 위협·오류 자세히 — MpCmdRun 출력, 위협 자원의 sha256. 해시는 잡힌 파일을 기록하고 Microsoft 제출·
+# 조회 때 그 파일을 가리키는 용도다 — 로컬 빌드와 비교하는 값이 아니다 (빌드가 재현 가능하지 않다:
+# DLL에 빌드 경로(PDB)가, zip 항목에 빌드 시각이 들어가 같은 커밋이어도 sha256이 다르다)
 function Show-ScanProblem([string]$path, $r) {
     Write-Host "  MpCmdRun 종료 코드 $($r.Code) — $path"
     Show-Output $r.Output
@@ -492,16 +530,33 @@ function Get-Detections {
 }
 
 # ── 0. 인자 ──────────────────────────────────────────────────────────────
-if ($AssetsDir -eq "" -or $ReportPath -eq "" -or $WorkDir -eq "") {
-    Fail "-AssetsDir, -ReportPath, -WorkDir가 필요합니다"
+if ($ReportPath -eq "" -or $WorkDir -eq "" -or ($AssetsDir -eq "" -and $AudioDir -eq "")) {
+    Fail "-ReportPath, -WorkDir와 -AssetsDir·-AudioDir 중 하나 이상이 필요합니다"
 }
-if (-not (Test-Path -LiteralPath $AssetsDir -PathType Container)) { Fail "-AssetsDir 폴더가 없습니다: $AssetsDir" }
-$AssetsDir = (Resolve-Path -LiteralPath $AssetsDir).Path.TrimEnd('\')
-$extraDirs = @()
-foreach ($d in @($ExtraDir)) {
-    if ("$d" -eq "") { continue }
-    if (-not (Test-Path -LiteralPath $d -PathType Container)) { Fail "-ExtraDir 폴더가 없습니다: $d" }
-    $extraDirs += (Resolve-Path -LiteralPath $d).Path.TrimEnd('\')
+$assetFiles = @()
+$audioFiles = @()
+$targetDirs = @()
+if ($AssetsDir -ne "") {
+    if (-not (Test-Path -LiteralPath $AssetsDir -PathType Container)) { Fail "-AssetsDir 폴더가 없습니다: $AssetsDir" }
+    $AssetsDir = (Resolve-Path -LiteralPath $AssetsDir).Path.TrimEnd('\')
+    $assetFiles = @(Get-ChildItem -LiteralPath $AssetsDir -Force | Sort-Object Name)
+    foreach ($f in $assetFiles) {
+        if ($f.PSIsContainer) { Fail "assets에 폴더가 있습니다: $($f.Name)" }
+    }
+    if ($assetFiles.Count -eq 0) { Fail "assets가 비었습니다: $AssetsDir" }
+    if (@($assetFiles | Where-Object { $_.Extension -eq '.zip' }).Count -eq 0) { Fail "assets에 플러그인 zip이 없습니다" }
+    $targetDirs += $AssetsDir
+}
+if ($AudioDir -ne "") {
+    if (-not (Test-Path -LiteralPath $AudioDir -PathType Container)) { Fail "-AudioDir 폴더가 없습니다: $AudioDir" }
+    $AudioDir = (Resolve-Path -LiteralPath $AudioDir).Path.TrimEnd('\')
+    $audioFiles = @(Get-ChildItem -LiteralPath $AudioDir -Force | Sort-Object Name)
+    $why = Get-AudioDirProblem $audioFiles
+    if ($why -ne "") { Fail "$why ($AudioDir)" }
+    $targetDirs += $AudioDir
+}
+if ($AssetsDir -ne "" -and $AudioDir -eq "") {
+    Warn "음성 팩(-AudioDir) 없이 검사합니다 — 보고서에 audio_file 줄이 없어 게시(publish)는 거부한다. dry run에서 팩 릴리스를 확인하지 못했을 때만 이렇게 된다"
 }
 $ReportPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ReportPath)
 if (Test-Path -LiteralPath $ReportPath) { Fail "보고서가 이미 있습니다 (검사 전에 생긴 보고서는 믿지 않는다): $ReportPath" }
@@ -510,18 +565,10 @@ if (-not (Test-Path -LiteralPath $reportDir -PathType Container)) { Fail "보고
 $WorkDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($WorkDir).TrimEnd('\')
 if (Test-Path -LiteralPath $WorkDir) { Fail "작업 폴더가 이미 있습니다 (새 폴더여야 한다): $WorkDir" }
 # 자체 시험 파일은 대상과 같은 드라이브에 — 그 위치가 제외돼 있지 않다는 증거가 되게
-if ((Split-Path -Qualifier $WorkDir) -ne (Split-Path -Qualifier $AssetsDir)) {
-    Fail "작업 폴더($WorkDir)가 검사 대상($AssetsDir)과 다른 드라이브입니다"
-}
-$assetFiles = @(Get-ChildItem -LiteralPath $AssetsDir -Force | Sort-Object Name)
-foreach ($f in $assetFiles) {
-    if ($f.PSIsContainer) { Fail "assets에 폴더가 있습니다: $($f.Name)" }
-}
-if ($assetFiles.Count -eq 0) { Fail "assets가 비었습니다: $AssetsDir" }
-if (@($assetFiles | Where-Object { $_.Extension -eq '.zip' }).Count -eq 0) { Fail "assets에 플러그인 zip이 없습니다" }
-$extraFiles = @()
-foreach ($d in $extraDirs) {
-    $extraFiles += @(Get-ChildItem -LiteralPath $d -Recurse -File -Force | Sort-Object FullName)
+foreach ($d in $targetDirs) {
+    if ((Split-Path -Qualifier $WorkDir) -ne (Split-Path -Qualifier $d)) {
+        Fail "작업 폴더($WorkDir)가 검사 대상($d)과 다른 드라이브입니다"
+    }
 }
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 $selfDir = Join-Path $WorkDir "selftest"
@@ -529,8 +576,9 @@ $extractRoot = Join-Path $WorkDir "extract"
 New-Item -ItemType Directory -Force -Path $selfDir | Out-Null
 New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
 # 검사 대상이 놓이는 곳 — 제외 판정·탐지 기록 대조에 쓴다 (자체 시험 폴더는 뺀다)
-$targetRoots = @($AssetsDir, $extractRoot) + $extraDirs
-Write-Host "검사 대상: $AssetsDir ($($assetFiles.Count)개)$(if ($extraDirs.Count -gt 0) { ', ' + ($extraDirs -join ', ') + ' (' + $extraFiles.Count + '개)' })"
+$targetRoots = @($targetDirs) + @($extractRoot)
+if ($AssetsDir -ne "") { Write-Host "검사 대상(게시 파일): $AssetsDir ($($assetFiles.Count)개)" }
+if ($AudioDir -ne "") { Write-Host "검사 대상(음성 팩 zip): $AudioDir ($($audioFiles.Count)개)" }
 Write-Host "작업 폴더: $WorkDir (자체 시험·압축 풀기, 아티팩트에 올리지 않는다)"
 
 # ── 1. Defender 서비스·상태 ──────────────────────────────────────────────
@@ -594,7 +642,7 @@ $pref = Get-MpPreference
 $leftPaths = @(Get-Prop $pref "ExclusionPath" | Where-Object { "$_" -ne "" })
 $leftExts = @(Get-Prop $pref "ExclusionExtension" | Where-Object { "$_" -ne "" })
 $leftProcs = @(Get-Prop $pref "ExclusionProcess" | Where-Object { "$_" -ne "" })
-$coverProbe = @($targetRoots) + @($selfDir) + @($assetFiles | ForEach-Object { $_.FullName }) + @($extraFiles | ForEach-Object { $_.FullName })
+$coverProbe = @($targetRoots) + @($selfDir) + @($assetFiles | ForEach-Object { $_.FullName }) + @($audioFiles | ForEach-Object { $_.FullName })
 foreach ($e in $leftPaths) {
     foreach ($t in $coverProbe) {
         if (Test-ExclusionCovers $e $t) { Fail "제외 경로 '$e'가 지워지지 않았고 검사 대상($t)을 덮습니다" }
@@ -742,11 +790,13 @@ function Invoke-TargetScan([string]$path, [string]$label) {
     return "검사 오류: $label (종료 코드 $($r.Code))"
 }
 
-# zip을 새 폴더에 풀어 폴더째 검사 — 풀린 파일 수가 zip의 파일 항목 수와 같아야 한다
+# zip을 새 폴더에 풀어 폴더째 검사 — 풀린 파일 수가 zip의 파일 항목 수와 같아야 한다.
+# Expand-Archive(PowerShell 5)는 항목마다 느려 수천 개 wav가 든 음성 팩 zip에 맞지 않는다 — .NET으로 푼다
+# (대상 폴더 밖으로 나가는 항목·같은 이름 항목은 예외 → 실패)
 function Invoke-ZipContentScan([string]$zipPath, [int]$index) {
     $dest = Join-Path $extractRoot ("{0:D2}-{1}" -f $index, [System.IO.Path]::GetFileNameWithoutExtension($zipPath))
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
-    Expand-Archive -LiteralPath $zipPath -DestinationPath $dest
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $dest)
     $za = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     try {
         $want = @($za.Entries | Where-Object { -not $_.FullName.EndsWith('/') -and -not $_.FullName.EndsWith('\') }).Count
@@ -773,12 +823,12 @@ foreach ($f in @($assetFiles | Where-Object { $_.Extension -eq '.zip' })) {
     $extracted += [int]$z["Files"]
     if ($z["Problem"] -ne "") { $problems += $z["Problem"] }
 }
-foreach ($f in $extraFiles) {
-    $msg = Invoke-TargetScan $f.FullName $f.FullName
+foreach ($f in $audioFiles) {
+    $msg = Invoke-TargetScan $f.FullName ("음성 팩 " + $f.Name)
     $scanned++
     if ($msg -ne "") { $problems += $msg }
 }
-foreach ($f in @($extraFiles | Where-Object { $_.Extension -eq '.zip' })) {
+foreach ($f in $audioFiles) {
     $zipIndex++
     $z = Invoke-ZipContentScan $f.FullName $zipIndex
     $extracted += [int]$z["Files"]
@@ -818,7 +868,7 @@ $info = @{
     ScanIso = (ConvertTo-IsoUtc $scanStart); Removed = $removed
     SelfThreat = $selfThreat; SelfArchive = $selfArchive; Scanned = $scanned; Extracted = $extracted
 }
-$lines = @(New-AvReportLines $info $assetFiles $extraDirs)
+$lines = @(New-AvReportLines $info $assetFiles $audioFiles)
 $text = Format-AvReport $lines
 [System.IO.File]::WriteAllText($ReportPath, $text, $Utf8NoBom)
 foreach ($l in $lines) { Write-Host "  $l" }
@@ -830,6 +880,9 @@ Summary "- 자체 시험: EICAR 탐지 ($selfThreat), zip 안의 EICAR: $selfArc
 Summary "- 검사: 파일 ${scanned}개 + 압축 푼 파일 ${extracted}개 (제외 항목 ${removed}개 지움, 압축 파일 검사 켬)"
 foreach ($f in $assetFiles) {
     Summary ("- ``{0}`` sha256 ``{1}``" -f $f.Name, (Get-FileSha256 $f.FullName))
+}
+foreach ($f in $audioFiles) {
+    Summary ("- 음성 팩 ``{0}`` sha256 ``{1}``" -f $f.Name, (Get-FileSha256 $f.FullName))
 }
 Write-Host ""
 Write-Host "✅ Microsoft Defender 검사 통과 — 파일 ${scanned}개, 압축 푼 파일 ${extracted}개, 위협 없음"

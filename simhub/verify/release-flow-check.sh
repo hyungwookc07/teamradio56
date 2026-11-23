@@ -5,18 +5,24 @@
 #   release-preflight.sh   태그 push / 화면에서 만든 빈 릴리스 이어받기 / 자산 있는 릴리스 거부 /
 #                          release-dry/** dry run / 태그·main 규칙 / 공개된 플러그인 릴리스 최고 버전과
 #                          비교 (빈 릴리스가 latest여도)
-#   check-audio-release.sh 새 음성 팩이 필요한지(need_pack)와 새 팩 ID, 망가진 팩·안 보이는 팩은 실패
+#   check-audio-release.sh 새 음성 팩이 필요한지(need_pack)와 새 팩 ID, 망가진 팩·안 보이는 팩은 실패,
+#                          지금 팩 zip을 받아 넘기는지(pack_files — build가 Defender로 검사)
 #                          (팩 ID는 KNOWN_NAME_SETS에 없는 test-v* — 표가 늘어나도 기대값이 그대로)
-#   publish-audio.sh       태그 실행에서 main에 기술자 커밋, 공개에서 멈춘 뒤 재실행, main 기술자 충돌
+#   publish-audio.sh       태그 실행에서 main에 기술자 커밋, 공개에서 멈춘 뒤 재실행, main 기술자 충돌,
+#                          scan 잡 Defender 보고서가 없거나 깨끗하지 않거나 올릴 zip과 다르면 아무것도 안 올림
 #   publish-release.sh     새로 만들기 vs 이어받기 (zip → 매니페스트 → edit --latest 순서, 실패 시 되돌림),
 #                          이어받기도 버전 비교, Defender 검사 보고서가 없거나 깨끗하지 않거나 게시할
-#                          바이트와 다르면 거부, 본문 끝 '파일 검증' 절 (SHA-256 · 확인 명령)
-#   verify-release-artifact.sh  같은 보고서 검사 (가짜 dotnet·리플레이 러너로 앞부분만)
+#                          바이트·매니페스트가 가리키는 음성 팩 zip과 다르면 거부, 본문 끝 '파일 검증' 절
+#                          (SHA-256 · 확인 명령 · 음성 팩 검사)
+#   verify-release-artifact.sh  같은 보고서 검사 (가짜 dotnet·리플레이 러너로 앞부분만, dry run은 팩을
+#                          받지 못해 검사하지 못한 것만 경고)
 #   attest-check.sh        증명 전 파일 재확인, 증명 후 gh attestation verify (사용자 안내 명령)
-#   scan-defender.ps1      -SampleReport 보고서 ↔ bash 검사기 형식 계약 (pwsh가 있으면)
-#   release.yml 정적 검사  uses: 전부 40자리 SHA 고정, 빌드 잡의 Defender 단계가 업로드 앞,
-#                          attest 잡 권한이 정확히 셋, publish가 attest를 기다림 — 검사기가 무는지
-#                          변형한 사본으로도 확인. 저장소 파일에 완성된 EICAR 문자열 없음
+#   scan-defender.ps1      -SampleReport 보고서 ↔ bash 검사기 형식 계약 (게시 파일 + 음성 팩, 팩만) (pwsh)
+#   워크플로 정적 검사     uses: 전부 40자리 SHA 고정, 빌드 잡의 Defender 단계가 업로드 앞이고 매니페스트가
+#                          가리키는 음성 팩도 넘김, audio-pack의 publish가 scan 잡(공개 전 검사)을 기다림,
+#                          attest 잡 권한이 정확히 셋, publish가 attest를 기다림, 인라인 PowerShell은
+#                          ASCII만·ps-check 통과 — 검사기가 무는지 변형한 사본으로도 확인.
+#                          문서의 백신 절차 계약, 저장소 파일에 완성된 EICAR 문자열 없음
 #
 # 사용법:  bash simhub/verify/release-flow-check.sh
 set -euo pipefail
@@ -520,11 +526,13 @@ audio_check() {    # <PUBLISH> <기술자>
         bash "$SCRIPTS/check-audio-release.sh" "$REPO" "$2" "$W/dl" > "$W/out" 2>&1 || RC=$?
 }
 need() { [ "$RC" = 0 ] && [ "$(out_val need_pack)" = "$1" ] && [ "$(out_val pack)" = "$2" ]; }
+# pack_files — 지금 기술자의 팩 zip을 받아 <폴더>/pack에 두었는지 (build 잡이 Defender로 검사할 팩)
+pfiles() { [ "$(out_val pack_files)" = "$1" ]; }
 
 reset_state
 audio_check true "$V015_DESC"
-need true test-v016
-expect "test-v015 (tag=v0.16.0, 손 배포 모양) 게시 → 새 팩 test-v016"
+need true test-v016 && pfiles false
+expect "test-v015 (tag=v0.16.0, 손 배포 모양) 게시 → 새 팩 test-v016 (검사할 지금 팩 zip 없음)"
 
 mk_release audio-test-v016 false true "$W/pack-full/teamradio56_test_v016_1of1.zip"
 audio_check true "$V015_DESC"
@@ -551,8 +559,8 @@ fi
 
 reset_state
 audio_check false "$V015_DESC"
-need false test-v015 && has '::warning::'
-expect "dry run: 렌더 안 함 (경고, 지금 기술자)"
+need false test-v015 && has '::warning::' && pfiles false
+expect "dry run: 렌더 안 함 (경고, 지금 기술자, 받은 팩 zip 없음)"
 
 echo '{"status": "ahead", "files": [{"filename": "voice_lines/audio_pack.txt"}]}' > "$ST/compare.json"
 audio_check true "$V015_DESC"
@@ -563,14 +571,24 @@ expect "이 커밋 뒤 main 기술자가 바뀜 → 렌더 전에 실패"
 reset_state
 mk_release audio-test-v016 false true "$W/pack-full/teamradio56_test_v016_1of1.zip"
 audio_check true "$FULL_DESC"
-need false test-v016
-expect "맞는 팩(공개·자산·멘트 집합) → need_pack=false"
+need false test-v016 && pfiles true && [ "$(ls -A "$W/dl/pack")" = teamradio56_test_v016_1of1.zip ] \
+    && cmp -s "$W/dl/pack/teamradio56_test_v016_1of1.zip" "$W/pack-full/teamradio56_test_v016_1of1.zip"
+expect "맞는 팩(공개·자산·멘트 집합) → need_pack=false, 공개 주소에서 받은 zip만 pack/에 (build가 검사)"
+
+audio_check false "$FULL_DESC"
+need false test-v016 && pfiles true
+expect "dry run도 맞는 팩이면 pack_files=true (dry run의 build가 지금 팩을 검사한다)"
 
 reset_state
 mk_release audio-test-v016 false true "$W/pack-short/teamradio56_test_v016_1of1.zip"
 audio_check true "$SHORT_DESC"
-need true test-v017
-expect "멘트 집합이 다름 → 새 팩 test-v017"
+need true test-v017 && pfiles false
+expect "멘트 집합이 다름 → 새 팩 test-v017 (build는 새 팩 아티팩트를 검사)"
+
+audio_check false "$SHORT_DESC"
+need false test-v016 && pfiles true && has '::warning::' \
+    && cmp -s "$W/dl/pack/teamradio56_test_v016_1of1.zip" "$W/pack-short/teamradio56_test_v016_1of1.zip"
+expect "dry run: 멘트 집합이 달라도 렌더 안 함 — 받은 지금 팩 zip은 넘긴다 (매니페스트가 가리킬 팩)"
 
 reset_state
 audio_check true "$FULL_DESC"
@@ -578,8 +596,8 @@ audio_check true "$FULL_DESC"
 expect "기술자의 audio-<pack> 릴리스가 안 보임 → 새 ID로 렌더하지 않고 실패"
 
 audio_check false "$FULL_DESC"
-need false test-v016 && has '::warning::'
-expect "dry run: 팩 릴리스 없음도 경고만"
+need false test-v016 && has '::warning::' && pfiles false
+expect "dry run: 팩 릴리스 없음도 경고만 (검사할 팩 zip 없음)"
 
 mk_release audio-test-v016 false true "$W/pack-full/teamradio56_test_v016_1of1.zip"
 set_release audio-test-v016 '.assets[0].size += 1'
@@ -599,9 +617,36 @@ audio_check true "$FULL_DESC"
 [ "$RC" = 1 ] && has '없거나 초안' && has 'draft=false' && [ ! -s "$W/gho" ]
 expect "기술자가 가리키는 초안 → 새 ID로 렌더하지 않고 실패 (공개 방법 안내)"
 
+# Defender 검사 보고서 (scan-defender.ps1 형식 — 형식 계약은 아래 -SampleReport 검사가 본다)
+#   av_head — 깨끗한 검사의 머리 줄
+#   av_audio_lines <zip...> — audio_file=<이름>,<sha256>,<크기>
+#   mk_pack_av <보고서> <zip...> — audio-pack scan 잡 보고서 (팩만)
+av_head() {
+    printf '%s\n' format=1 'scanner=Microsoft Defender' product_version=4.18.25100.9 \
+        engine_version=1.1.25100.9 antivirus_signature_version=1.441.123.0 \
+        signature_updated=2026-11-23T06:00:00Z signature_update=Update-MpSignature running_mode=Normal \
+        scan_time=2026-11-23T07:00:00Z exclusions_removed=2 archive_scanning=enabled selftest=detected \
+        selftest_threat=Virus:DOS/EICAR_Test_File selftest_archive=detected scanned_files=2 \
+        extracted_files=2 result=clean
+}
+av_audio_lines() {
+    local f
+    for f in "$@"; do
+        echo "audio_file=$(basename "$f"),$(sha256sum "$f" | cut -d' ' -f1),$(stat -c %s "$f")"
+    done
+}
+mk_pack_av() {
+    local rep=$1
+    shift
+    mkdir -p "$(dirname "$rep")"
+    { av_head; av_audio_lines "$@"; } > "$rep"
+}
+rep_edit() { python3 -I -c 'import sys; p, a, b = sys.argv[1:]; s = open(p).read(); assert a in s, a; open(p, "w").write(s.replace(a, b))' "$@"; }
+
 # ── publish-audio.sh (release가 부른 태그 실행: BRANCH=main, SHA=태그 커밋) ─
 echo "  · publish-audio.sh"
 AZ=$W/pack-full/teamradio56_test_v016_1of1.zip
+AZSHA=$(sha256sum "$AZ" | cut -d' ' -f1)
 O=$W/origin.git
 WK=$W/work
 pa_origin() {      # 기술자가 옛 팩인 main 하나짜리 원격 → PSHA
@@ -617,14 +662,16 @@ pa_origin() {      # 기술자가 옛 팩인 main 하나짜리 원격 → PSHA
     git -C "$W/seed" push -q origin HEAD:refs/heads/main
     PSHA=$(git -C "$W/seed" rev-parse HEAD)
 }
-pa_work() {        # 태그 커밋을 체크아웃한 작업 폴더 + pack 잡 아티팩트
+pa_work() {        # 태그 커밋을 체크아웃한 작업 폴더 + pack 잡 아티팩트 + scan 잡 보고서
     rm -rf "$WK"
     git clone -q "$O" "$WK"
     git -C "$WK" checkout -q --detach "$PSHA"
     mkdir -p "$WK/dist/audio/test-v016"
     cp "$AZ" "$WK/dist/audio/test-v016/"
     cp "$FULL_DESC" "$WK/dist/audio/audio_pack.txt"
+    mk_pack_av "$WK/dist/audio-scan/av-scan.txt" "$AZ"
 }
+PAV=$WK/dist/audio-scan/av-scan.txt
 publish_audio() {
     RC=0
     (cd "$WK" && env PACK=test-v016 SHA="$PSHA" BRANCH=main RUN_URL=https://run.invalid/1 REPO=$REPO GH_TOKEN=fake-write \
@@ -632,6 +679,42 @@ publish_audio() {
 }
 main_desc_is() { git -C "$O" show main:voice_lines/audio_pack.txt | cmp -s - "$1"; }
 rel_field() { jq -r "$2" "$ST/releases/$1.json"; }
+
+# 게시 전 관문 — scan 잡 보고서가 없거나, 깨끗하지 않거나, 올릴 zip과 다르면 초안·기술자 커밋·공개 없이 멈춘다
+pa_refuses() {     # <설명> <출력에 있어야 할 문구>  (pa_work 뒤 손본 상태로)
+    publish_audio
+    [ "$RC" = 1 ] && has '백신 검사 보고서' && has "$2" && ! called '^release (create|edit|delete)' \
+        && [ ! -f "$ST/releases/audio-test-v016.json" ] && [ "$(git -C "$O" rev-parse main)" = "$PSHA" ]
+    expect "$1"
+}
+reset_state
+pa_origin
+pa_work
+rm -f "$PAV"
+pa_refuses "팩 게시: Defender 보고서 없음 → 아무것도 올리지 않음 (초안·기술자 커밋 없음)" '보고서가 없습니다'
+pa_work
+rep_edit "$PAV" 'result=clean' 'result=threat'
+pa_refuses "팩 게시: 보고서 result=threat → 게시 거부" 'result=threat'
+pa_work
+rep_edit "$PAV" 'selftest=detected' 'selftest=not_detected'
+pa_refuses "팩 게시: EICAR 자체 시험 실패 보고서 → 게시 거부" 'selftest=not_detected'
+pa_work
+rep_edit "$PAV" "$AZSHA" "$(printf '0%.0s' {1..64})"
+pa_refuses "팩 게시: 보고서의 zip sha256 ≠ 올릴 zip → 게시 거부" '음성 팩 teamradio56_test_v016_1of1.zip 이(가) 검사한 바이트와 다릅니다'
+pa_work
+{ av_head; } > "$PAV"
+pa_refuses "팩 게시: 팩 zip 줄 없는 보고서 → 게시 거부" '음성 팩을 검사하지 않았습니다'
+pa_work
+echo "audio_file=teamradio56_test_v016_2of2.zip,$AZSHA,1" >> "$PAV"
+pa_refuses "팩 게시: 보고서에 올리지 않는 zip 줄 → 게시 거부 (집합이 같아야)" '검사한 음성 팩 zip'
+pa_work
+rep_edit "$PAV" 'running_mode=Normal' 'running_mode=sample'
+pa_refuses "팩 게시: 견본 보고서 → 게시 거부" '견본 보고서'
+pa_work
+cp "$AZ" "$WK/dist/audio/test-v016/extra.zip"
+publish_audio
+[ "$RC" = 1 ] && has '기술자 zip 1개가 아닌 2개' && ! called '^release create'
+expect "팩 게시: 기술자에 없는 파일이 함께 있음 → 게시 거부"
 
 reset_state
 pa_origin
@@ -641,8 +724,9 @@ publish_audio
     && [ "$(git -C "$O" rev-parse main~1)" = "$PSHA" ] \
     && git -C "$O" log -1 --format=%s main | grep -q '음성 팩 기술자 갱신: test-v016' \
     && [ "$(rel_field audio-test-v016 .draft)" = false ] && [ "$(rel_field audio-test-v016 .prerelease)" = true ] \
-    && [ "$(line_of '^release create audio-test-v016 .*--draft')" -lt "$(line_of '^release edit audio-test-v016 .*--draft=false')" ]
-expect "팩 게시: 초안 → 기술자 커밋을 main에 push → 공개 (프리릴리스)"
+    && [ "$(line_of '^release create audio-test-v016 .*--draft')" -lt "$(line_of '^release edit audio-test-v016 .*--draft=false')" ] \
+    && rel_field audio-test-v016 .body | grep -q '게시 전 Microsoft Defender 검사: zip과 그 안의 파일 위협 없음 (엔진 1.1.25100.9'
+expect "팩 게시: 보고서 대조 → 초안 → 기술자 커밋을 main에 push → 공개 (프리릴리스, 본문에 검사 결과)"
 
 # 앞선 시도가 기술자를 push하고 공개에서 멈춤 → publish 잡 재실행은 초안을 다시 올리고 공개만
 pushed=$(git -C "$O" rev-parse main)
@@ -692,24 +776,21 @@ printf 'teamradio56 %s\n\n생성한 본문\n' "$FULL" > "$P/dist/ci/meta/release
 ZIPSHA=$(sha256sum "$P/dist/ci/assets/$ZIPNAME" | cut -d' ' -f1)
 MANSHA=$(sha256sum "$P/dist/ci/assets/teamradio56-release.txt" | cut -d' ' -f1)
 
-# Windows 빌드의 Defender 검사 보고서 (scan-defender.ps1 형식 — 형식 계약은 아래 -SampleReport 검사가 본다)
-#   mk_av <dist/ci> — 지금 assets와 맞는 깨끗한 보고서
+# Windows 빌드의 Defender 검사 보고서 — 게시 파일(asset) + 매니페스트가 가리키는 음성 팩 zip(audio_file)
+#   mk_av <dist/ci> — 지금 assets와 매니페스트의 팩($AZ)에 맞는 깨끗한 보고서
 mk_av() {
     local d=$1 f
     {
-        printf '%s\n' format=1 'scanner=Microsoft Defender' product_version=4.18.25100.9 \
-            engine_version=1.1.25100.9 antivirus_signature_version=1.441.123.0 \
-            signature_updated=2026-11-23T06:00:00Z signature_update=Update-MpSignature running_mode=Normal \
-            scan_time=2026-11-23T07:00:00Z exclusions_removed=2 archive_scanning=enabled selftest=detected \
-            selftest_threat=Virus:DOS/EICAR_Test_File selftest_archive=detected scanned_files=2 \
-            extracted_files=2 result=clean
+        av_head
         while IFS= read -r f; do
             echo "asset=$f,$(sha256sum "$d/assets/$f" | cut -d' ' -f1),$(stat -c %s "$d/assets/$f")"
         done < <(find "$d/assets" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+        av_audio_lines "$AZ"
     } > "$d/meta/av-scan.txt"
 }
 AVR=$P/dist/ci/meta/av-scan.txt
-av_edit() { python3 -I -c 'import sys; p, a, b = sys.argv[1:]; s = open(p).read(); assert a in s, a; open(p, "w").write(s.replace(a, b))' "$AVR" "$1" "$2"; }
+av_edit() { rep_edit "$AVR" "$1" "$2"; }
+av_drop_audio() { python3 -I -c 'import sys; p = sys.argv[1]; s = [l for l in open(p) if not l.startswith("audio_file=")]; open(p, "w").writelines(s)' "$AVR"; }
 mk_av "$P/dist/ci"
 
 publish() {        # <MODE>
@@ -740,8 +821,9 @@ body_has '생성한 본문' && body_has '### 파일 검증' \
     && body_has "Get-FileHash .\\$ZIPNAME -Algorithm SHA256" \
     && body_has "gh attestation verify $ZIPNAME -R $REPO" \
     && body_has '엔진 1.1.25100.9, 서명 1.441.123.0, 서명 갱신 2026-11-23 06:00 UTC' \
+    && body_has '음성 팩 test-v016 (`audio-test-v016` 릴리스의 zip 1개' \
     && [ "$(body_line '생성한 본문')" -lt "$(body_line '### 파일 검증')" ]
-expect "새로 만들기: 본문 = 생성한 본문 + 파일 검증 절 (SHA-256 두 줄 · Get-FileHash · gh attestation verify · Defender 버전)"
+expect "새로 만들기: 본문 = 생성한 본문 + 파일 검증 절 (SHA-256 두 줄 · Get-FileHash · gh attestation verify · Defender 버전 · 음성 팩 검사)"
 
 pub_reset
 mk_release "$TAG" false true
@@ -856,6 +938,23 @@ av_edit 'running_mode=Normal' 'running_mode=sample'
 av_refuses "검증 게이트용 견본 보고서 → 게시 거부" '견본 보고서'
 sed -i 's/$/\r/' "$AVR"
 av_refuses "CRLF 보고서 → 게시 거부" 'LF가 아닙니다'
+# 매니페스트가 가리키는 음성 팩도 이 검사가 봤어야 한다 (팩을 새로 렌더하지 않는 릴리스도 매번)
+av_drop_audio
+av_refuses "보고서에 음성 팩 zip 줄 없음 (팩을 검사하지 않음) → 게시 거부" '음성 팩을 검사하지 않았습니다'
+av_drop_audio
+pub_reset
+export AV_AUDIO_OPTIONAL=1
+publish tag
+unset AV_AUDIO_OPTIONAL
+[ "$RC" = 1 ] && has '음성 팩을 검사하지 않았습니다' && nothing_published
+expect "게시는 dry run 봐주기(AV_AUDIO_OPTIONAL=1)가 환경에 있어도 팩 검사 없는 보고서를 거부"
+mk_av "$P/dist/ci"
+av_edit "audio_file=$(basename "$AZ"),$AZSHA" "audio_file=$(basename "$AZ"),$(printf 'e%.0s' {1..64})"
+av_refuses "보고서의 음성 팩 zip sha256 ≠ 매니페스트 audio_sha256 → 게시 거부" "음성 팩 $(basename "$AZ") 이(가) 검사한 바이트와 다릅니다"
+av_edit "audio_file=$(basename "$AZ")," "audio_file=teamradio56_other_1of1.zip,"
+av_refuses "보고서의 음성 팩 zip 이름 ≠ 매니페스트 audio_assets → 게시 거부" '검사한 음성 팩 zip'
+av_audio_lines "$AZ" | sed 's/_1of1/_2of2/' >> "$AVR"
+av_refuses "보고서에 매니페스트에 없는 팩 zip 줄 → 게시 거부 (집합이 같아야)" '검사한 음성 팩 zip'
 # 보고서가 맞는 이어받기·수동 게시도 파일 검증 절이 붙는다
 pub_reset
 rm -f "$ST/commits/$TAG"
@@ -873,21 +972,21 @@ printf '#!/bin/sh\necho "replay $*" >> "$FAKE_STATE/dotnet.log"\n' \
 chmod +x "$W/bin-vr/dotnet" "$VR/simhub/tests/TeamRadio56.Replay/bin/Release/net8.0/teamradio56-replay"
 cp "$AZ" "$W/vr-audio/"
 printf 'pack=test-v016\n' > "$VR/desc.txt"
-verify_art() {
+verify_art() {      # [PUBLISH]
     RC=0
     rm -rf "$VR/dist"
     cp -r "$P/dist" "$VR/dist"
     : > "$W/vsum"
     : > "$ST/dotnet.log"
-    (cd "$VR" && env PATH="$W/bin-vr:$PATH" REPO=$REPO PUBLISH=false GITHUB_STEP_SUMMARY="$W/vsum" \
+    (cd "$VR" && env PATH="$W/bin-vr:$PATH" REPO=$REPO PUBLISH="${1:-false}" GITHUB_STEP_SUMMARY="$W/vsum" \
         bash "$SCRIPTS/verify-release-artifact.sh" dist/ci "$W/vr-audio" "$VR/desc.txt") > "$W/out" 2>&1 || RC=$?
 }
 reset_state
 verify_art
 [ "$RC" = 0 ] && grep -q '^replay --release-check' "$ST/dotnet.log" \
     && grep -qF "| \`$ZIPNAME\` | \`$ZIPSHA\` |" "$W/vsum" && grep -qF "gh attestation verify $ZIPNAME -R $REPO" "$W/vsum" \
-    && grep -q 'Defender 검사: 엔진 1.1.25100.9' "$W/vsum"
-expect "아티팩트 검증: 보고서 통과 → 리플레이 흐름, 요약에 파일 검증 절 미리 보기"
+    && grep -q 'Defender 검사: 엔진 1.1.25100.9' "$W/vsum" && grep -q 'Defender: zip 1개 + 푼 내용 깨끗함' "$W/vsum"
+expect "아티팩트 검증: 보고서 통과 → 리플레이 흐름, 요약에 파일 검증 절 미리 보기 · 음성 팩 검사"
 rm -f "$AVR"
 verify_art
 [ "$RC" = 1 ] && has '백신 검사 보고서' && has '보고서가 없습니다' && [ ! -s "$ST/dotnet.log" ]
@@ -903,13 +1002,27 @@ verify_art
 [ "$RC" = 1 ] && has 'result=threat'
 expect "아티팩트 검증: result=threat → 실패"
 mk_av "$P/dist/ci"
+av_drop_audio
+verify_art
+[ "$RC" = 0 ] && has '음성 팩 zip이 없습니다' && grep -q 'Defender: 검사 안 함 (dry run' "$W/vsum"
+expect "아티팩트 검증 dry run: 팩 zip을 받지 못해 검사 안 한 보고서 → 경고 후 계속"
+verify_art true
+[ "$RC" = 1 ] && has '음성 팩을 검사하지 않았습니다' && [ ! -s "$ST/dotnet.log" ]
+expect "아티팩트 검증 게시 실행: 팩을 검사하지 않은 보고서 → 실패"
+mk_av "$P/dist/ci"
+av_edit "audio_file=$(basename "$AZ"),$AZSHA" "audio_file=$(basename "$AZ"),$(printf 'e%.0s' {1..64})"
+verify_art
+[ "$RC" = 1 ] && has '검사한 바이트와 다릅니다'
+expect "아티팩트 검증 dry run도: 검사한 팩 zip sha256 ≠ 매니페스트 → 실패 (봐주는 건 '검사 안 함'뿐)"
+mk_av "$P/dist/ci"
 
 # ── attest-check.sh (증명 전 파일 재확인 · 증명 후 사용자 안내 명령) ─────────
 echo "  · attest-check.sh"
-attest_check() {   # <files|verify> [GITHUB_REPOSITORY]
+attest_check() {   # <files|verify> [GITHUB_REPOSITORY]   (env ATT_PUBLISH → PUBLISH)
     RC=0
     : > "$W/asum"
     (cd "$P" && env REPO=$REPO GITHUB_REPOSITORY="${2:-$REPO}" GITHUB_STEP_SUMMARY="$W/asum" GH_TOKEN=fake-read \
+        PUBLISH="${ATT_PUBLISH:-false}" \
         bash "$SCRIPTS/attest-check.sh" "$1" dist/ci) > "$W/out" 2>&1 || RC=$?
 }
 attest_mark() { mkdir -p "$ST/attested"; echo "$2" > "$ST/attested/$1"; }
@@ -921,6 +1034,22 @@ rm -f "$AVR"
 attest_check files
 [ "$RC" = 1 ] && has '증명하지 않습니다'
 expect "증명 전 확인: 보고서 없음 → 증명하지 않음"
+mk_av "$P/dist/ci"
+ATT_PUBLISH=true attest_check files
+[ "$RC" = 0 ]
+expect "증명 전 확인 게시 실행: 팩까지 검사한 보고서 → 통과"
+av_drop_audio
+ATT_PUBLISH=true attest_check files
+[ "$RC" = 1 ] && has '음성 팩을 검사하지 않았습니다'
+expect "증명 전 확인 게시 실행: 팩을 검사하지 않은 보고서 → 증명하지 않음"
+attest_check files
+[ "$RC" = 0 ]
+expect "증명 전 확인 dry run: 팩 zip을 받지 못해 검사 안 한 보고서 → 증명은 함"
+mk_av "$P/dist/ci"
+av_edit "audio_file=$(basename "$AZ"),$AZSHA" "audio_file=$(basename "$AZ"),$(printf 'e%.0s' {1..64})"
+attest_check files
+[ "$RC" = 1 ] && has '검사한 바이트와 다릅니다'
+expect "증명 전 확인 dry run도: 검사한 팩 zip sha256 ≠ 매니페스트 → 증명하지 않음"
 mk_av "$P/dist/ci"
 echo x > "$P/dist/ci/assets/extra.txt"
 attest_check files
@@ -963,22 +1092,44 @@ PWSH=$(command -v pwsh || true)
 if [ -z "$PWSH" ] && [ -x "$HOME/.dotnet/tools/pwsh" ]; then PWSH="$HOME/.dotnet/tools/pwsh"; fi
 if [ -n "$PWSH" ]; then
     SR=$W/sample
-    mkdir -p "$SR/meta"
+    mkdir -p "$SR/meta" "$SR/audio" "$SR/packonly"
     cp -r "$P/dist/ci/assets" "$SR/assets"
+    cp "$AZ" "$SR/audio/"
+    lib_check() {  # <함수> <인자...> → why (REPO만 넘긴다 — 봐주기 env 없음)
+        env -u AV_AUDIO_OPTIONAL REPO=$REPO bash -c '. "$1"; shift; "$@"' _ "$SCRIPTS/release-lib.sh" "$@"
+    }
     RC=0
     "$PWSH" -NoProfile -NonInteractive -File simhub/ci/scan-defender.ps1 -SampleReport \
-        -AssetsDir "$SR/assets" -ReportPath "$SR/meta/av-scan.txt" > "$W/out" 2>&1 || RC=$?
-    why=$(REPO=$REPO bash -c '. "$1"; av_report_problem "$2" "$3"' _ "$SCRIPTS/release-lib.sh" \
-        "$SR/meta/av-scan.txt" "$SR/assets")
+        -AssetsDir "$SR/assets" -AudioDir "$SR/audio" -ReportPath "$SR/meta/av-scan.txt" > "$W/out" 2>&1 || RC=$?
+    why=$(lib_check av_report_problem "$SR/meta/av-scan.txt" "$SR/assets")
     [ "$RC" = 0 ] && [[ "$why" == *'견본 보고서'* ]]
     expect "견본 보고서(-SampleReport)는 그대로는 거부 (실제 검사가 아님)"
     sed -i 's/^running_mode=sample$/running_mode=Normal/' "$SR/meta/av-scan.txt"
-    why=$(REPO=$REPO bash -c '. "$1"; av_report_problem "$2" "$3"' _ "$SCRIPTS/release-lib.sh" \
-        "$SR/meta/av-scan.txt" "$SR/assets")
+    why=$(lib_check av_report_problem "$SR/meta/av-scan.txt" "$SR/assets")
     echo "$why" > "$W/out"
     [ -z "$why" ] && [ "$(grep -c '^asset=' "$SR/meta/av-scan.txt")" = 2 ] \
+        && [ "$(grep -c '^audio_file=' "$SR/meta/av-scan.txt")" = 1 ] \
         && ! LC_ALL=C grep -q $'\r' "$SR/meta/av-scan.txt" && [ "$(head -c3 "$SR/meta/av-scan.txt")" = "for" ]
-    expect "scan-defender.ps1이 쓰는 보고서 형식을 bash 검사기가 그대로 읽음 (LF, BOM 없음, asset 줄 2개)"
+    expect "scan-defender.ps1이 쓰는 보고서 형식을 bash 검사기가 그대로 읽음 (LF, BOM 없음, asset 줄 2개, 매니페스트의 팩 zip 줄 1개)"
+    # audio-pack scan 잡 모양 — 팩만 (-AudioDir), publish-audio.sh의 검사기가 기술자와 대조
+    RC=0
+    "$PWSH" -NoProfile -NonInteractive -File simhub/ci/scan-defender.ps1 -SampleReport \
+        -AudioDir "$SR/audio" -ReportPath "$SR/packonly/av-scan.txt" > "$W/out" 2>&1 || RC=$?
+    sed -i 's/^running_mode=sample$/running_mode=Normal/' "$SR/packonly/av-scan.txt"
+    why=$(lib_check av_pack_report_problem "$SR/packonly/av-scan.txt" "$FULL_DESC")
+    echo "$why" >> "$W/out"
+    [ "$RC" = 0 ] && [ -z "$why" ] && ! grep -q '^asset=' "$SR/packonly/av-scan.txt"
+    expect "팩만 검사한 보고서(-AudioDir만)를 음성 팩 게시 검사기가 기술자와 대조해 통과"
+    why=$(lib_check av_pack_report_problem "$SR/packonly/av-scan.txt" "$SHORT_DESC")
+    echo "$why" > "$W/out"
+    [[ "$why" == *'검사한 바이트와 다릅니다'* ]]
+    expect "팩만 검사한 보고서 ↔ 다른 팩의 기술자 → 거부"
+    cp "$FULL_DESC" "$SR/audio/"
+    RC=0
+    "$PWSH" -NoProfile -NonInteractive -File simhub/ci/scan-defender.ps1 -SampleReport \
+        -AudioDir "$SR/audio" -ReportPath "$SR/packonly/bad.txt" > "$W/out" 2>&1 || RC=$?
+    [ "$RC" != 0 ] && has 'zip이 아닌 파일' && [ ! -e "$SR/packonly/bad.txt" ]
+    expect "scan-defender.ps1: 음성 팩 폴더에 zip 아닌 파일(기술자) → 실패 (팩 zip만 평평하게)"
 elif [ "${TEAMRADIO56_STRICT:-0}" = 1 ]; then
     fails+=("scan-defender.ps1 보고서 형식 계약 — pwsh 없음 (TEAMRADIO56_STRICT=1)")
 else
@@ -1016,6 +1167,31 @@ if check == "pins":
                 bad.append(f"{f}:{i}: {line.strip()}")
     if bad:
         fail("40자리 SHA + # v<버전> 주석으로 고정되지 않은 uses:\n" + "\n".join(bad))
+    sys.exit(0)
+
+if check == "inlineps":
+    # 워크플로의 shell: powershell 인라인 스크립트 — 러너가 쓰는 임시 .ps1을 Windows PowerShell 5가
+    # BOM 없이 ANSI로 읽을 수 있다 (한글 바이트가 “ ” 같은 따옴표로 읽혀 파싱이 깨진다) → ASCII만.
+    # 파싱·PowerShell 5 호환은 꺼낸 파일을 ps-check.ps1이 본다
+    out_dir = sys.argv[2]
+    n = 0
+    for f in sys.argv[3:]:
+        wd = yaml.safe_load(open(f, encoding="utf-8"))
+        for jn, j in (wd.get("jobs") or {}).items():
+            for i, x in enumerate(j.get("steps") or []):
+                if x.get("shell") != "powershell":
+                    continue
+                run = str(x.get("run", ""))
+                bad = sorted({c for c in run if ord(c) > 127})
+                if bad:
+                    fail(f"{os.path.basename(f)} {jn} 단계 {i + 1}: 인라인 PowerShell에 ASCII 아닌 문자 {''.join(bad[:8])}")
+                n += 1
+                body = re.sub(r"\$\{\{.*?\}\}", "GHEXPR", run)
+                with open(os.path.join(out_dir, f"{os.path.basename(f)}-{jn}-{i + 1}.ps1"), "w", encoding="utf-8") as o:
+                    o.write(body)
+    if n == 0:
+        fail("shell: powershell 인라인 스크립트를 하나도 찾지 못했다")
+    print(n)
     sys.exit(0)
 
 text = open(wf, encoding="utf-8").read()
@@ -1059,6 +1235,80 @@ if check == "scan":
         fail("릴리스 아티팩트 업로드는 dist/ci/ 전체(보고서 포함), 조건 없이")
     if "publish" in str(jobs["build"].get("if", "")):
         fail("build 잡이 게시 여부에 묶였다 — dry run에서도 검사해야 한다")
+    # 매니페스트가 가리키는 음성 팩도 매번 — 새 팩이면 그 아티팩트, 아니면 preflight가 받아 둔 지금 팩
+    for need in ["'-AudioDir', \"dist\\audio\\$env:PACK\"", "'-AudioDir', 'dist\\audio-current'", "@audio"]:
+        if need not in run:
+            fail(f"Defender 검사 단계가 음성 팩을 넘기지 않는다 ('{need}' 없음)")
+    env = s.get("env") or {}
+    if env.get("NEED_PACK") != "${{ needs.preflight.outputs.need_pack }}" \
+            or env.get("PACK_FILES") != "${{ needs.preflight.outputs.pack_files }}" \
+            or env.get("PACK") != "${{ needs.preflight.outputs.pack }}":
+        fail(f"Defender 검사 단계 env(NEED_PACK·PACK_FILES·PACK)가 preflight 출력이 아니다: {env}")
+    cur = find(st, lambda x: str(x.get("uses", "")).startswith("actions/download-artifact@")
+               and (x.get("with") or {}).get("name") == "teamradio56-audio-current")
+    if len(cur) != 1 or not cur[0] < scan[0] or (st[cur[0]].get("with") or {}).get("path") != "dist/audio-current":
+        fail("build 잡: 지금 음성 팩(teamradio56-audio-current → dist/audio-current)을 검사 전에 내려받지 않는다")
+    if "pack_files == 'true'" not in str(st[cur[0]].get("if", "")):
+        fail("build 잡: 지금 음성 팩 내려받기 조건에 pack_files가 없다")
+    pf = jobs["preflight"]
+    if pf.get("outputs", {}).get("pack_files") != "${{ steps.audio.outputs.pack_files }}":
+        fail("preflight 출력에 pack_files가 없다")
+    pst = pf.get("steps", [])
+    au = find(pst, lambda x: x.get("id") == "audio")
+    pu = find(pst, lambda x: str(x.get("uses", "")).startswith("actions/upload-artifact@")
+              and (x.get("with") or {}).get("name") == "teamradio56-audio-current")
+    if len(au) != 1 or len(pu) != 1 or not au[0] < pu[0]:
+        fail("preflight: 음성 팩 확인 뒤에 지금 팩(teamradio56-audio-current) 업로드가 없다")
+    w = pst[pu[0]].get("with") or {}
+    if w.get("path") != "${{ runner.temp }}/audio/pack/" or w.get("if-no-files-found") != "error" \
+            or str(pst[pu[0]].get("if", "")) != "steps.audio.outputs.pack_files == 'true'":
+        fail(f"preflight: 지금 팩 업로드가 check-audio-release.sh의 pack/ 폴더·pack_files 조건이 아니다: {pst[pu[0]]}")
+elif check == "audioscan":
+    # audio-pack.yml — 새 팩은 공개(publish) 전에 Windows에서 Defender 검사를 통과해야 한다
+    sc = jobs.get("scan") or fail("audio-pack에 scan 잡이 없다")
+    if sc.get("runs-on") != "windows-2025":
+        fail(f"scan 잡이 windows-2025가 아니다: {sc.get('runs-on')}")
+    if "pack" not in as_list(sc.get("needs")):
+        fail("scan 잡이 pack을 기다리지 않는다")
+    if "if" in sc or sc.get("continue-on-error"):
+        fail("scan 잡에 if/continue-on-error — dry run·단독 실행에서도 항상 돌고 실패하면 멈춰야 한다")
+    if sc.get("permissions") != {"contents": "read"}:
+        fail(f"scan 잡 권한이 contents: read만이 아니다: {sc.get('permissions')}")
+    st = sc.get("steps", [])
+    dl = find(st, lambda x: str(x.get("uses", "")).startswith("actions/download-artifact@")
+              and (x.get("with") or {}).get("name") == "teamradio56-audio-${{ inputs.pack }}")
+    sd = find(st, lambda x: "scan-defender.ps1" in str(x.get("run", "")))
+    up = find(st, lambda x: str(x.get("uses", "")).startswith("actions/upload-artifact@")
+              and (x.get("with") or {}).get("name") == "teamradio56-audio-scan-${{ inputs.pack }}")
+    if len(dl) != 1 or len(sd) != 1 or len(up) != 1 or not dl[0] < sd[0] < up[0]:
+        fail("scan 잡 순서: 팩 아티팩트 내려받기 → scan-defender.ps1 → 보고서 업로드")
+    x = st[sd[0]]
+    if "if" in x or x.get("continue-on-error") or x.get("shell") != "powershell":
+        fail("scan 잡의 검사 단계: 조건·continue-on-error 없이 Windows PowerShell 5로")
+    run = x["run"]
+    for need in ["-AudioDir \"dist\\audio\\$env:PACK\"", "-ReportPath dist\\audio-scan\\av-scan.txt",
+                 "-WorkDir dist\\av-scan", "exit $LASTEXITCODE"]:
+        if need not in run:
+            fail(f"scan 잡의 검사 단계에 '{need}' 없음")
+    for bad in ["-SelfTest", "-SampleReport", "-AssetsDir"]:
+        if bad in run:
+            fail(f"scan 잡의 검사 단계가 {bad}를 쓴다")
+    if "if" in st[up[0]] or (st[up[0]].get("with") or {}).get("path") != "dist/audio-scan/":
+        fail("scan 보고서 업로드는 dist/audio-scan/, 조건 없이")
+    p = jobs["publish"]
+    if "scan" not in as_list(p.get("needs")):
+        fail(f"publish가 scan을 기다리지 않는다: {p.get('needs')}")
+    cond = str(p.get("if", ""))
+    for fn in ["always()", "failure()", "cancelled()", "success()", ".result"]:
+        if fn in cond:
+            fail(f"publish 조건에 {fn} — scan 실패를 넘어갈 수 있다 (암묵적 success()만)")
+    pst = p.get("steps", [])
+    pd = find(pst, lambda x: str(x.get("uses", "")).startswith("actions/download-artifact@")
+              and (x.get("with") or {}).get("name") == "teamradio56-audio-scan-${{ inputs.pack }}"
+              and (x.get("with") or {}).get("path") == "dist/audio-scan")
+    ps = find(pst, lambda x: "publish-audio.sh" in str(x.get("run", "")))
+    if len(pd) != 1 or len(ps) != 1 or not pd[0] < ps[0]:
+        fail("publish 잡: scan 보고서(dist/audio-scan)를 publish-audio.sh 전에 내려받지 않는다")
 elif check == "attest":
     a = jobs.get("attest") or fail("attest 잡 없음")
     if a.get("permissions") != {"contents": "read", "id-token": "write", "attestations": "write"}:
@@ -1122,7 +1372,23 @@ wfcheck pins "${WF_ALL[@]}"
 expect "워크플로·액션의 uses: 전부 40자리 SHA + # v<버전> 주석"
 wfcheck scan "$WF"
 [ "$RC" = 0 ]
-expect "build 잡: Defender 검사가 release.bat 뒤·업로드 앞, 조건·continue-on-error 없음"
+expect "build 잡: Defender 검사가 release.bat 뒤·업로드 앞, 조건·continue-on-error 없음, 매니페스트가 가리키는 음성 팩도 (preflight가 받아 둔 지금 팩)"
+AWF=$ROOT/.github/workflows/audio-pack.yml
+wfcheck audioscan "$AWF"
+[ "$RC" = 0 ]
+expect "audio-pack: scan 잡(windows-2025, contents: read, 조건 없음)이 팩 zip을 검사하고, publish가 scan을 기다려 보고서를 받는다"
+# 인라인 PowerShell — ASCII만 + 파싱·PowerShell 5 호환 (ps-check.ps1)
+mkdir -p "$W/inlineps"
+wfcheck inlineps "$W/inlineps" "${WF_ALL[@]}"
+NPS=$(head -n1 "$W/out")
+if [ "$RC" = 0 ] && [ -n "$PWSH" ]; then
+    "$PWSH" -NoProfile -NonInteractive -File simhub/verify/ps-check.ps1 "$W"/inlineps/*.ps1 > "$W/out" 2>&1 || RC=$?
+elif [ "$RC" = 0 ] && [ "${TEAMRADIO56_STRICT:-0}" = 1 ]; then
+    echo "pwsh 없음 (TEAMRADIO56_STRICT=1)" > "$W/out"
+    RC=1
+fi
+[ "$RC" = 0 ] && [ "$(find "$W/inlineps" -name '*.ps1' | wc -l)" -ge 5 ]
+expect "워크플로의 인라인 PowerShell: ASCII만, 파싱·PowerShell 5 호환 (${NPS}개)"
 wfcheck attest "$WF"
 [ "$RC" = 0 ]
 expect "attest 잡: 권한 정확히 셋, verify-artifact 뒤, dry run에서도, 게시 파일 둘을 증명 → gh로 확인"
@@ -1143,13 +1409,51 @@ mutant() {         # <검사> <설명> <바꿀 문자열> <새 문자열>
 mutant pins "attest 액션을 태그(@v4)로" '@4d101475d8b20a2381f78447822ac1eab6504dd8' '@v4'
 mutant attest "attest 액션을 다른 SHA로" '@4d101475d8b20a2381f78447822ac1eab6504dd8' "@$(printf 'a%.0s' {1..40})"
 mutant scan "Defender 검사 단계 이름만 남기고 스크립트 제거" 'simhub\ci\scan-defender.ps1' 'simhub\ci\other.ps1'
-mutant scan "Defender 검사에 continue-on-error" '        timeout-minutes: 30
+mutant scan "Defender 검사에 continue-on-error" '        timeout-minutes: 45
         env:
-          TR56_AUDIO_DIR' '        timeout-minutes: 30
+          NEED_PACK' '        timeout-minutes: 45
         continue-on-error: true
         env:
-          TR56_AUDIO_DIR'
-mutant scan "Defender 검사를 견본 보고서로" '-WorkDir dist\av-scan @extra' '-WorkDir dist\av-scan -SampleReport @extra'
+          NEED_PACK'
+mutant scan "Defender 검사를 견본 보고서로" '-WorkDir dist\av-scan @audio' '-WorkDir dist\av-scan -SampleReport @audio'
+mutant scan "Defender 검사에서 지금 음성 팩 빠짐 (새 팩일 때만 검사)" "elseif (\$env:PACK_FILES -eq 'true') { \$audio = @('-AudioDir', 'dist\audio-current') }" ''
+mutant scan "build 잡이 지금 음성 팩을 내려받지 않음" '          name: teamradio56-audio-current
+          path: dist/audio-current' '          name: teamradio56-audio-other
+          path: dist/audio-current'
+mutant scan "preflight가 지금 음성 팩을 올리지 않음" '          path: ${{ runner.temp }}/audio/pack/' '          path: ${{ runner.temp }}/audio/'
+amutant() {        # audio-pack.yml 변형 <설명> <바꿀 문자열> <새 문자열>
+    python3 -I -c 'import sys; p, o, a, b = sys.argv[1:]; s = open(p, encoding="utf-8").read(); assert a in s, a; open(o, "w", encoding="utf-8").write(s.replace(a, b, 1))' \
+        "$AWF" "$W/amutant.yml" "$2" "$3"
+    wfcheck audioscan "$W/amutant.yml"
+    [ "$RC" = 1 ]
+    expect "정적 검사가 문다 (audio-pack): $1"
+}
+amutant "publish가 scan을 기다리지 않음" 'needs: [pack, scan]' 'needs: pack'
+amutant "scan 잡을 게시 실행에만" '  scan:
+    needs: pack
+    runs-on: windows-2025' '  scan:
+    needs: pack
+    if: ${{ !inputs.dry_run }}
+    runs-on: windows-2025'
+amutant "scan 검사 단계에 continue-on-error" '        shell: powershell
+        timeout-minutes: 45' '        shell: powershell
+        continue-on-error: true
+        timeout-minutes: 45'
+amutant "publish 조건에 always()" "if: \${{ !inputs.dry_run && github.repository == 'hyungwookc07/teamradio56' }}" \
+    "if: \${{ always() && !inputs.dry_run && github.repository == 'hyungwookc07/teamradio56' }}"
+amutant "publish가 scan 보고서를 받지 않음" '          name: teamradio56-audio-scan-${{ inputs.pack }}
+          path: dist/audio-scan' '          name: teamradio56-audio-scan-${{ inputs.pack }}
+          path: dist/other'
+amutant "scan 잡을 리눅스로" '    needs: pack
+    runs-on: windows-2025' '    needs: pack
+    runs-on: ubuntu-24.04'
+# 인라인 PowerShell에 한글이 들어가면 문다
+python3 -I -c 'import sys; p, o = sys.argv[1:]; s = open(p, encoding="utf-8").read(); a = "          $audio = @()\n"; assert a in s; open(o, "w", encoding="utf-8").write(s.replace(a, a + "          Write-Host \"음성 팩\"\n", 1))' \
+    "$WF" "$W/mutant.yml"
+rm -rf "$W/inlineps-m" && mkdir -p "$W/inlineps-m"
+wfcheck inlineps "$W/inlineps-m" "$W/mutant.yml"
+[ "$RC" = 1 ]
+expect "정적 검사가 문다: 인라인 PowerShell에 한글"
 mutant attest "attest 잡에 권한 하나 더" '      id-token: write
       attestations: write' '      id-token: write
       attestations: write
@@ -1158,16 +1462,23 @@ mutant attest "attest 잡을 게시 실행에만" "if: \${{ !cancelled() && need
     "if: \${{ !cancelled() && needs.verify-artifact.result == 'success' && needs.preflight.outputs.publish == 'true' }}"
 mutant attest "증명 대상에서 매니페스트 빠짐" '            dist/ci/assets/teamradio56-release.txt
 ' ''
-mutant perms "build 잡에 id-token 권한" '    runs-on: windows-2025
-    timeout-minutes: 60
+mutant perms "build 잡에 id-token 권한" '    timeout-minutes: 90
     permissions:
-      contents: read' '    runs-on: windows-2025
-    timeout-minutes: 60
+      contents: read' '    timeout-minutes: 90
     permissions:
       contents: read
       id-token: write'
 mutant publish "publish가 attest를 기다리지 않음" 'needs: [preflight, verify-artifact, attest]' 'needs: [preflight, verify-artifact]'
 mutant publish "publish 조건에서 attest 성공 빠짐" " && needs.attest.result == 'success'" ''
+
+# 문서 계약 — '백신이 파일을 잡으면'이 재현되지 않는 빌드와 sha256을 비교하라고 하지 않고(DLL의 PDB 경로·zip
+# 항목 시각), 이미 공개된 음성 팩이 잡혔을 때 숨기는 법과 새 팩 ID(공개 전 scan 잡)를 안내한다
+sec=$(awk '/^#### 백신이 파일을 잡으면/ { f = 1; next } f && /^#+ / { exit } f' "$ROOT/docs/DEVELOPMENT.md")
+printf '%s\n' "$sec" > "$W/out"
+[ -n "$sec" ] && ! grep -q 'sha256을 비교' <<< "$sec" && grep -q '재현 가능하지' <<< "$sec" \
+    && grep -qF -- '--draft=true' <<< "$sec" && grep -q '새 팩 ID' <<< "$sec" && grep -q 'audio-pack scan 잡' <<< "$sec" \
+    && ! grep -q '로컬에서 빌드해 비교' "$ROOT/simhub/ci/scan-defender.ps1"
+expect "문서: 백신 절차 — 로컬 빌드와 sha256 비교 없음(재현 불가), 공개된 음성 팩 숨기기·새 팩 ID, 팩 scan 잡"
 
 # 저장소 파일에 완성된 EICAR 문자열이 있으면 저장소·체크아웃 자체가 백신에 걸린다 (조각으로만 둔다)
 EICAR=$(printf '%s' 'X5O!P%@AP' '[4\PZX54(P^)' '7CC)7}$' 'EICAR-STAN' 'DARD-ANTIVI' 'RUS-TEST-F' 'ILE!$H+H*')

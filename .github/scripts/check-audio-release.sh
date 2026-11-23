@@ -6,6 +6,9 @@
 #   check-audio-release.sh <repo> <audio_pack.txt> <내려받을 폴더>
 #
 # 출력($GITHUB_OUTPUT): need_pack(true|false) pack(이번 릴리스가 쓸 팩 ID)
+#   pack_files(true|false) — 지금 기술자의 팩 zip을 공개 주소에서 받아 기술자 sha256과 맞춰 <내려받을
+#   폴더>/pack/ 에 두었는지 (zip만). release 워크플로가 이 폴더를 아티팩트로 넘겨 build 잡이 매니페스트가
+#   가리킬 팩을 Microsoft Defender로 검사한다 — 새 팩을 렌더하지 않는 실행(dry run 포함)도 매번
 #
 # env PUBLISH=true (게시 실행):
 #   - 팩이 낡음 — 기술자 tag가 audio-<pack>이 아님 / 멘트 집합이 다름
@@ -36,7 +39,9 @@ SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 
 PACK=""
 EXPECTED="$DL/expected.txt"
-mkdir -p "$DL"
+ZIPS="$DL/pack"
+PACK_FILES=false
+mkdir -p "$ZIPS"
 
 err() {
     echo "::error::$*"
@@ -47,6 +52,7 @@ emit() {
     {
         echo "need_pack=$1"
         echo "pack=$2"
+        echo "pack_files=${3:-false}"
     } >> "$OUTPUT"
 }
 
@@ -100,7 +106,8 @@ stale() {
     if [ "$PUBLISH" != true ]; then
         echo "::warning::$* (dry run — 음성 팩을 렌더하지 않고 지금 기술자로 빌드합니다)"
         echo "- ⚠ 음성 팩: $*" >> "$SUMMARY"
-        emit false "$PACK"
+        # 멘트 집합만 다르면 받은 zip은 지금 기술자 그대로다 — 빌드가 그 팩을 검사한다
+        emit false "$PACK" "$PACK_FILES"
         exit 0
     fi
     if [ -n "${GITHUB_SHA:-}" ]; then
@@ -154,18 +161,21 @@ for a in "${ASSETS[@]}"; do
         problem "$name digest $digest ≠ 기술자 sha256:$sha"
     fi
     # 사용자 PC와 같은 공개 경로로 받는다 (초안·비공개 자산이면 여기서 걸린다)
-    curl -fsSL --retry 5 --retry-all-errors -o "$DL/$name" \
+    curl -fsSL --retry 5 --retry-all-errors -o "$ZIPS/$name" \
         "https://github.com/$REPO/releases/download/$TAG/$name" \
         || problem "$name 을(를) 공개 주소에서 받지 못했습니다"
 done
 
-python3 -I tools/pack_audio.py verify --dir "$DL" --descriptor "$DESC" \
+python3 -I tools/pack_audio.py verify --dir "$ZIPS" --descriptor "$DESC" \
     || problem "음성 팩 zip이 기술자와 다릅니다"
+n=$(find "$ZIPS" -mindepth 1 -maxdepth 1 | wc -l)
+[ "$n" = "${#ASSETS[@]}" ] || problem "$ZIPS 에 기술자 zip ${#ASSETS[@]}개가 아닌 ${n}개가 있습니다"
+PACK_FILES=true
 expected_names
-if ! python3 -I tools/pack_audio.py verify --dir "$DL" --descriptor "$DESC" --expect-names "$EXPECTED"; then
+if ! python3 -I tools/pack_audio.py verify --dir "$ZIPS" --descriptor "$DESC" --expect-names "$EXPECTED"; then
     stale "멘트 집합이 팩 $PACK 과 다릅니다 (그대로 내면 빠진 멘트는 자막으로만 나간다)"
 fi
 
-emit false "$PACK"
-echo "- ✅ 음성 팩 $PACK ($TAG): zip ${#ASSETS[@]}개 크기·sha256·멘트 집합 확인" >> "$SUMMARY"
+emit false "$PACK" true
+echo "- ✅ 음성 팩 $PACK ($TAG): zip ${#ASSETS[@]}개 크기·sha256·멘트 집합 확인 (build 잡이 Defender로 검사)" >> "$SUMMARY"
 echo "✅ 음성 팩 릴리스 $TAG 확인"

@@ -2,8 +2,10 @@
 # attest 잡 — 게시될 파일(플러그인 zip + 매니페스트)의 빌드 출처 증명 앞뒤 확인.
 #
 #   attest-check.sh files  <dist/ci>   증명 전: assets = zip + 매니페스트, 매니페스트 sha256 = zip,
-#                                      Defender 검사 보고서가 이 바이트를 깨끗하다고 함 (verify-artifact·
-#                                      publish와 같은 규칙 — 검사하지 않은 바이트에 증명을 붙이지 않는다)
+#                                      Defender 검사 보고서가 이 바이트와 매니페스트가 가리키는 음성 팩
+#                                      zip을 깨끗하다고 함 (verify-artifact·publish와 같은 규칙 — 검사하지
+#                                      않은 바이트에 증명을 붙이지 않는다. env PUBLISH가 true가 아니면(dry
+#                                      run) 팩 zip을 받지 못해 검사하지 못한 것만 봐준다)
 #   attest-check.sh verify <dist/ci>   증명 후: 릴리스 본문이 안내하는 명령 그대로
 #                                      (gh attestation verify <파일> -R <저장소>) 각 파일이 확인되는지.
 #                                      증명 API가 바로 안 보일 수 있어 몇 번 다시 본다
@@ -34,6 +36,8 @@ case "$MODE" in
     files)
         sha=$(sha256sum "$DIST/assets/$ZIP" | cut -d' ' -f1)
         [ "$sha" = "$(kv plugin_sha256 "$MAN")" ] || err "plugin_sha256 ≠ zip 실제 해시 $sha"
+        AV_AUDIO_OPTIONAL=
+        [ "${PUBLISH:-false}" = true ] || AV_AUDIO_OPTIONAL=1
         why=$(av_report_problem "$DIST/meta/av-scan.txt" "$DIST/assets")
         [ -z "$why" ] || err "백신 검사 보고서(av-scan.txt): $why — 증명하지 않습니다"
         echo "증명할 파일 (Defender 보고서와 바이트 일치):"

@@ -89,25 +89,26 @@ adopt_blocker() {
 }
 
 # ── 백신 검사 보고서 ─────────────────────────────────────────────────────
-# simhub/ci/scan-defender.ps1이 Windows 빌드 러너에서 게시 파일을 Microsoft Defender로 검사하고
-# dist/ci/meta/av-scan.txt(key=value, LF)로 남긴다. 아티팩트에 함께 실려 verify-artifact·attest·publish가
-# 이 보고서가 '게시할 바로 그 바이트'를 깨끗하다고 했는지 본다 (asset=<이름>,<sha256>,<크기>).
+# simhub/ci/scan-defender.ps1이 Windows 러너에서 Microsoft Defender로 검사하고 key=value(LF) 보고서를 남긴다.
+#   - release build 잡: dist/ci/meta/av-scan.txt — 게시 파일(asset=<이름>,<sha256>,<크기>)과 그 매니페스트가
+#     가리키는 음성 팩 zip(audio_file=<이름>,<sha256>,<크기>). 아티팩트에 함께 실려 verify-artifact·attest·
+#     publish가 '게시할 바로 그 바이트'와 '매니페스트가 가리키는 팩 바이트'를 깨끗하다고 했는지 본다
+#   - audio-pack scan 잡: 새 음성 팩만(audio_file 줄) — publish-audio.sh가 올릴 zip(기술자 asset 줄)과 대조
 AV_MAX_SIG_AGE_SEC=$((3 * 86400))
 
 _av_kv() { sed -n "s/^$1=//p" "$2" | head -n1; }
 
-# 출력이 비면 통과, 아니면 이유 한 줄.
-#   av_report_problem <보고서> <assets 폴더>
-av_report_problem() {
-    local rep=$1 dir=$2 k v dup want got name line sha size rest sig scan
+# 보고서 공통 — 형식, 검사기, 자체 시험, result, 서명 나이. 출력이 비면 통과, 아니면 이유 한 줄
+_av_header_problem() {
+    local rep=$1 k v dup sig scan
     if [ ! -s "$rep" ]; then
-        echo "보고서가 없습니다 ($(basename "$rep") — Windows 빌드의 Defender 검사 단계가 돌지 않았다)"
+        echo "보고서가 없습니다 ($(basename "$rep") — Windows 러너의 Defender 검사 단계가 돌지 않았다)"
         return
     fi
     if grep -q $'\r' "$rep"; then echo "줄 끝이 LF가 아닙니다"; return; fi
     if [ -n "$(tail -c1 "$rep")" ]; then echo "마지막 줄이 끝나지 않았습니다 (잘린 보고서?)"; return; fi
     if grep -qvE '^[a-z][a-z0-9_]*=' "$rep"; then echo "key=value가 아닌 줄이 있습니다"; return; fi
-    dup=$(grep -vE '^(asset|extra_file)=' "$rep" | cut -d= -f1 | LC_ALL=C sort | uniq -d | head -n1)
+    dup=$(grep -vE '^(asset|audio_file)=' "$rep" | cut -d= -f1 | LC_ALL=C sort | uniq -d | head -n1)
     if [ -n "$dup" ]; then echo "키 $dup 이(가) 두 번 나옵니다"; return; fi
     if [ "$(_av_kv format "$rep")" != 1 ]; then echo "format=1이 아닙니다"; return; fi
     v=$(_av_kv scanner "$rep")
@@ -140,6 +141,62 @@ av_report_problem() {
         echo "서명($(_av_kv signature_updated "$rep"))이 검사 시각($(_av_kv scan_time "$rep"))보다 3일 넘게 오래됐습니다"
         return
     fi
+}
+
+# 매니페스트의 음성 팩 zip → "이름,sha256,크기" 줄 (audio_assets·audio_sha256·audio_size 개수가 다르면 1)
+_av_manifest_audio() {
+    local man=$1 i
+    local -a n s z
+    IFS=, read -r -a n <<< "$(_av_kv audio_assets "$man")"
+    IFS=, read -r -a s <<< "$(_av_kv audio_sha256 "$man")"
+    IFS=, read -r -a z <<< "$(_av_kv audio_size "$man")"
+    [ "${#n[@]}" -gt 0 ] && [ "${#n[@]}" = "${#s[@]}" ] && [ "${#n[@]}" = "${#z[@]}" ] || return 1
+    for i in "${!n[@]}"; do
+        printf '%s,%s,%s\n' "${n[$i]}" "${s[$i]}" "${z[$i]}"
+    done
+}
+
+# 보고서의 audio_file 줄 집합 = 기대 줄 집합 (이름·sha256·크기). 출력이 비면 통과
+#   _av_audio_problem <보고서> <기대 줄 "이름,sha256,크기" (줄마다)> <기대 출처 이름>
+_av_audio_problem() {
+    local rep=$1 want=$2 src=$3 got gn wn w g name
+    want=$(LC_ALL=C sort <<< "$want")
+    got=$(sed -n 's/^audio_file=//p' "$rep" | LC_ALL=C sort)
+    if [ -z "$want" ]; then echo "$src 에 음성 팩 zip이 없습니다"; return; fi
+    while IFS= read -r w; do
+        if ! [[ "$w" =~ ^[^,]+,[0-9a-f]{64},[0-9]+$ ]]; then echo "$src 의 음성 팩 줄 형식이 잘못됐습니다: $w"; return; fi
+    done <<< "$want"
+    if [ -z "$got" ]; then
+        echo "음성 팩을 검사하지 않았습니다 (audio_file 줄 없음) — $src 이(가) 가리키는 팩 zip도 검사해야 한다"
+        return
+    fi
+    gn=$(cut -d, -f1 <<< "$got")
+    wn=$(cut -d, -f1 <<< "$want")
+    if [ "$gn" != "$wn" ]; then
+        echo "검사한 음성 팩 zip($(tr '\n' ' ' <<< "$gn" | sed 's/ $//')) ≠ $src 의 팩 zip($(tr '\n' ' ' <<< "$wn" | sed 's/ $//'))"
+        return
+    fi
+    while IFS= read -r w; do
+        name=${w%%,*}
+        g=$(awk -v n="$name," 'index($0, n) == 1' <<< "$got" | head -n1)
+        if [ "$g" != "$w" ]; then
+            echo "음성 팩 $name 이(가) 검사한 바이트와 다릅니다 (보고서 ${g#"$name,"}, $src ${w#"$name,"})"
+            return
+        fi
+    done <<< "$want"
+}
+
+# 플러그인 릴리스 — 출력이 비면 통과, 아니면 이유 한 줄.
+#   av_report_problem <보고서> <assets 폴더>
+# assets의 파일(zip + 매니페스트)이 asset 줄과 같은 바이트이고, 매니페스트가 가리키는 음성 팩 zip
+# (audio_assets·audio_sha256·audio_size)이 audio_file 줄과 같아야 한다 — 팩은 audio-pack이 공개 전에
+# 검사했어도 매 릴리스가 지금 서명으로 다시 본다 (다음 릴리스는 팩을 새로 렌더하지 않는다).
+# env AV_AUDIO_OPTIONAL=1 (dry run만): audio_file 줄이 하나도 없으면 팩 대조를 건너뛴다 — 팩 릴리스를
+# 확인하지 못한 dry run도 빌드 경로를 시험할 수 있게. 게시(publish-release.sh)는 이것을 켜지 않는다
+av_report_problem() {
+    local rep=$1 dir=$2 why want got name line sha size rest v man
+    why=$(_av_header_problem "$rep")
+    if [ -n "$why" ]; then echo "$why"; return; fi
     # 검사한 자산 = 게시할 파일 (집합이 같고 바이트가 같다)
     want=$(find "$dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
     got=$(sed -n 's/^asset=\([^,]*\),.*/\1/p' "$rep" | LC_ALL=C sort)
@@ -167,21 +224,46 @@ av_report_problem() {
             return
         fi
     done <<< "$want"
+    # 매니페스트가 가리키는 음성 팩 = 검사한 팩 zip
+    man="$dir/teamradio56-release.txt"
+    if [ ! -f "$man" ]; then echo "매니페스트(teamradio56-release.txt)가 없습니다"; return; fi
+    if [ "${AV_AUDIO_OPTIONAL:-}" = 1 ] && ! grep -q '^audio_file=' "$rep"; then return; fi
+    if ! want=$(_av_manifest_audio "$man"); then
+        echo "매니페스트의 audio_assets·audio_sha256·audio_size 개수가 맞지 않습니다"
+        return
+    fi
+    _av_audio_problem "$rep" "$want" "매니페스트"
+}
+
+# 음성 팩 게시(publish-audio.sh) — audio-pack scan 잡의 보고서가 올릴 팩 zip(기술자 asset 줄)을 깨끗하다고
+# 했는지. 출력이 비면 통과, 아니면 이유 한 줄. 기술자의 sha256은 pack_audio.py verify가 실제 zip과 대조한다
+#   av_pack_report_problem <보고서> <기술자 audio_pack.txt>
+av_pack_report_problem() {
+    local rep=$1 desc=$2 why
+    why=$(_av_header_problem "$rep")
+    if [ -n "$why" ]; then echo "$why"; return; fi
+    if [ ! -f "$desc" ]; then echo "기술자가 없습니다: $desc"; return; fi
+    _av_audio_problem "$rep" "$(sed -n 's/^asset=//p' "$desc" | tr -d '\r')" "기술자"
 }
 
 # 릴리스 본문 끝에 붙이는 '파일 검증' 절 — 게시 파일의 SHA-256, Defender 검사 결과, 사용자가 확인하는 법.
 # 보고서는 av_report_problem을 통과한 것이어야 한다. env REPO.
 #   release_verify_section <보고서> <assets 폴더> <버전>
 release_verify_section() {
-    local rep=$1 dir=$2 v=$3 f when
+    local rep=$1 dir=$2 v=$3 f when n man
     when=$(_av_kv signature_updated "$rep" | sed 's/^\([0-9-]*\)T\([0-9]*:[0-9]*\).*/\1 \2 UTC/')
+    man="$dir/teamradio56-release.txt"
+    n=$(grep -c '^audio_file=' "$rep" || true)
     printf '%s\n' "### 파일 검증" "" "| 파일 | SHA-256 |" "| --- | --- |"
     while IFS= read -r f; do
         printf '| `%s` | `%s` |\n' "$f" "$(sha256sum "$dir/$f" | cut -d' ' -f1)"
     done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
     printf '%s\n' "" \
-        "- **백신 검사**: Microsoft Defender (엔진 $(_av_kv engine_version "$rep"), 서명 $(_av_kv antivirus_signature_version "$rep"), 서명 갱신 $when)로 게시 직전에 위 두 파일과 zip을 푼 DLL까지 검사했고 위협이 없었습니다. 검사 전에 EICAR 시험 파일로 검사기가 실제로 잡는지 먼저 확인했습니다." \
-        "- **빌드 출처 증명**: 이 저장소의 GitHub Actions 릴리스 워크플로가 위 두 파일을 만들었다는 서명된 증명(attestation)을 남겼습니다." \
+        "- **백신 검사**: Microsoft Defender (엔진 $(_av_kv engine_version "$rep"), 서명 $(_av_kv antivirus_signature_version "$rep"), 서명 갱신 $when)로 게시 직전에 위 두 파일과 zip을 푼 DLL까지 검사했고 위협이 없었습니다. 검사 전에 EICAR 시험 파일로 검사기가 실제로 잡는지 먼저 확인했습니다."
+    if [ "$n" -gt 0 ]; then
+        printf '%s\n' "- **음성 팩**: 플러그인이 설정 화면에서 받는 음성 팩 $(_av_kv audio_pack "$man") (\`$(_av_kv audio_tag "$man")\` 릴리스의 zip ${n}개 — 매니페스트에 SHA-256이 고정돼 다른 파일은 설치되지 않습니다)도 같은 검사에서 zip과 그 안의 파일까지 위협이 없었습니다."
+    fi
+    printf '%s\n' "- **빌드 출처 증명**: 이 저장소의 GitHub Actions 릴리스 워크플로가 위 두 파일을 만들었다는 서명된 증명(attestation)을 남겼습니다." \
         "" \
         "받은 zip이 게시된 파일과 같은지 확인하려면 (선택) zip이 있는 폴더의 PowerShell에서:" \
         "" \

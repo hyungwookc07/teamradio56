@@ -7,8 +7,9 @@
 # 올린 자산을 지워 빈 릴리스로 되돌린다 — 'Re-run failed jobs'로 다시 이어받을 수 있게.
 # 판단은 preflight가 아니라 게시하는 지금의 릴리스 상태로 한다 (그사이 만들어졌을 수 있다).
 #
-# 게시 전에 Windows 빌드의 Defender 검사 보고서(meta/av-scan.txt)가 이 zip·매니페스트 바이트를
-# 깨끗하다고 했는지 본다 (아니면 게시하지 않는다). 본문 끝에는 '파일 검증' 절(SHA-256, 검사 결과,
+# 게시 전에 Windows 빌드의 Defender 검사 보고서(meta/av-scan.txt)가 이 zip·매니페스트 바이트와
+# 매니페스트가 가리키는 음성 팩 zip을 깨끗하다고 했는지 본다 (아니면 게시하지 않는다 — 팩을 검사하지
+# 않은 보고서도 거부, dry run의 봐주기 없음). 본문 끝에는 '파일 검증' 절(SHA-256, 검사 결과,
 # 확인 방법)을 붙인다 — 이어받기에서 화면에 쓴 본문은 그 아래에 남는다.
 #
 # env: TAG SHA MODE(tag|dispatch) GH_TOKEN REPO   — 작업 폴더에 dist/ci (아티팩트)
@@ -40,7 +41,9 @@ mapfile -t files < <(find "$DIST/assets" -mindepth 1 -maxdepth 1 -printf "%f\n" 
 [ "$(kv commit "$INFO")" = "$SHA" ] || err "빌드 커밋 $(kv commit "$INFO") ≠ 이 실행의 커밋 $SHA"
 TITLE=$(kv title "$INFO")
 [ -n "$TITLE" ] && [ -s "$NOTES" ] || err "release-info.txt title 또는 release-notes.md가 비었습니다"
-# 백신 검사 — 보고서의 asset sha256 = 지금 게시할 파일 (자산 구성 확인은 위에서 끝났다)
+# 백신 검사 — 보고서의 asset sha256 = 지금 게시할 파일 (자산 구성 확인은 위에서 끝났다),
+# audio_file = 매니페스트가 가리키는 음성 팩 zip. 게시는 팩 검사를 봐주지 않는다
+AV_AUDIO_OPTIONAL=
 why=$(av_report_problem "$AV" "$DIST/assets")
 [ -z "$why" ] || err "백신 검사 보고서(av-scan.txt): $why — 게시하지 않습니다"
 

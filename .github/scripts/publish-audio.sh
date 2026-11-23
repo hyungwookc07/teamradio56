@@ -7,7 +7,11 @@
 # publish 잡만 다시 실행해도 된다: 남은 초안은 지우고 아티팩트에서 다시 올린다 (기술자가 이미
 # push됐으면 — 공개에서 멈춘 경우 — 커밋 없이 공개만 한다).
 #
-# env: PACK SHA BRANCH RUN_URL GH_TOKEN REPO   — 작업 폴더에 dist/audio (pack 잡 아티팩트)
+# 아무것도 올리기 전에 scan 잡(Windows, Microsoft Defender)의 보고서가 올릴 zip(기술자 asset 줄의 이름·
+# sha256·크기)을 깨끗하다고 했는지 본다 — 아니면 초안·기술자 커밋·공개 없이 멈춘다.
+#
+# env: PACK SHA BRANCH RUN_URL GH_TOKEN REPO   — 작업 폴더에 dist/audio (pack 잡 아티팩트),
+#      dist/audio-scan/av-scan.txt (scan 잡 아티팩트)
 set -euo pipefail
 
 # commit뿐 아니라 push 거부 뒤 rebase도 커미터가 필요하다 (러너엔 전역 git 설정이 없다)
@@ -22,6 +26,10 @@ TAG="audio-$PACK"
 SRC="dist/audio/$PACK"
 NEWDESC="dist/audio/audio_pack.txt"
 DESC=voice_lines/audio_pack.txt
+AV=dist/audio-scan/av-scan.txt
+export REPO
+# shellcheck source=release-lib.sh
+. "$(dirname "$0")/release-lib.sh"
 
 err() { echo "::error::$*"; exit 1; }
 
@@ -35,6 +43,13 @@ zips=()
 for a in "${ASSETS[@]}"; do
     zips+=("$SRC/${a%%:*}")
 done
+# 올릴 파일은 기술자의 zip뿐 (위 verify가 각 zip의 sha256을 기술자와 맞췄다)
+n=$(find "$SRC" -mindepth 1 -maxdepth 1 | wc -l)
+[ "$n" = "${#zips[@]}" ] || err "$SRC 에 기술자 zip ${#zips[@]}개가 아닌 ${n}개가 있습니다"
+# 게시 전 관문 — scan 잡 보고서가 바로 이 zip들을 깨끗하다고 했는지
+why=$(av_pack_report_problem "$AV" "$NEWDESC")
+[ -z "$why" ] || err "음성 팩 백신 검사 보고서($AV): $why — 게시하지 않습니다 (초안·기술자 커밋 없음)"
+echo "Defender 보고서: zip ${#zips[@]}개 깨끗함 (엔진 $(_av_kv engine_version "$AV"), 서명 $(_av_kv antivirus_signature_version "$AV"))"
 
 # 2. 팩 릴리스는 한 번만 — 공개된 것만 막는다. 초안은 앞선 실행이 남긴 것이니 지우고 다시
 if existing=$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq .isDraft 2> /dev/null); then
@@ -54,6 +69,7 @@ cat > "$notes" <<NOTES
 - 팩: $PACK (zip ${#zips[@]}개)
 - 렌더 실행: $RUN_URL
 - 소스 커밋: $SHA
+- 게시 전 Microsoft Defender 검사: zip과 그 안의 파일 위협 없음 (엔진 $(_av_kv engine_version "$AV"), 서명 $(_av_kv antivirus_signature_version "$AV"), 서명 갱신 $(_av_kv signature_updated "$AV"))
 NOTES
 # --draft를 직접 주면 gh는 업로드 실패 때 초안을 치우지 않는다 — 트랩을 먼저 건다
 stage=upload
@@ -125,6 +141,7 @@ latest=$(gh api "repos/$REPO/releases/latest" --jq .tag_name 2> /dev/null || tru
     echo "### ✅ 음성 팩 $PACK 게시"
     echo
     echo "- 릴리스: https://github.com/$REPO/releases/tag/$TAG (프리릴리스, latest: ${latest:-없음})"
+    echo "- 게시 전 Microsoft Defender 검사: zip ${#zips[@]}개 + 푼 내용 위협 없음 (엔진 $(_av_kv engine_version "$AV"), 서명 $(_av_kv antivirus_signature_version "$AV"))"
     echo "- 기술자 커밋: $COMMIT ($BRANCH)"
     echo "- 다음: release 워크플로가 불렀으면 같은 실행이 이 팩으로 플러그인 릴리스를 이어서 낸다. 단독 실행이면 이 커밋 위에서 플러그인 버전 태그를 push"
 } >> "$SUMMARY"

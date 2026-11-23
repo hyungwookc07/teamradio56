@@ -8,8 +8,9 @@
 # 렌더했으면 그 아티팩트의 audio_pack.txt). 매니페스트의 audio_* 줄을 이것과 대조한다.
 # env PUBLISH=true면 음성 팩을 못 받는 것도 실패 (dry run은 경고 후 팩 설치 흐름만 뺀다).
 # env EXPECT_PACK: 매니페스트의 audio_pack이 이 팩이어야 한다 (새 팩 렌더 실행).
-# Windows 빌드의 Defender 검사 보고서(meta/av-scan.txt)가 이 zip·매니페스트 바이트를 깨끗하다고
-# 했는지도 본다 (publish와 같은 규칙). 요약에는 릴리스 본문에 붙을 '파일 검증' 절을 미리 보여 준다.
+# Windows 빌드의 Defender 검사 보고서(meta/av-scan.txt)가 이 zip·매니페스트 바이트와 매니페스트가
+# 가리키는 음성 팩 zip(audio_*)을 깨끗하다고 했는지도 본다 (publish와 같은 규칙 — 단 dry run은 팩을
+# 검사하지 못했으면(팩 릴리스 확인 실패) 경고만). 요약에는 릴리스 본문에 붙을 '파일 검증' 절을 미리 보여 준다.
 set -euo pipefail
 
 DIST=${1:?dist dir}
@@ -45,8 +46,17 @@ done
 sha=$(sha256sum "$DIST/assets/$ZIP" | cut -d' ' -f1)
 [ "$sha" = "$(kv plugin_sha256 "$MAN")" ] || err "plugin_sha256 ≠ zip 실제 해시 $sha"
 AV="$DIST/meta/av-scan.txt"
+AV_AUDIO_OPTIONAL=
+[ "${PUBLISH:-false}" = true ] || AV_AUDIO_OPTIONAL=1
 why=$(av_report_problem "$AV" "$DIST/assets")
 [ -z "$why" ] || err "백신 검사 보고서(av-scan.txt): $why"
+AV_AUDIO_N=$(grep -c '^audio_file=' "$AV" || true)
+if [ "$AV_AUDIO_N" = 0 ]; then
+    echo "::warning::Defender 보고서에 음성 팩 zip이 없습니다 — dry run이라 계속합니다 (게시 실행이면 publish가 거부)"
+    AV_AUDIO_NOTE="검사 안 함 (dry run — 팩 zip을 받지 못함, 게시면 거부)"
+else
+    AV_AUDIO_NOTE="zip ${AV_AUDIO_N}개 + 푼 내용 깨끗함 (매니페스트 audio_sha256과 일치)"
+fi
 [ -f "$DESC" ] || err "기술자가 없습니다: $DESC"
 if [ -n "${EXPECT_PACK:-}" ] && [ "$(kv audio_pack "$MAN")" != "$EXPECT_PACK" ]; then
     err "매니페스트 audio_pack $(kv audio_pack "$MAN") ≠ 이번 실행이 렌더한 팩 $EXPECT_PACK"
@@ -78,7 +88,7 @@ simhub/tests/TeamRadio56.Replay/bin/Release/net8.0/teamradio56-replay \
     echo "### 아티팩트 검증 — $(kv tag "$MAN")"
     echo
     echo "- $ZIP sha256 \`$sha\`"
-    echo "- 음성 팩 $(kv audio_pack "$MAN") ($AUDIO_TAG): $([ ${#AUDIO_ARGS[@]} -gt 0 ] && echo '설치 흐름 확인' || echo '건너뜀')"
+    echo "- 음성 팩 $(kv audio_pack "$MAN") ($AUDIO_TAG): $([ ${#AUDIO_ARGS[@]} -gt 0 ] && echo '설치 흐름 확인' || echo '건너뜀') · Defender: $AV_AUDIO_NOTE"
     echo "- SimHub: $(kv simhub_wpf_version "$INFO") (SimHub.Plugins $(kv simhub_plugins_version "$INFO"))"
     echo "- Defender 검사: 엔진 $(kv engine_version "$AV") · 서명 $(kv antivirus_signature_version "$AV") ($(kv signature_updated "$AV")) · 자체 시험 $(kv selftest "$AV") ($(kv selftest_threat "$AV")) · zip 안의 시험 파일 $(kv selftest_archive "$AV") · $(kv result "$AV") · 파일 $(kv scanned_files "$AV")개 + 압축 푼 $(kv extracted_files "$AV")개"
     echo

@@ -1,6 +1,8 @@
 name: audio-pack
-# 코코로 음성 팩 — CI에서 샤드 병렬 렌더 → 합치기 → zip 분할 → audio-<pack> 릴리스(프리릴리스, latest 아님)
-# → voice_lines/audio_pack.txt를 커밋. 팩 릴리스는 한 번 게시하면 바꾸지 않는다.
+# 코코로 음성 팩 — CI에서 샤드 병렬 렌더 → 합치기 → zip 분할 → Microsoft Defender 검사(scan 잡, Windows)
+# → audio-<pack> 릴리스(프리릴리스, latest 아님) → voice_lines/audio_pack.txt를 커밋. 팩 릴리스는 한 번
+# 게시하면 바꾸지 않는다. 검사는 게시 전 관문이다 — 위협·검사기 이상이면 publish(초안·기술자 커밋·공개)가
+# 돌지 않는다. dry run도 검사까지 돈다.
 # 단독 실행(workflow_dispatch)은 실행한 브랜치에 기술자를 커밋한다. release 워크플로는 멘트 집합이
 # 바뀐 릴리스에서 이 워크플로를 불러(workflow_call) 새 팩을 먼저 게시하고 기술자를 inputs.branch(main)에
 # 커밋한다 — 그때 github.*는 부른 실행(태그 push)의 것이다.
@@ -205,8 +207,43 @@ jobs:
           compression-level: 0
           retention-days: 30
 
-  publish:
+  # 게시 전 관문 — 팩 zip 각각과 푼 wav를 Microsoft Defender로 검사한다 (simhub/ci/scan-defender.ps1
+  # -AudioDir: 서명 갱신·3일 이내, EICAR 자체 시험, 압축 파일 검사). 위협·검사기 이상이면 여기서 멈춰
+  # publish가 돌지 않는다 — 팩 릴리스도 기술자 커밋도 없다. dry run·단독 실행도 같다 (조건 없음).
+  # 보고서는 따로 아티팩트로 올려 publish-audio.sh가 올릴 zip의 이름·sha256·크기와 대조한다.
+  # 인라인 PowerShell은 ASCII만 (release-flow-check.sh가 막는다)
+  scan:
     needs: pack
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: teamradio56-audio-${{ inputs.pack }}
+          path: dist/audio
+      - name: Microsoft Defender 검사 (음성 팩 zip · 푼 내용) — 공개 전
+        shell: powershell
+        timeout-minutes: 45
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\audio-scan | Out-Null
+          powershell -NoProfile -ExecutionPolicy Bypass -File simhub\ci\scan-defender.ps1 `
+            -AudioDir "dist\audio\$env:PACK" -ReportPath dist\audio-scan\av-scan.txt -WorkDir dist\av-scan
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: teamradio56-audio-scan-${{ inputs.pack }}
+          path: dist/audio-scan/
+          if-no-files-found: error
+          retention-days: 30
+
+  # scan이 성공해야 돈다 (암묵적 success() — 조건에 상태 함수를 넣지 않는다)
+  publish:
+    needs: [pack, scan]
     if: ${{ !inputs.dry_run && github.repository == 'hyungwookc07/teamradio56' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -224,7 +261,11 @@ jobs:
         with:
           name: teamradio56-audio-${{ inputs.pack }}
           path: dist/audio
-      - name: 초안 릴리스 → 기술자 커밋·push → 게시 (prerelease, latest 아님)
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: teamradio56-audio-scan-${{ inputs.pack }}
+          path: dist/audio-scan
+      - name: Defender 보고서 대조 → 초안 릴리스 → 기술자 커밋·push → 게시 (prerelease, latest 아님)
         env:
           GH_TOKEN: ${{ github.token }}
           # release가 부르면 태그 커밋 — 렌더한 소스와 같은 커밋

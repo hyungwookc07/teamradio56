@@ -230,7 +230,8 @@ main에 커밋한 뒤 릴리스를 채운다. 태그를 push할 수 없으면 ma
 ### 게시 전 관문 — 백신 검사와 빌드 출처 증명
 
 둘 다 게시 실행과 dry run(`release-dry/**` 브랜치 push)에서 똑같이 돈다. dry run은 게시하지 않으므로
-새 관문은 dry run으로 먼저 시험한다. publish 잡은 둘 다 통과해야 돈다.
+새 관문은 dry run으로 먼저 시험한다. publish 잡은 둘 다 통과해야 돈다. 새 음성 팩은 따로 audio-pack의
+scan 잡이 **팩을 공개하기 전에** 검사한다 (아래 '음성 팩').
 
 **Microsoft Defender 검사** (build 잡, `simhub/ci/scan-defender.ps1`) — `release.ps1`이 zip·매니페스트를
 만든 직후, 아티팩트를 올리기 전. Windows 러너 이미지는 속도 때문에 Defender를 느슨하게 둔다 (실시간
@@ -250,11 +251,16 @@ main에 커밋한 뒤 릴리스를 채운다. 태그를 push할 수 없으면 ma
    `release-flow-check.sh`가 막는다). zip 안의 EICAR도 검사해 압축 검사가 되는지 보고서에 남긴다
    (zip은 풀어서도 검사하므로 이건 경고만).
 6. 대상: `dist\ci\assets`의 파일 각각, 플러그인 zip을 새 폴더에 푼 내용(풀린 파일 수 = zip 항목 수),
-   새 음성 팩을 렌더한 실행이면 `dist\audio`의 팩 zip과 푼 내용. `MpCmdRun -Scan -ScanType 3 -File <경로>
-   -DisableRemediation` — 종료 코드 0이면서 위협 표시가 없을 때만 깨끗함, 2는 위협, 그 밖은 검사 오류
-   (둘 다 실패). 끝나고 `Get-MpThreatDetection`에 대상 경로가 있어도 실패.
+   그리고 **매니페스트가 가리키는 음성 팩**의 zip 각각과 푼 wav (`-AudioDir`, 매 실행 — dry run도).
+   새 팩을 렌더한 실행이면 그 아티팩트(`dist\audio\<pack>`), 아니면 preflight의
+   `check-audio-release.sh`가 공개 주소에서 받아 기술자 sha256과 맞춘 지금 팩(아티팩트
+   `teamradio56-audio-current` → `dist\audio-current`, 약 190 MB). 압축은 .NET `ZipFile`로 푼다
+   (`Expand-Archive`는 수천 개 wav에 느리다). `MpCmdRun -Scan -ScanType 3 -File <경로> -DisableRemediation`
+   — 종료 코드 0이면서 위협 표시가 없을 때만 깨끗함, 2는 위협, 그 밖은 검사 오류 (둘 다 실패). 끝나고
+   `Get-MpThreatDetection`에 대상 경로가 있어도 실패.
 7. 보고서 `dist/ci/meta/av-scan.txt` (key=value, UTF-8, LF) — 엔진·서명 버전, 서명 시각, `selftest=detected`,
-   `result=clean`, 게시 자산마다 `asset=<이름>,<sha256>,<크기>`. 전부 통과했을 때만 쓴다. 실행 요약에도 한 절.
+   `result=clean`, 게시 자산마다 `asset=<이름>,<sha256>,<크기>`, 음성 팩 zip마다 `audio_file=<이름>,<sha256>,<크기>`.
+   전부 통과했을 때만 쓴다. 실행 요약에도 한 절.
 
 리눅스 게이트에서는 Defender가 없으므로 `scan-defender.ps1 -SelfTest`가 순수 함수(EICAR 조립 68바이트·
 sha256, 제외 판정, `MpCmdRun` 출력 판정, 보고서 형식)만 시험하고, `-SampleReport`로 만든 보고서를 bash
@@ -263,9 +269,30 @@ sha256, 제외 판정, `MpCmdRun` 출력 판정, 보고서 형식)만 시험하�
 **바이트 묶기** — 보고서는 아티팩트에 함께 실린다. verify-artifact(`verify-release-artifact.sh`),
 attest(`attest-check.sh files`), publish(`publish-release.sh`)가 각각 보고서가 있고 `result=clean`,
 `selftest=detected`, 서명이 검사 시각 기준 3일 이내, `asset=` 줄의 집합이 게시할 파일(zip + 매니페스트)과
-같고 sha256·크기도 같은지 본다 (`release-lib.sh`의 `av_report_problem`). 하나라도 어긋나면 게시하지
-않는다 — 검사한 바이트가 곧 게시하는 바이트다. 게시 자산은 여전히 zip과 매니페스트 둘뿐이다 (보고서는
+같고 sha256·크기도 같은지, `audio_file=` 줄이 매니페스트의 `audio_assets`·`audio_sha256`·`audio_size`와
+같은지 본다 (`release-lib.sh`의 `av_report_problem`). 하나라도 어긋나면 게시하지 않는다 — 검사한
+바이트가 곧 게시하는(또는 매니페스트가 가리키는) 바이트다. 플러그인은 팩 zip의 sha256을 확인하고
+설치하므로 검사하지 않은 팩 파일은 설치되지 않는다. 봐주는 경우는 하나뿐: dry run에서 팩 릴리스를 확인하지
+못해 팩 zip을 받지 못했으면(보고서에 `audio_file=` 줄이 없음) verify-artifact·attest가 경고만 한다
+(`AV_AUDIO_OPTIONAL`). publish는 봐주지 않는다. 게시 자산은 여전히 zip과 매니페스트 둘뿐이다 (보고서는
 `meta/`에 있어 올라가지 않는다).
+
+**음성 팩** — 팩은 플러그인 릴리스와 따로 `audio-<pack>` 릴리스로 공개되므로 두 번 본다:
+
+- **공개 전** (audio-pack의 scan 잡, windows-2025): pack 잡이 만든 zip을 `scan-defender.ps1 -AudioDir`로
+  검사하고 보고서를 아티팩트 `teamradio56-audio-scan-<pack>`으로 올린다. publish 잡은 scan이 성공해야
+  돌고(조건에 상태 함수 없음 — 정적 검사가 막는다), `publish-audio.sh`가 아무것도 올리기 전에 보고서의
+  `audio_file=` 줄을 기술자의 `asset=` 줄(이름·sha256·크기)과 대조한다 (`av_pack_report_problem`).
+  어긋나거나 위협이면 초안·기술자 커밋·공개가 전혀 없다. 릴리스 실행이 부른 경우든 단독 실행이든,
+  `dry_run`이든 같다.
+- **매 플러그인 릴리스** (build 잡): 위 6번처럼 매니페스트가 가리킬 팩을 지금 서명으로 다시 본다.
+  다음 릴리스는 팩을 새로 렌더하지 않으므로, 이 검사가 없으면 공개 뒤 서명이 바뀌어 잡히는 팩을
+  아무도 다시 보지 않는다. 이미 공개된 팩이라 여기서 잡히면 플러그인 게시만 멈춘다 — 팩을 거둬들이는
+  절차는 아래 '백신이 파일을 잡으면'.
+
+`release-dry/**` dry run은 팩을 렌더하지 않으므로 scan 잡은 돌지 않는다. 같은 스크립트의 음성 팩 경로
+(`-AudioDir`, 약 190 MB 압축 풀기·항목 수 확인·`audio_file=` 줄)는 dry run의 build 잡이 지금 팩으로
+시험한다. scan 잡 자체를 시험하려면 Actions → audio-pack을 `dry_run`으로 돌린다 (렌더 약 2시간).
 
 **빌드 출처 증명** (attest 잡) — verify-artifact가 통과하면 같은 아티팩트를 받아 위 확인을 다시 하고,
 `actions/attest-build-provenance`(v4.2.2, SHA 고정)로 zip과 매니페스트에 SLSA 빌드 출처 증명을 남긴 뒤,
@@ -275,30 +302,60 @@ attest(`attest-check.sh files`), publish(`publish-release.sh`)가 각각 보고�
 증명 기록은 저장소의 attestations에 (공개 저장소라 Sigstore 공개 투명성 로그에도) 남는다.
 
 **릴리스 본문** — publish가 생성한 본문 끝에 '파일 검증' 절을 붙인다: 게시 파일별 SHA-256 표, Defender
-엔진·서명 버전·서명 시각과 자체 시험, 사용자가 확인하는 법 (PowerShell
+엔진·서명 버전·서명 시각과 자체 시험, 매니페스트가 가리키는 음성 팩(`audio-<pack>`의 zip 수)도 같은
+검사를 거쳤다는 줄, 사용자가 확인하는 법 (PowerShell
 `Get-FileHash .\teamradio56-plugin-<버전>.zip -Algorithm SHA256`,
 `gh attestation verify teamradio56-plugin-<버전>.zip -R hyungwookc07/teamradio56`). 이어받기에서 화면에
 쓴 본문은 그 아래에 남는다. 같은 절을 verify-artifact 실행 요약에서 미리 볼 수 있다 (dry run 포함).
 
 `release-flow-check.sh`는 이 흐름을 가짜 gh로 돌리고(보고서 없음·깨끗하지 않음·자체 시험 없음·sha256
-불일치 → 게시 거부, 본문의 SHA-256·확인 명령), `release.yml`을 정적으로 본다 — 모든 `uses:`가 40자리
-SHA 고정, build 잡의 검사 단계가 업로드 앞(조건·`continue-on-error` 없음), attest 잡 권한이 정확히 셋,
-publish가 attest 성공을 기다림.
+불일치·음성 팩을 검사하지 않음·팩 zip sha256 불일치 → 게시 거부, 팩 게시도 같은 이유로 초안·기술자 커밋
+없이 거부, preflight가 지금 팩 zip을 넘김, 본문의 SHA-256·확인 명령), 워크플로를 정적으로 본다 — 모든
+`uses:`가 40자리 SHA 고정, build 잡의 검사 단계가 업로드 앞(조건·`continue-on-error` 없음)이고 음성 팩을
+넘김, audio-pack의 publish가 scan을 기다림, attest 잡 권한이 정확히 셋, publish가 attest 성공을 기다림,
+인라인 PowerShell은 ASCII만(러너의 임시 .ps1을 PowerShell 5가 ANSI로 읽을 수 있다)이고 `ps-check.ps1`을
+통과.
 
 #### 백신이 파일을 잡으면
 
-build 잡이 "Microsoft Defender 검사 실패"로 멈추고 아티팩트는 올라가지 않는다 (게시 없음). 직접 만든
-DLL의 오탐일 가능성이 크지만, 확인하기 전에는 게시하지 않는다.
+멈추는 곳은 둘이다. **release build 잡**("Microsoft Defender 검사 실패")이면 플러그인 아티팩트가 올라가지
+않아 플러그인은 게시되지 않는다. **audio-pack scan 잡**이면 publish가 돌지 않아 새 팩은 초안·기술자
+커밋·공개 어느 것도 없다. 직접 만든 DLL이나 TTS wav의 오탐일 가능성이 크지만, 확인하기 전에는 게시하지
+않는다.
 
 1. **게시하지 않는다.** 검사 단계를 끄거나 건너뛰지 않는다 (조건·`continue-on-error` 추가 금지 — 정적
    검사가 막는다). 손으로 올리는 대체 경로(`release.bat`)로 돌아가지도 않는다.
-2. 로그에서 위협 이름, 파일 경로(압축 푼 DLL이면 그 경로), sha256을 본다. 같은 커밋을 로컬에서
-   `release.bat -NoPublish`로 빌드해 sha256을 비교하고, 최신 서명의 Defender로 그 파일을 검사한다.
-   최근 바뀐 의존성·빌드 도구·커밋을 살핀다 (진짜 오염일 수 있다).
+2. 로그에서 위협 이름, 파일 경로(압축 푼 파일이면 그 경로), sha256을 본다. **sha256은 잡힌 그 파일을
+   가리키는 값**이다 (기록, Microsoft 제출·조회용). 로컬 빌드와 비교하지 않는다 — 빌드가 재현 가능하지
+   않아 같은 커밋이어도 해시가 다르다 (DLL에 빌드 경로(PDB)가, zip 항목에 빌드 시각이 들어가고, 로컬은
+   설치된 SimHub을 참조한다). 실패한 build는 아티팩트를 올리지 않는다 (잡힌 파일을 공개 아티팩트로
+   퍼뜨리지 않는다).
+   - **DLL·플러그인 zip**: 같은 커밋을 로컬에서 `release.bat -NoPublish`로 빌드해 최신 서명의 Defender로
+     검사한다 (`Update-MpSignature` 뒤 `MpCmdRun.exe -Scan -ScanType 3 -File <경로> -DisableRemediation`).
+     오염을 의심하면 해시가 아니라 파일 목록·크기, 디컴파일한 내용(ILSpy 등), 참조한 SimHub·어셈블리
+     버전을 비교하고, 최근 바뀐 의존성·빌드 도구·커밋을 살핀다.
+   - **음성 팩**: 잡힌 바이트가 그대로 남아 있다 — scan 잡이면 아티팩트 `teamradio56-audio-<pack>`(30일),
+     release build면 공개된 `audio-<pack>` 릴리스나 아티팩트 `teamradio56-audio-current`. 로그의 sha256과
+     같은 그 zip(또는 그 안의 wav)을 쓴다.
 3. 오탐으로 판단되면 [Microsoft Security Intelligence 제출 페이지](https://www.microsoft.com/wdsi/filesubmission)에
-   그 파일을 오탐(incorrectly detected)으로 제출한다. 서명이 고쳐지면 Re-run failed jobs로 다시 검사한다
-   (같은 커밋을 다시 빌드한다).
-4. "검사기가 동작하지 않습니다"(EICAR 미탐지), 서명 갱신·신선도 실패, 서비스 시작 실패는 위협이 아니라
+   그 파일을 오탐(incorrectly detected)으로 제출한다 (DLL은 로컬 빌드도 잡히면 그 파일, 팩은 잡힌 zip·wav).
+   서명이 고쳐지면 Re-run failed jobs로 다시 검사한다 (build는 같은 커밋을 다시 빌드하고, scan 잡은 같은
+   팩 아티팩트를 다시 검사한다 — 렌더는 다시 하지 않는다).
+4. **release build에서 음성 팩이 잡히면** 그 팩은 이미 공개돼 있고, 지금 게시된 플러그인 릴리스의
+   매니페스트가 사용자를 그 팩으로 보낸다 (공개 전 검사 뒤 서명이 바뀌었거나, 공개 전 검사가 생기기 전에
+   낸 팩 — `kokoro-v017`까지). Re-run은 팩을 거둬들이지
+   않는다. 판단이 설 때까지 팩을 숨긴다:
+   `gh release edit audio-<pack> --repo hyungwookc07/teamradio56 --draft=true`. 그동안 플러그인 안의 팩
+   설치·업데이트는 실패하고(이미 설치한 사용자는 그대로), main에서 내는 릴리스는 preflight가 "초안"으로
+   거부한다 — 해결 전에는 릴리스하지 않는다.
+   - 오탐으로 확인되고 서명이 고쳐지면 `gh release edit audio-<pack> --repo hyungwookc07/teamradio56
+     --draft=false --prerelease --latest=false`로 되살리고 Re-run failed jobs.
+   - 오탐이 아니거나 기다릴 수 없으면 **새 팩 ID**로 다시 낸다: Actions → audio-pack을 main에서
+     `pack=<다음 ID>`로 실행 (공개 전에 scan 잡을 거친다, 기술자는 main에 커밋) → 그 뒤 main에서 릴리스.
+     같은 ID로 다시 렌더하지 않는다 (이미 받은 사용자는 팩 ID가 같아 다시 받지 않는다). 기술자를 옛 팩으로
+     되돌리지도 않는다 (멘트 집합이 달라 릴리스가 팩을 다시 렌더하게 되고, 숨긴 팩의 ID를 다시 쓸 수 있다).
+     숨긴 `audio-<pack>`은 초안으로 둔다 (그 ID는 다시 쓰지 않는다).
+5. "검사기가 동작하지 않습니다"(EICAR 미탐지), 서명 갱신·신선도 실패, 서비스 시작 실패는 위협이 아니라
    러너 문제다 — Re-run failed jobs. 계속되면 러너 이미지의 Defender 설정이 바뀐 것이니 로그의 상태
    요약을 보고 `scan-defender.ps1`을 고친다.
 

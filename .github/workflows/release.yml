@@ -5,9 +5,10 @@ name: release
 # 게시물은 이 워크플로가 Windows에서 실제 SimHub으로 만든 아티팩트 그대로다 (스텁 빌드 금지).
 # 멘트 집합이 바뀐 게시 실행은 음성 팩을 먼저 렌더·게시하고(audio 잡 → audio-pack.yml, 약 2시간)
 # 그 기술자로 빌드한다.
-# 게시 전 관문 두 개는 dry run에서도 돈다: Windows 빌드 러너의 Microsoft Defender 검사(탐지·검사기
-# 자체 시험 실패면 멈춤, 보고서가 아티팩트에 실려 이후 잡이 sha256으로 대조)와 attest 잡의 빌드 출처
-# 증명. 게시(publish)는 둘 다 통과해야 돈다.
+# 게시 전 관문 두 개는 dry run에서도 돈다: Windows 빌드 러너의 Microsoft Defender 검사(게시 파일과 그
+# 매니페스트가 가리키는 음성 팩 zip — 탐지·검사기 자체 시험 실패면 멈춤, 보고서가 아티팩트에 실려 이후
+# 잡이 sha256으로 대조)와 attest 잡의 빌드 출처 증명. 게시(publish)는 둘 다 통과해야 돈다.
+# 새 음성 팩은 audio-pack의 scan 잡이 팩을 공개하기 전에 먼저 검사한다 (build는 지금 서명으로 다시 본다).
 on:
   push:
     tags: ['v*']
@@ -53,6 +54,7 @@ jobs:
       notes: ${{ steps.ver.outputs.notes }}
       need_pack: ${{ steps.audio.outputs.need_pack }}
       pack: ${{ steps.audio.outputs.pack }}
+      pack_files: ${{ steps.audio.outputs.pack_files }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,6 +80,16 @@ jobs:
           PUBLISH: ${{ steps.ver.outputs.publish }}
           BRANCH: main
         run: bash .github/scripts/check-audio-release.sh "$REPO" voice_lines/audio_pack.txt "$RUNNER_TEMP/audio"
+      # build 잡이 Defender로 검사할 지금 음성 팩 — 위 단계가 공개 주소에서 받아 기술자 sha256과 맞춘 zip
+      # 그대로 (새 팩을 렌더하는 실행은 audio 잡의 아티팩트를 검사한다). 보존 30일 = Re-run failed jobs 기한
+      - if: steps.audio.outputs.pack_files == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: teamradio56-audio-current
+          path: ${{ runner.temp }}/audio/pack/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
 
   gates:
     runs-on: ubuntu-24.04
@@ -94,8 +106,8 @@ jobs:
         env:
           TEAMRADIO56_STRICT: '1'
 
-  # 멘트 집합이 바뀐 게시 실행만 — 새 팩 렌더 → audio-<pack> 게시 → 기술자를 main에 커밋.
-  # 렌더 전 게이트는 audio-pack의 prepare가 따로 돈다 (gates를 기다리지 않는다)
+  # 멘트 집합이 바뀐 게시 실행만 — 새 팩 렌더 → Defender 검사(scan 잡, 공개 전) → audio-<pack> 게시 →
+  # 기술자를 main에 커밋. 렌더 전 게이트는 audio-pack의 prepare가 따로 돈다 (gates를 기다리지 않는다)
   audio:
     needs: preflight
     if: needs.preflight.outputs.publish == 'true' && needs.preflight.outputs.need_pack == 'true'
@@ -118,7 +130,8 @@ jobs:
       && (needs.audio.result == 'success'
       || (needs.audio.result == 'skipped' && needs.preflight.outputs.need_pack != 'true')) }}
     runs-on: windows-2025
-    timeout-minutes: 60
+    # SimHub 설치(캐시 없으면 25분) + 빌드 + Defender 검사(음성 팩 zip 약 190MB와 푼 wav 포함, 45분 한도)
+    timeout-minutes: 90
     permissions:
       contents: read
     env:
@@ -161,6 +174,13 @@ jobs:
         with:
           name: teamradio56-audio-${{ needs.preflight.outputs.pack }}
           path: dist/audio
+      # 아니면 매니페스트가 가리킬 지금 팩 — preflight가 공개 주소에서 받아 기술자 sha256과 맞춘 zip
+      # (Defender 검사 대상. 이 팩을 이미 검사한 적이 있어도 서명은 그 뒤 바뀐다)
+      - if: needs.preflight.outputs.need_pack != 'true' && needs.preflight.outputs.pack_files == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: teamradio56-audio-current
+          path: dist/audio-current
       - name: 변경 사항 한 줄 → UTF-8 파일 (명령줄에 한글을 싣지 않는다)
         shell: powershell
         env:
@@ -177,20 +197,27 @@ jobs:
         run: >-
           release.bat -Ci -SimHubPath "%SIMHUB_DIR%" -OutDir dist\ci\assets -MetaDir dist\ci\meta
           -ExpectTag %EXPECT_TAG% -NotesFile "%RUNNER_TEMP%\notes.txt" -AudioPackFile "%AUDIO_PACK_FILE%" %DRY%
-      # 게시될 파일을 Microsoft Defender로 검사한다 (dry run도). 위협이 나오거나, 검사기가 EICAR 자체
-      # 시험을 못 잡거나, 서명을 갱신하지 못하면 여기서 멈춘다 — 아티팩트를 올리지 않는다.
-      # 보고서 dist/ci/meta/av-scan.txt가 아티팩트에 실려 verify-artifact·attest·publish가 게시할
-      # 파일의 sha256과 대조한다. 작업 폴더 dist/av-scan(자체 시험·압축 풀기)은 올리지 않는다
-      - name: Microsoft Defender 검사 (게시 파일 · 압축 푼 내용 · 새 음성 팩)
+      # 게시될 파일과 그 매니페스트가 가리키는 음성 팩 zip을 Microsoft Defender로 검사한다 (매 실행, dry
+      # run도 — 새 팩을 렌더하지 않는 실행도 지금 팩을 지금 서명으로 다시 본다). 위협이 나오거나, 검사기가
+      # EICAR 자체 시험을 못 잡거나, 서명을 갱신하지 못하면 여기서 멈춘다 — 아티팩트를 올리지 않는다.
+      # 보고서 dist/ci/meta/av-scan.txt가 아티팩트에 실려 verify-artifact·attest·publish가 게시할 파일의
+      # sha256(asset 줄)과 매니페스트의 audio_*(audio_file 줄)에 대조한다. 팩 zip이 없으면(dry run에서
+      # 팩 릴리스를 확인하지 못함) 팩 없이 검사하고 경고 — 게시 실행이면 publish가 거부한다.
+      # 작업 폴더 dist/av-scan(자체 시험·압축 풀기)은 올리지 않는다. 인라인 PowerShell은 ASCII만
+      # (러너가 쓰는 임시 .ps1을 PowerShell 5가 ANSI로 읽을 수 있다 — release-flow-check.sh가 막는다)
+      - name: Microsoft Defender 검사 (게시 파일 · 압축 푼 내용 · 매니페스트가 가리키는 음성 팩)
         shell: powershell
-        timeout-minutes: 30
+        timeout-minutes: 45
         env:
-          TR56_AUDIO_DIR: ${{ needs.preflight.outputs.need_pack == 'true' && 'dist\audio' || '' }}
+          NEED_PACK: ${{ needs.preflight.outputs.need_pack }}
+          PACK_FILES: ${{ needs.preflight.outputs.pack_files }}
+          PACK: ${{ needs.preflight.outputs.pack }}
         run: |
-          $extra = @()
-          if ($env:TR56_AUDIO_DIR) { $extra = @('-ExtraDir', $env:TR56_AUDIO_DIR) }
+          $audio = @()
+          if ($env:NEED_PACK -eq 'true') { $audio = @('-AudioDir', "dist\audio\$env:PACK") }
+          elseif ($env:PACK_FILES -eq 'true') { $audio = @('-AudioDir', 'dist\audio-current') }
           powershell -NoProfile -ExecutionPolicy Bypass -File simhub\ci\scan-defender.ps1 `
-            -AssetsDir dist\ci\assets -ReportPath dist\ci\meta\av-scan.txt -WorkDir dist\av-scan @extra
+            -AssetsDir dist\ci\assets -ReportPath dist\ci\meta\av-scan.txt -WorkDir dist\av-scan @audio
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -258,7 +285,9 @@ jobs:
         with:
           name: teamradio56-release-${{ needs.preflight.outputs.version }}
           path: dist/ci
-      - name: 증명할 파일 재확인 (zip + 매니페스트 · sha256 · Defender 보고서)
+      - name: 증명할 파일 재확인 (zip + 매니페스트 · sha256 · Defender 보고서 · 음성 팩 검사)
+        env:
+          PUBLISH: ${{ needs.preflight.outputs.publish }}
         run: bash .github/scripts/attest-check.sh files dist/ci
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

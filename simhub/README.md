@@ -224,24 +224,30 @@ git push origin v0.17.1
    `audio-<pack>` 릴리스가 없거나 초안이면(preflight의 읽기 토큰엔 초안이 안 보여 둘을 가르지
    못한다), 또는 공개된 팩의 자산이 기술자와 다르면 새 팩을 렌더하지 않고 실패
 2. **gates** — `build-check.sh` + `replay-check.sh` (`TEAMRADIO56_STRICT=1`)
-3. **audio** (새 팩이 필요할 때만) — `audio-pack.yml`을 불러 렌더 → `audio-<pack>` 게시 →
-   새 `audio_pack.txt`를 **main에 커밋** (아래 음성 팩 절)
+3. **audio** (새 팩이 필요할 때만) — `audio-pack.yml`을 불러 렌더 → **Microsoft Defender 검사**
+   (scan 잡, Windows — 팩을 공개하기 **전**, 위협·검사기 이상이면 여기서 멈춰 팩 릴리스도 기술자
+   커밋도 없다) → `audio-<pack>` 게시 → 새 `audio_pack.txt`를 **main에 커밋** (아래 음성 팩 절)
 4. **build** (Windows) — audio가 돌면 끝날 때까지 기다린다. SimHub 무인 설치
    (`simhub/ci/install-simhub.ps1`, zip sha256 고정) → `release.bat -Ci`로 실제 SimHub 빌드(참조
    어셈블리 버전 확인) → 플러그인 zip + 매니페스트 + 메타. 새 팩을 렌더했으면 그 실행의
    기술자로 만든다 (`-AudioPackFile`, 태그 커밋의 기술자는 옛 팩). 업로드 전에 **Microsoft
-   Defender 검사**(`simhub/ci/scan-defender.ps1` — 서명 갱신·3일 이내, EICAR 자체 시험, zip과 푼
-   내용, 새 음성 팩)가 돌고, 위협·검사기 이상이면 여기서 멈춘다. 보고서 `meta/av-scan.txt`가
-   아티팩트에 실린다 ([docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#게시-전-관문--백신-검사와-빌드-출처-증명))
+   Defender 검사**(`simhub/ci/scan-defender.ps1` — 서명 갱신·3일 이내, EICAR 자체 시험, 플러그인
+   zip과 푼 내용, **매니페스트가 가리키는 음성 팩** zip과 푼 wav)가 돌고, 위협·검사기 이상이면
+   여기서 멈춘다 (플러그인은 게시되지 않는다). 음성 팩은 새 팩이면 그 실행의 아티팩트, 아니면
+   preflight가 공개 주소에서 받아 sha256을 맞춘 지금 팩 — 이미 공개된 팩이라 플러그인 게시만
+   멈출 뿐 팩을 거둬들이지는 않는다 (그 절차는 DEVELOPMENT.md '백신이 파일을 잡으면'). 보고서
+   `meta/av-scan.txt`가 아티팩트에 실린다 ([docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#게시-전-관문--백신-검사와-빌드-출처-증명))
 5. **verify-artifact** — 게시될 바로 그 파일로 사용자 업데이트 흐름 재현
-   (플러그인 교체 + `audio-<pack>`에서 음성 팩 설치). Defender 보고서가 이 바이트(sha256)를
-   깨끗하다고 했는지 보고, 릴리스 본문에 붙을 '파일 검증' 절을 요약에 미리 보여 준다
+   (플러그인 교체 + `audio-<pack>`에서 음성 팩 설치). Defender 보고서가 이 바이트(sha256)와
+   매니페스트가 가리키는 팩 zip(`audio_sha256`)을 깨끗하다고 했는지 보고, 릴리스 본문에 붙을
+   '파일 검증' 절을 요약에 미리 보여 준다
 6. **attest** — 같은 파일을 다시 확인하고 zip·매니페스트에 빌드 출처 증명
    (`actions/attest-build-provenance`) → `gh attestation verify`로 확인. `id-token`·`attestations`
    쓰기 권한은 이 잡에만 있다
-7. **publish** — Defender 보고서를 한 번 더 대조한 뒤, 새로 만들면 `gh release create --latest`,
-   이어받으면 zip → 매니페스트 순으로 올린 뒤 제목·본문·latest를 고친다. 본문 끝에 '파일 검증'
-   절(SHA-256 · Defender 결과 · `Get-FileHash`/`gh attestation verify` 안내)을 붙인다.
+7. **publish** — Defender 보고서를 한 번 더 대조한 뒤(음성 팩을 검사하지 않은 보고서도 거부),
+   새로 만들면 `gh release create --latest`, 이어받으면 zip → 매니페스트 순으로 올린 뒤
+   제목·본문·latest를 고친다. 본문 끝에 '파일 검증' 절(SHA-256 · Defender 결과 · 음성 팩 검사 ·
+   `Get-FileHash`/`gh attestation verify` 안내)을 붙인다.
    `releases/latest/download/teamradio56-release.txt`가 새 버전을 가리키는지 확인. 쓰기 권한은
    이 잡과 음성 팩 게시 잡에만 있다
 
@@ -272,8 +278,12 @@ git push origin v0.17.1
 **시험 빌드 (dry run)**: `release-dry/`로 시작하는 브랜치를 push하면
 (`git push origin HEAD:release-dry/test`) 게시·음성 팩 렌더 없이 preflight → gates → Windows
 설치·빌드·Defender 검사 → verify-artifact → attest까지 돌고 결과를 아티팩트로 받는다 (팩이 없거나
-낡았으면 경고만 하고 지금 기술자로 빌드). dry run도 빌드 출처 증명은 남긴다 (릴리스·태그·자산은
-없음). Actions → release → Run workflow(`dry_run` 켠 채, 기본)도 같다. 다른 SimHub 버전은
+낡았으면 경고만 하고 지금 기술자로 빌드). Defender 검사는 게시 실행과 같다 — 지금 음성 팩(약
+190 MB)을 받아 zip과 푼 wav까지 검사한다 (팩 릴리스를 확인하지 못한 dry run만 팩 없이 검사하고
+경고, 게시 실행이면 거부). dry run도 빌드 출처 증명은 남긴다 (릴리스·태그·자산은 없음). 새 팩을
+렌더하지 않으므로 audio-pack의 scan 잡은 돌지 않는다 — 같은 스크립트의 음성 팩 경로(`-AudioDir`)는
+여기서 지금 팩으로 시험되고, scan 잡 자체는 Actions → audio-pack을 `dry_run`으로 돌려 시험한다(렌더
+약 2시간). Actions → release → Run workflow(`dry_run` 켠 채, 기본)도 같다. 다른 SimHub 버전은
 Run workflow의 `simhub_version`으로 (새 버전은 zip sha256을 경고로 찍는다 — 확인 후
 `install-simhub.ps1` 표에 더한다). `dry_run`을 끄면 main에서 태그 push 없이 게시한다 (태그는
 GitHub이 그 커밋에 만든다, `notes`가 변경 사항, 같은 태그가 있으면 거부).
@@ -301,8 +311,12 @@ asset=teamradio56_kokoro_v016_1of7.zip,<sha256>,<바이트 수>
   (예: `kokoro-v020`) — 기술자는 **실행한 브랜치에 커밋**. 어느 쪽이든 렌더 전 게이트(샤드 분할
   검사 포함) → 코코로 모델(sha256 고정) → 통문장·세그먼트를 샤드 6개로 병렬 렌더(약 1.5~2시간)
   → 샤드 캐시 합치기 → `tools/pack_audio.py`로 24 MiB 이하 zip 분할 → 렌더 후 게이트(실캐시
-  100% + 팩 설치 흐름) → `audio-<pack>` 초안 → 새 `audio_pack.txt` 커밋 → 프리릴리스로 공개.
-  `dry_run`은 렌더·zip·아티팩트까지만. 이미 공개된 팩 ID는 거부한다 (남은 초안은 지우고 다시).
+  100% + 팩 설치 흐름) → **Microsoft Defender 검사** (scan 잡, windows-2025 — zip 각각과 푼 wav,
+  `simhub/ci/scan-defender.ps1 -AudioDir`) → `audio-<pack>` 초안 → 새 `audio_pack.txt` 커밋 →
+  프리릴리스로 공개. publish 잡은 scan 잡이 성공해야 돌고, `publish-audio.sh`가 올리기 전에 scan
+  보고서(`teamradio56-audio-scan-<pack>` 아티팩트)의 zip 이름·sha256·크기를 기술자와 대조한다 —
+  위협·검사기 이상이면 초안·기술자 커밋·공개 없이 멈춘다. `dry_run`은 렌더·zip·검사·아티팩트까지만.
+  이미 공개된 팩 ID는 거부한다 (남은 초안은 지우고 다시).
 - 팩 ID가 바뀐 사용자에게만 [음성 팩 업데이트]가 켜진다. 배포된 ID는 그 멘트 집합에 묶인다
   (`pack_audio.py`가 집합 해시로 확인 — `kokoro-v015`처럼 다른 집합에 배포된 ID를 쓰면 거부).
 - 멘트가 바뀌었는데 팩이 그대로면 게시 실행은 새 팩을 먼저 렌더하고, dry run은 경고만 한다
