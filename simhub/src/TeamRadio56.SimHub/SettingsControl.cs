@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -17,6 +18,8 @@ namespace TeamRadio56.SimHub
     /// XAML 없이 코드로 조립한다 — x:Class 매칭이나 .g.cs 생성 같은
     /// XAML 빌드 실패 지점을 없애기 위함 (개발 환경에서 컴파일 검증 불가).
     /// 문자열은 전부 Loc(ko/en)을 거친다 — 화면 언어를 바꾸면 즉시 재조립.
+    /// 항목 설명은 늘 보이는 회색 글씨 대신 마우스를 올렸을 때 툴팁으로 (ⓘ 표시가 있는 곳).
+    /// 상태·경고·눌러야 할 안내는 그대로 보인다.
     /// </summary>
     public class SettingsControl : UserControl
     {
@@ -26,6 +29,12 @@ namespace TeamRadio56.SimHub
         private static readonly Brush Ok = new SolidColorBrush(Color.FromRgb(0x81, 0xC7, 0x84));
         private static readonly Brush Off = new SolidColorBrush(Color.FromRgb(0xE5, 0x73, 0x73));
 
+        // 툴팁 — 기본 표시 시간 5초는 문단 하나 읽기에 짧다. 폭은 긴 설명이 화면 끝까지
+        // 늘어지지 않게 줄바꿈하는 기준
+        private const int TipShowMs = 60000;
+        private const int TipDelayMs = 400;
+        private const double TipMaxWidth = 420;
+
         private readonly TeamRadio56Plugin _plugin;
         // 화면을 다시 그릴 때마다 새로 만든다 — WPF는 이미 다른 패널에 붙은
         // 요소를 새 패널에 붙이면 예외를 던져, 재조립(언어 전환)이 실패한다
@@ -34,6 +43,10 @@ namespace TeamRadio56.SimHub
         private TextBlock _source = new TextBlock();
         private TextBlock _recent = new TextBlock();
         private TextBlock _engineState = new TextBlock();
+        // 엔진 상태 블록(글 + ⓘ)과 그 툴팁(음성 팩 폴더 경로) — 매초 갱신이라 글이 바뀔 때만 손댄다
+        private DockPanel _engineInfo = new DockPanel();
+        private Border _engineMark = new Border();
+        private string _engineTip;
         private TextBlock _testSpeak = new TextBlock();
         private readonly DispatcherTimer _timer = new DispatcherTimer();
 
@@ -124,13 +137,18 @@ namespace TeamRadio56.SimHub
             var root = new StackPanel { Margin = new Thickness(14, 10, 14, 20) };
 
             var header = new StackPanel { Orientation = Orientation.Horizontal };
-            header.Children.Add(new TextBlock
+            // 제목 + ⓘ — 무엇을 하는 플러그인인지는 호버로, 늘 보이는 줄은 버전만
+            var title = new StackPanel { Orientation = Orientation.Horizontal };
+            title.Children.Add(new TextBlock
             {
                 Text = "teamradio56",
                 FontSize = 20,
                 FontWeight = FontWeights.Bold,
                 Foreground = Accent,
             });
+            title.Children.Add(InfoMark());
+            Tip(title, L("app_hint"));
+            header.Children.Add(title);
             // 화면 언어 전환 — 헤더 우측, 바꾸면 화면을 즉시 다시 그린다
             var langCombo = MakeCombo(PluginSettings.UiLanguageChoices,
                 S != null ? S.UiLanguage : "ko", v =>
@@ -147,7 +165,7 @@ namespace TeamRadio56.SimHub
 
             root.Children.Add(new TextBlock
             {
-                Text = L("subtitle") + TeamRadio56Plugin.Version,
+                Text = string.Format(L("version"), TeamRadio56Plugin.Version),
                 Foreground = Dim,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 2, 0, 4),
@@ -227,14 +245,29 @@ namespace TeamRadio56.SimHub
 
         private void BuildEngine(StackPanel root)
         {
-            StackPanel box = Section(root, L("sec_engine"));
-            box.Children.Add(Hint(L("engine_hint")));
+            // 엔진 설명과 "바꾸면 [엔진 재시작]" 안내는 섹션 제목의 툴팁으로
+            StackPanel box = Section(root, L("sec_engine"),
+                L("engine_hint") + "\n\n" + L("engine_apply_hint"));
 
+            // 상태 블록 — 엔진·효과본 수·설치된 팩·경고는 늘 보이고, 음성 팩 폴더 경로만
+            // 블록의 툴팁(ⓘ)으로. ⓘ는 글 오른쪽 위에 붙인다 (블록이 글 폭만큼만 차지하게 Left)
             _engineState = new TextBlock();
             _engineState.Foreground = Dim;
             _engineState.TextWrapping = TextWrapping.Wrap;
-            _engineState.Margin = new Thickness(0, 2, 0, 6);
-            box.Children.Add(_engineState);
+            _engineMark = InfoMark();
+            _engineMark.VerticalAlignment = VerticalAlignment.Top;
+            _engineMark.Margin = new Thickness(6, 1, 0, 0);
+            _engineMark.Visibility = Visibility.Collapsed;   // 경로를 알 때 Refresh가 켠다
+            DockPanel.SetDock(_engineMark, Dock.Right);
+            _engineInfo = new DockPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 2, 0, 6),
+            };
+            _engineInfo.Children.Add(_engineMark);
+            _engineInfo.Children.Add(_engineState);
+            _engineTip = null;   // 새 블록엔 툴팁이 없다 — 다음 Refresh가 다시 단다
+            box.Children.Add(_engineInfo);
 
             // 음성 팩(오디오 캐시) 폴더 — 비우면 자동 탐색, [음성 팩 업데이트]도 같은 폴더에 설치
             Row(box, L("row_cache_dir"), MakeText(S.AudioCacheDir, v =>
@@ -248,11 +281,11 @@ namespace TeamRadio56.SimHub
                 Margin = new Thickness(0, 6, 0, 0),
             };
             // 재시작은 보이스 워커 정지(최대 10초)를 기다린다 — UI 스레드 밖에서
-            buttons.Children.Add(MakeButton(L("btn_engine_restart"),
-                () => InBackground(_plugin.RestartEngine)));
+            var restart = (Button)MakeButton(L("btn_engine_restart"),
+                () => InBackground(_plugin.RestartEngine));
+            Tip(restart, L("engine_apply_hint"));
+            buttons.Children.Add(restart);
             box.Children.Add(buttons);
-
-            box.Children.Add(Hint(L("engine_apply_hint")));
         }
 
         private void BuildVoice(StackPanel root)
@@ -268,12 +301,11 @@ namespace TeamRadio56.SimHub
 
         private void BuildChatter(StackPanel root)
         {
-            StackPanel box = Section(root, L("sec_chatter"));
+            StackPanel box = Section(root, L("sec_chatter"), L("chatter_hint"));
             Row(box, L("row_preset"), MakeCombo(PluginSettings.ChatterChoices, S.ChatterPreset, v =>
             {
                 S.ChatterPreset = v;
             }, Choice("choice_")), L("hint_preset"));
-            box.Children.Add(Hint(L("chatter_hint")));
         }
 
         private void BuildTraffic(StackPanel root)
@@ -303,8 +335,7 @@ namespace TeamRadio56.SimHub
 
         private void BuildReports(StackPanel root)
         {
-            StackPanel box = Section(root, L("sec_reports"));
-            box.Children.Add(Hint(L("reports_hint")));
+            StackPanel box = Section(root, L("sec_reports"), L("reports_hint"));
 
             Row(box, L("row_laptime"), MakeCheck(S.LapTimeEveryLap, v =>
             {
@@ -330,8 +361,7 @@ namespace TeamRadio56.SimHub
 
         private void BuildUpdate(StackPanel root)
         {
-            StackPanel box = Section(root, L("sec_update"));
-            box.Children.Add(Hint(L("update_hint")));
+            StackPanel box = Section(root, L("sec_update"), L("update_hint"));
 
             _updVersions = new TextBlock { Foreground = Fg, TextWrapping = TextWrapping.Wrap };
             box.Children.Add(_updVersions);
@@ -480,13 +510,16 @@ namespace TeamRadio56.SimHub
 
                 bool voiceWarn;
                 string voiceLines = VoiceLines(out voiceWarn);
-                // 캐시 폴더를 함께 — "무전이 안 들린다" 진단의 첫 확인 지점
-                string cache = _plugin.BuiltinCacheDir == null
+                string cacheDir = _plugin.BuiltinCacheDir;
+                string cache = cacheDir == null
                     ? L("cache_unknown")
-                    : string.Format(L("cache_status"),
-                        _plugin.BuiltinCacheCount, _plugin.BuiltinCacheDir);
+                    : string.Format(L("cache_count"), _plugin.BuiltinCacheCount);
                 SetText(_engineState, L("engine_builtin") + "\n" + cache + voiceLines,
                     _plugin.BuiltinCacheCount > 0 && !voiceWarn ? Dim : Off);
+                // 캐시 폴더 경로는 ⓘ 툴팁으로 — "무전이 안 들린다" 진단의 첫 확인 지점이라
+                // 숨기지 않고 블록에 붙여 둔다 (긴 경로가 매초 화면을 차지하지 않게)
+                UpdateTip(_engineInfo, _engineMark, ref _engineTip,
+                    cacheDir == null ? null : string.Format(L("cache_path_hint"), cacheDir));
 
                 RefreshUpdate();
 
@@ -789,60 +822,156 @@ namespace TeamRadio56.SimHub
 
         // -- 위젯 헬퍼 -------------------------------------------------------
 
-        private StackPanel Section(StackPanel parent, string title)
+        /// <summary>
+        /// 섹션 제목 (+ 설명이 있으면 ⓘ와 툴팁). 섹션 설명 문단은 제목에 마우스를 올렸을 때만.
+        /// </summary>
+        private StackPanel Section(StackPanel parent, string title, string hint = null)
         {
-            parent.Children.Add(new TextBlock
+            var head = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 18, 0, 4),
+            };
+            head.Children.Add(new TextBlock
             {
                 Text = title,
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 Foreground = Accent,
-                Margin = new Thickness(0, 18, 0, 4),
+                VerticalAlignment = VerticalAlignment.Center,
             });
+            if (!string.IsNullOrEmpty(hint))
+                head.Children.Add(InfoMark());
+            Tip(head, hint);
+            parent.Children.Add(head);
             var panel = new StackPanel();
             parent.Children.Add(panel);
             return panel;
         }
 
-        private TextBlock Hint(string text)
-        {
-            return new TextBlock
-            {
-                Text = text,
-                Foreground = Dim,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 4),
-            };
-        }
-
+        /// <summary>
+        /// 라벨 | 컨트롤 한 줄. hint는 컨트롤 오른쪽 회색 글씨가 아니라 줄 전체(라벨·ⓘ·컨트롤)의
+        /// 툴팁이다 — 줄에 단 툴팁 하나를 자식들이 물려받아, 라벨에서 컨트롤로 옮겨 가도
+        /// 툴팁이 다시 뜨며 깜빡이지 않는다.
+        /// </summary>
         private StackPanel Row(StackPanel parent, string label, UIElement control, string hint = null)
         {
+            bool hasHint = !string.IsNullOrEmpty(hint);
             var row = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 Margin = new Thickness(0, 3, 0, 3),
             };
-            row.Children.Add(new TextBlock
+            // 라벨 칸은 170px 고정 — ⓘ가 붙어도 컨트롤 열이 줄을 맞춘다 (ⓘ 몫 20px은 라벨 폭에서)
+            var cell = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Width = 170,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            cell.Children.Add(new TextBlock
             {
                 Text = label,
-                Width = 170,
+                MaxWidth = hasHint ? 150 : 170,
                 Foreground = Fg,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
             });
+            if (hasHint)
+                cell.Children.Add(InfoMark());
+            row.Children.Add(cell);
             row.Children.Add(control);
-            if (!string.IsNullOrEmpty(hint))
-            {
-                row.Children.Add(new TextBlock
-                {
-                    Text = hint,
-                    Foreground = Dim,
-                    Margin = new Thickness(12, 0, 0, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                });
-            }
+            Tip(row, hint);
+            // 스크린 리더는 포커스를 받은 컨트롤의 HelpText를 읽는다
+            if (hasHint)
+                AutomationProperties.SetHelpText(control, hint);
             parent.Children.Add(row);
             return row;   // 호출부가 Visibility를 토글할 수 있게
+        }
+
+        /// <summary>
+        /// 호버 설명(툴팁)을 단다. 빈 글이면 툴팁을 지운다.
+        /// 글자색·배경은 SimHub 테마의 ToolTip 스타일에 맡긴다 — 여기서 Fg(Gainsboro)를 박으면
+        /// 밝은 툴팁 위에서 글씨가 안 보인다. 긴 설명은 TipMaxWidth에서 줄바꿈.
+        /// </summary>
+        private static void Tip(FrameworkElement el, string text)
+        {
+            if (el == null)
+                return;
+            if (string.IsNullOrEmpty(text))
+            {
+                el.ClearValue(FrameworkElement.ToolTipProperty);
+                el.ClearValue(AutomationProperties.HelpTextProperty);
+                return;
+            }
+            el.ToolTip = new TextBlock
+            {
+                Text = text,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = TipMaxWidth,
+            };
+            ToolTipService.SetShowDuration(el, TipShowMs);
+            ToolTipService.SetInitialShowDelay(el, TipDelayMs);
+            ToolTipService.SetShowOnDisabled(el, true);
+            AutomationProperties.SetHelpText(el, text);
+        }
+
+        /// <summary>
+        /// 매초 갱신되는 블록의 툴팁 — 글이 바뀔 때만 Tip을 부른다 (매초 새 툴팁을 만들면
+        /// 열려 있던 툴팁이 깜빡인다). 빈 글이면 툴팁과 ⓘ를 함께 숨긴다.
+        /// </summary>
+        private static void UpdateTip(FrameworkElement owner, FrameworkElement mark,
+                                      ref string current, string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                text = null;
+            if (string.Equals(current, text, StringComparison.Ordinal))
+                return;
+            current = text;
+            Tip(owner, text);
+            mark.Visibility = text != null ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>
+        /// 설명이 있다는 표시 (ⓘ). 글꼴과 무관하게 그린다 — ⓘ 글리프가 없는 글꼴도 있고,
+        /// "i" 글자는 줄 높이가 14px 원 안쪽보다 커서 잘릴 수 있다. 원은 Border, i는 점 + 막대.
+        /// 툴팁은 따로 달지 않는다 — 부모(줄·제목·블록)의 툴팁을 물려받는다.
+        /// </summary>
+        private static Border InfoMark()
+        {
+            var glyph = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            glyph.Children.Add(new System.Windows.Shapes.Rectangle
+            {
+                Width = 2,
+                Height = 2,
+                Fill = Dim,
+                Margin = new Thickness(0, 0, 0, 1),
+            });
+            glyph.Children.Add(new System.Windows.Shapes.Rectangle
+            {
+                Width = 2,
+                Height = 5,
+                Fill = Dim,
+            });
+            return new Border
+            {
+                Width = 14,
+                Height = 14,
+                CornerRadius = new CornerRadius(7),
+                BorderBrush = Dim,
+                BorderThickness = new Thickness(1),
+                Background = Brushes.Transparent,   // 원 안쪽도 마우스가 걸리게
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                UseLayoutRounding = true,           // 2px 점·막대가 흐려지지 않게 픽셀에 맞춘다
+                Cursor = System.Windows.Input.Cursors.Help,
+                Child = glyph,
+            };
         }
 
         private UIElement MakeCheck(bool value, Action<bool> setter)

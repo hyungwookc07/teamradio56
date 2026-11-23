@@ -5,6 +5,8 @@ namespace TeamRadio56.SimHub
     /// <summary>
     /// 설정 화면 문자열 테이블 (ko/en). SettingsControl의 모든 라벨/힌트가
     /// 여기를 거친다 — 키가 en에 없으면 ko로 폴백.
+    /// 키가 hint_로 시작하거나 _hint로 끝나면 호버 설명(툴팁) 전용이다 — 화면에 늘 보이는
+    /// 글씨로 그리지 않고 Tip / Row·Section의 hint / UpdateTip으로만 넘긴다 (build-check가 검사).
     /// </summary>
     public static class Loc
     {
@@ -21,7 +23,8 @@ namespace TeamRadio56.SimHub
 
         private static readonly Dictionary<string, string> Ko = new Dictionary<string, string>
         {
-            { "subtitle", "LMU 레이스 엔지니어 무전 — 상황을 판단해 팀라디오로 불러줍니다. 버전 " },
+            { "app_hint", "LMU 레이스 엔지니어 무전 — 상황을 판단해 팀라디오로 불러줍니다." },
+            { "version", "버전 {0}" },
             { "sec_status", "상태" },
             { "sec_engine", "엔진" },
             { "sec_voice", "음성" },
@@ -73,7 +76,8 @@ namespace TeamRadio56.SimHub
             { "src_native_rejected", "LMU 내장 공유 메모리의 값이 예상과 달라 쓰지 않습니다 (게임 업데이트로 형식이 바뀐 듯). rF2 DLL이 있으면 그쪽으로 읽습니다 — 로그를 첨부해 알려 주세요." },
             { "src_native_rejected_nodll", "고친 버전이 나올 때까지 rF2 공유 메모리 플러그인 DLL을 설치하면 알아서 그쪽으로 읽어요 (설치 가이드 참고)." },
             { "engine_builtin", "내장(C#) 엔진 동작 중 — 영어 무전, kokoro 음성 팩" },
-            { "cache_status", "오디오 캐시(무전 효과본) {0}개 — {1}" },
+            { "cache_count", "오디오 캐시(무전 효과본) {0}개" },
+            { "cache_path_hint", "음성 팩 폴더: {0}" },
             { "cache_unknown", "음성 팩 폴더를 정할 수 없음 (플러그인 폴더를 알 수 없음)" },
             { "recent_dropped", "(무음)" },
             { "voice_note_no_kokoro", "음성 팩이 설치되지 않아 무전이 소리 없이 자막으로만 나갑니다 — [업데이트] 섹션에서 [음성 팩 업데이트]를 누르세요" },
@@ -152,7 +156,8 @@ namespace TeamRadio56.SimHub
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>
         {
-            { "subtitle", "LMU race-engineer radio — reads the race and calls it on team radio. Version " },
+            { "app_hint", "LMU race-engineer radio — reads the race and calls it on team radio." },
+            { "version", "Version {0}" },
             { "sec_status", "Status" },
             { "sec_engine", "Engine" },
             { "sec_voice", "Voice" },
@@ -203,7 +208,8 @@ namespace TeamRadio56.SimHub
             { "src_native_rejected", "LMU's built-in shared memory doesn't look as expected, so it isn't used (a game update probably changed its format). The rF2 DLL is used if installed. Please report it with your log." },
             { "src_native_rejected_nodll", "Until a fixed version is out, install the rF2 Shared Memory Map Plugin DLL; teamradio56 switches to it by itself (see the install guide)." },
             { "engine_builtin", "Built-in C# engine running — English radio, Kokoro voice pack" },
-            { "cache_status", "audio cache (radio-fx) {0} files — {1}" },
+            { "cache_count", "audio cache (radio-fx) {0} files" },
+            { "cache_path_hint", "Voice pack folder: {0}" },
             { "cache_unknown", "voice pack folder unknown (plugin folder not found)" },
             { "recent_dropped", "(not spoken)" },
             { "voice_note_no_kokoro", "no voice pack installed — radio calls are subtitles only, with no sound. Press [Update voice pack] in the [Updates] section" },

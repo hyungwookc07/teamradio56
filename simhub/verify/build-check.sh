@@ -36,11 +36,14 @@ if [ -n "$LEFTOVERS" ]; then
     exit 1
 fi
 
-# 설정 화면 문자열 — ko/en 키가 같고, 코드가 쓰는 키가 다 있고, 음성 팩이 없을 때의
-# 안내는 [음성 팩 업데이트]를 가리킨다 (다른 목소리로 대신 말한다고 하지 않는다)
+# 설정 화면 문자열 — ko/en 키가 같고, 코드가 쓰는 키가 다 있고, 코드가 안 쓰는 키가 없고,
+# 음성 팩이 없을 때의 안내는 [음성 팩 업데이트]를 가리킨다 (다른 목소리로 대신 말한다고 하지 않는다).
+# 호버 설명 — hint_*/*_hint 키는 툴팁 전용이라 늘 보이는 글씨로 그리면 실패한다.
 python3 - <<'PY'
 import re, sys
-loc = open("src/TeamRadio56.SimHub/Loc.cs", encoding="utf-8").read()
+def read(p):
+    return open(p, encoding="utf-8").read()
+loc = read("src/TeamRadio56.SimHub/Loc.cs")
 ko = loc[loc.index("Dictionary<string, string> Ko"):loc.index("Dictionary<string, string> En")]
 en = loc[loc.index("Dictionary<string, string> En"):]
 def table(t):
@@ -49,17 +52,42 @@ k, e = table(ko), table(en)
 bad = []
 if set(k) != set(e):
     bad.append("ko/en 키가 다름: " + ", ".join(sorted(set(k) ^ set(e))))
-code = "".join(open("src/TeamRadio56.SimHub/" + f, encoding="utf-8").read()
-               for f in ("SettingsControl.cs", "TeamRadio56Plugin.cs"))
+ui = read("src/TeamRadio56.SimHub/SettingsControl.cs")
+code = ui + read("src/TeamRadio56.SimHub/TeamRadio56Plugin.cs")
 used = set(re.findall(r'\bL\("([^"]+)"\)', code))
 # 데이터 원천 줄의 키는 Core가 고른다 (TelemetrySource.StatusLineKeys → SettingsControl이 L(key))
-src = open("src/TeamRadio56.Core/Telemetry/TelemetrySource.cs", encoding="utf-8").read()
-used |= set(re.findall(r'"(src_[a-z_]+)"', src))
-for note in ("no_kokoro", "pack_incomplete", "pack_partial"):
-    used.add("voice_note_" + note)          # "voice_note_" + VoicePolicy.Note*
+used |= set(re.findall(r'"(src_[a-z0-9_]+)"', read("src/TeamRadio56.Core/Telemetry/TelemetrySource.cs")))
+# 코드가 접두사 + Core 값으로 이어 붙이는 키. 그 조립 코드가 있을 때만 쓰는 키로 친다
+core = "src/TeamRadio56.Core/"
+def enum(path, name):
+    body = re.search(r"enum " + name + r"\s*\{([^}]*)\}", read(core + path)).group(1)
+    return [m.strip() for m in re.sub(r"//[^\n]*", "", body).split(",") if m.strip()]
+notes = [n.replace("-", "_") for n in
+         re.findall(r'const string Note\w+ = "([^"]+)"', read(core + "Logic/VoicePolicy.cs"))]
+chatter = re.findall(r'"([^"]+)"', re.search(r"ChatterChoices = \{([^}]*)\}",
+                                             read(core + "Config/PluginSettings.cs")).group(1))
+activities = enum("Update/UpdateController.cs", "UpdateActivity")
+errors = enum("Update/UpdateException.cs", "UpdateErrorKind")
+if not (notes and chatter and activities and errors):
+    bad.append("동적 키의 원천(VoicePolicy.Note*, ChatterChoices, UpdateActivity, UpdateErrorKind)을 못 읽음")
+families = (  # (조립 코드, 키들, 전부 있어야 하나 — 없으면 화면에 키 이름이 그대로 보인다)
+    ('L("voice_note_" +', ["voice_note_" + n for n in notes], True),
+    ('L("upd_failed_" +', ["upd_failed_" + a for a in activities if a != "Idle"], True),
+    ('L("upd_err_" +', ["upd_err_" + x for x in errors], True),
+    ('Choice("choice_")', ["choice_" + c for c in chatter], False),  # 없으면 값 그대로 보인다
+)
+dynamic = set()
+for marker, keys, required in families:
+    if marker in ui:
+        dynamic |= set(keys)
+        if required:
+            used |= set(keys)
 missing = sorted(used - set(k))
 if missing:
     bad.append("Loc에 없는 키: " + ", ".join(missing))
+unused = sorted(set(k) - used - dynamic)
+if unused:
+    bad.append("코드가 쓰지 않는 키 (지우거나 쓰세요): " + ", ".join(unused))
 for key in ("pack_missing_banner", "voice_note_no_kokoro", "voice_note_pack_incomplete",
             "test_speak_no_pack"):
     if "[음성 팩 업데이트]" not in k.get(key, "") or "[Update voice pack]" not in e.get(key, ""):
@@ -67,12 +95,79 @@ for key in ("pack_missing_banner", "voice_note_no_kokoro", "voice_note_pack_inco
 for key, text in list(k.items()) + list(e.items()):
     if re.search(r"\bedge\b|python|파이썬|Windows 음성|Windows speech", text, re.I):
         bad.append(key + ": 빠진 기능을 가리킴 — " + text[:60])
+
+# 호버 설명 가드 — hint_*/*_hint(와 예전 subtitle) 키는 툴팁 전용이다. L("…")을 감싼 괄호를
+# 거슬러 올라가 그 글이 들어가는 호출과 인자 위치를 본다: Tip(el, ●) / Row(…, …, …, ●) /
+# Section(…, …, ●) / UpdateTip(…, …, ref …, ●)만 허용 (string.Format·+ 이어 붙이기는 통과).
+# TextBlock.Text·SetText·Content 등 늘 보이는 글씨로 가면 실패한다.
+def blank(m):
+    return re.sub(r"[^\n]", " ", m.group(0))
+# 문자열·문자·주석 속 괄호에 속지 않게 같은 길이 공백으로 지운 사본에서 괄호를 센다
+flat = re.sub(r'@"(?:[^"]|"")*"|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)+\'|//[^\n]*|/\*.*?\*/',
+              blank, ui, flags=re.S)
+TIP_SINKS = {"Tip": 1, "Row": 3, "Section": 2, "UpdateTip": 3}   # 호출 → 설명 인자 위치(0부터)
+def sink_of(pos):
+    while True:
+        depth, commas, i = 0, 0, pos - 1
+        while i >= 0:
+            c = flat[i]
+            if c == ")":
+                depth += 1
+            elif c == "(":
+                if depth == 0:
+                    break
+                depth -= 1
+            elif depth == 0 and c in "{};":
+                return None, -1          # 호출 인자가 아님 (대입·초기화 식)
+            elif depth == 0 and c == ",":
+                commas += 1
+            i -= 1
+        if i < 0:
+            return None, -1
+        m = re.search(r"(\w+)\s*$", flat[:i])
+        name = m.group(1) if m else ""
+        if name != "Format":
+            return name, commas
+        pos = m.start()                  # string.Format(●, …)은 그 결과가 들어가는 곳을 본다
+HINT_KEY = r'\bL\("(hint_[a-z0-9_]+|[a-z0-9_]+_hint|subtitle)"\)'
+for m in re.finditer(HINT_KEY, ui):
+    name, arg = sink_of(m.start())
+    if TIP_SINKS.get(name) != arg:
+        line = ui.count("\n", 0, m.start()) + 1
+        where = "%s(%d번째 인자)" % (name, arg + 1) if name else "대입/초기화"
+        bad.append("SettingsControl.cs:%d: 설명 %s를 늘 보이는 글씨로 씀 (%s) — Tip / Row·Section의 hint로"
+                   % (line, m.group(1), where))
+def body(name):
+    m = re.search(r"\b" + name + r"\s*\([^)]*\)\s*\{", flat)
+    if not m:
+        return None
+    depth, i = 0, m.end() - 1
+    while i < len(flat):
+        depth += {"{": 1, "}": -1}.get(flat[i], 0)
+        if depth == 0:
+            return flat[m.end():i]
+        i += 1
+    return None
+for sink, param in (("Row", "hint"), ("Section", "hint"), ("UpdateTip", "text")):
+    b = body(r"(?:StackPanel|void)\s+" + sink)
+    if b is None or not re.search(r"\bTip\(\s*\w+\s*,\s*" + param + r"\s*\)", b):
+        bad.append(sink + "(): " + param + "를 Tip(…)으로 넘기지 않음")
+    elif re.search(r"\b(?:Text|Content)\s*=\s*" + param + r"\b", b):
+        bad.append(sink + "(): " + param + "를 늘 보이는 글씨로 그림")
+tip = body(r"void\s+Tip")
+if tip is None or "ToolTip" not in tip or "SetShowDuration" not in tip:
+    bad.append("Tip(): 툴팁을 달지 않음 (ToolTip + ShowDuration)")
+elif re.search(r"\b(?:Foreground|Background)\b", tip):
+    bad.append("Tip(): 툴팁 글자색·배경을 박음 — SimHub 테마 ToolTip 스타일에 맡긴다")
+if re.search(r"\bHint\s*\(", flat):
+    bad.append("SettingsControl.cs: 예전 회색 설명 헬퍼 Hint()가 돌아옴 — Tip / Row·Section의 hint로")
 if bad:
-    print("❌ 설정 화면 문자열(Loc.cs):")
+    print("❌ 설정 화면 문자열(Loc.cs / SettingsControl.cs):")
     for b in bad:
         print("   " + b)
     sys.exit(1)
-print(f"✅ 설정 화면 문자열 {len(k)}개 (ko/en 일치, 음성 팩 안내 확인)")
+tips = len(re.findall(HINT_KEY, ui))
+print(f"✅ 설정 화면 문자열 {len(k)}개 (ko/en 일치, 안 쓰는 키 없음, 음성 팩 안내 확인, 호버 설명 {tips}곳은 툴팁으로만)")
 PY
 
 # LMU 내장 공유 메모리 명세 — pack(4) 오프셋·크기 재계산, rF2 공통 필드가 rf2data.py와 같은지.

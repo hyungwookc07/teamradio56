@@ -194,7 +194,8 @@ two DLLs by hand.
 ## Settings
 
 Changes are saved as you make them. Press **[Restart engine]** in the
-**Engine** section to apply them to the radio.
+**Engine** section to apply them to the radio. Hover over a setting, or a
+section title marked **ⓘ**, to see a short explanation.
 
 | Section | Setting | Default | What it does |
 |---|---|---|---|
