@@ -207,14 +207,21 @@ namespace TeamRadio56.Replay
 
         // -- 대체 규칙 셀프테스트 -----------------------------------------------------
 
+        /// <summary>
+        /// 바이트 배열 LMU_Data. Windows 이름 있는 매핑처럼: GameAlive=false(게임 종료)여도 우리가
+        /// 열어 둔 동안은 마지막 내용이 그대로 읽히고(핸들이 매핑을 살려 둠), 닫은 뒤에야 못 연다.
+        /// Absent는 "처음부터 없음"(Enable Plugins 꺼짐 등) — 열려 있어도 바로 못 연다.
+        /// </summary>
         private sealed class BlobMemory : ILmuMemory
         {
             public byte[] Data;
             public bool Absent;
+            public bool GameAlive = true;
             public long? CapacityOverride;
             public bool FailReads;
             public Action<long, int> OnRead;
             public int Reads;
+            public int Closes;
             private bool _open;
 
             public BlobMemory(byte[] data)
@@ -224,7 +231,7 @@ namespace TeamRadio56.Replay
 
             public bool TryOpen()
             {
-                if (Absent)
+                if (Absent || (!_open && !GameAlive))
                 {
                     _open = false;
                     return false;
@@ -232,6 +239,8 @@ namespace TeamRadio56.Replay
                 _open = true;
                 return true;
             }
+
+            public bool IsOpen { get { return _open; } }
 
             public long Capacity
             {
@@ -251,6 +260,7 @@ namespace TeamRadio56.Replay
 
             public void Close()
             {
+                Closes++;
                 _open = false;
             }
 
@@ -260,7 +270,8 @@ namespace TeamRadio56.Replay
             }
         }
 
-        private sealed class FakeSource : ISnapshotSource
+        /// <summary>rF2 원천 가짜 — Conn이 곧 연결 (버전 규칙 없음).</summary>
+        private class FakeSource : ISnapshotSource
         {
             public readonly Snapshot Snap = new Snapshot
             {
@@ -271,13 +282,13 @@ namespace TeamRadio56.Replay
             public bool Conn = true;
             public int Polls;
 
-            public Snapshot Poll()
+            public virtual Snapshot Poll()
             {
                 Polls++;
                 return Conn ? Snap : null;
             }
 
-            public bool Connected
+            public virtual bool Connected
             {
                 get { return Conn; }
             }
@@ -285,21 +296,120 @@ namespace TeamRadio56.Replay
             public void Dispose() { }
         }
 
+        /// <summary>
+        /// 실제 rF2 리더와 같은 연결 규칙(Core의 VersionLiveness)으로 도는 가짜 — Conn은 매핑이
+        /// 있는지, Version은 스코어링 버전(Moving이면 Fixture.Tick마다 +1). LiveExtended는
+        /// Rf2SharedMemoryReader.TryReadLiveExtended와 같이 "버전이 움직일 때만" Extended를 준다.
+        /// </summary>
+        private sealed class VersionedSource : FakeSource, IVersionTracker
+        {
+            public readonly VersionLiveness Live = new VersionLiveness();
+            public Func<double> Clock;
+            public int Version = 1000;
+            public bool Moving = true;
+            public int Tracks;
+
+            public override Snapshot Poll()
+            {
+                Polls++;
+                Observe();
+                return Live.Connected ? Snap : null;
+            }
+
+            public override bool Connected
+            {
+                get { return Live.Connected; }
+            }
+
+            public void TrackVersion()
+            {
+                Tracks++;
+                Observe();
+            }
+
+            public long VersionChanges
+            {
+                get { return Live.Changes; }
+            }
+
+            private void Observe()
+            {
+                if (Conn)
+                    Live.Observe(Version, Clock());
+                else
+                    Live.Missing(Clock());
+            }
+
+            public ExtendedReader LiveExtended(rF2Extended ext)
+            {
+                return (out rF2Extended e) =>
+                {
+                    e = default(rF2Extended);
+                    TrackVersion();
+                    if (!Live.Connected)
+                        return false;
+                    e = ext;
+                    return ext.mVersionUpdateBegin == ext.mVersionUpdateEnd;
+                };
+            }
+        }
+
         private sealed class Fixture
         {
             public double Now = 100.0;
             public readonly BlobMemory Mem;
-            public readonly FakeSource Rf2 = new FakeSource();
+            public readonly FakeSource Rf2;
             public readonly LmuNativeReader Native;
             public readonly TelemetrySource Source;
             public readonly List<string> Info = new List<string>();
             public readonly List<string> Warn = new List<string>();
 
-            public Fixture(byte[] blob, ExtendedReader ext = null)
+            /// <param name="versioned">rF2를 실제 버전 규칙으로 (VersionedSource).</param>
+            /// <param name="liveExt">versioned일 때 rF2 버전이 움직일 때만 주는 Extended.</param>
+            public Fixture(byte[] blob, ExtendedReader ext = null, bool versioned = false, rF2Extended? liveExt = null)
             {
                 Mem = new BlobMemory((byte[])blob.Clone());
+                if (versioned)
+                {
+                    var v = new VersionedSource { Clock = () => Now };
+                    Rf2 = v;
+                    if (liveExt.HasValue)
+                        ext = v.LiveExtended(liveExt.Value);
+                }
+                else
+                {
+                    Rf2 = new FakeSource();
+                }
                 Native = new LmuNativeReader(Mem, () => Now, ext);
                 Source = new TelemetrySource(Native, Rf2, Info.Add, Warn.Add);
+            }
+
+            public VersionedSource V { get { return (VersionedSource)Rf2; } }
+
+            public string Keys()
+            {
+                bool warn;
+                string[] keys = Source.StatusLineKeys(out warn);
+                return string.Join("+", keys) + (warn ? " (warn)" : "");
+            }
+
+            /// <summary>
+            /// LMU 종료: 게임은 꺼졌지만 우리가 쥔 핸들이 매핑을 살려 둔다 (내용 그대로, 읽기 성공).
+            /// 리더가 멈춤(5초) 뒤 닫았다 다시 열려다 실패해야 Absent가 된다.
+            /// </summary>
+            public void ExitGame()
+            {
+                Mem.GameAlive = false;
+                Wait(4.0);
+                Wait(2.0);
+            }
+
+            /// <summary>LMU 다시 실행 — 새 세션처럼 ET를 되돌리고 0.2초 진행.</summary>
+            public Snapshot StartGame()
+            {
+                Mem.GameAlive = true;
+                F64(LmuNativeLayout.CurrentEt, 10.0);
+                return Tick();
             }
 
             public void I32(int off, int v) { BitConverter.GetBytes(v).CopyTo(Mem.Data, off); }
@@ -312,6 +422,9 @@ namespace TeamRadio56.Replay
             {
                 Now += 0.2;
                 F64(LmuNativeLayout.CurrentEt, Et + 0.2);
+                var v = Rf2 as VersionedSource;
+                if (v != null && v.Moving)
+                    v.Version++;
                 return Source.Poll();
             }
 
@@ -389,6 +502,7 @@ namespace TeamRadio56.Replay
             s = f.Tick();
             check(s == null && !f.Source.Connected && f.Source.Active == TelemetrySourceKind.None, "둘 다 없음 → 대기");
             check(!f.Source.NativeIdle, "매핑 없음은 idle 아님 (설정 화면 'Enable Plugins' 안내)");
+            check(f.Keys() == "src_waiting", "매핑·DLL 없음 → src_waiting (실제 " + f.Keys() + ")");
 
             // 4) gameVersion 0 → 쓰지 않음
             f = new Fixture(blob);
@@ -399,6 +513,14 @@ namespace TeamRadio56.Replay
             f.Rf2.Conn = false;
             s = f.Tick();
             check(s == null && !f.Source.Connected, "gameVersion 0 + DLL 없음 → 대기");
+            check(f.Keys() == "src_native_idle", "gameVersion 0 → 매핑은 있음 → src_native_idle (실제 " + f.Keys() + ")");
+            // gameVersion 0이 5초 넘게 이어지면 닫았다 다시 연다 — 게임이 꺼졌으면 Absent
+            f.Mem.GameAlive = false;
+            f.Wait(3.0);
+            check(f.Native.State == LmuNativeState.NotRunning && f.Native.Recycles == 0, "NotRunning 3초 → 그대로");
+            f.Wait(3.0);
+            check(f.Native.State == LmuNativeState.Absent && f.Native.Recycles == 1 && f.Keys() == "src_waiting",
+                  "NotRunning 5초 넘음 + 게임 종료 → 닫고 Absent → src_waiting (실제 " + f.Native.State + "/" + f.Keys() + ")");
 
             // 5) 차량 수 범위 밖 → 프레임 버림 (정상 프레임이 한 번도 없으면 연결 안 됨)
             f = new Fixture(blob);
@@ -427,6 +549,11 @@ namespace TeamRadio56.Replay
             s = f.Tick();
             check(f.Native.State == LmuNativeState.TooSmall && f.Source.Active == TelemetrySourceKind.Rf2Plugin,
                   "매핑 크기 부족 → rF2");
+            check(f.Keys() == "src_rf2+src_native_rejected (warn)", "크기 부족 + DLL → rF2 + 거부 경고 (실제 " + f.Keys() + ")");
+            f.Rf2.Conn = false;
+            f.Tick();
+            check(f.Keys() == "src_native_rejected+src_native_rejected_nodll (warn)",
+                  "크기 부족 + DLL 없음 → 거부 + DLL 설치 안내, Enable Plugins 안내 없음 (실제 " + f.Keys() + ")");
             f = new Fixture(blob);
             f.Mem.CapacityOverride = LmuNativeLayout.TotalSize + 4;     // C++ 꼬리 패딩
             s = f.Tick();
@@ -464,6 +591,12 @@ namespace TeamRadio56.Replay
                 s = f.Tick();
             check(ReferenceEquals(s, f.Rf2.Snap) && f.Source.Active == TelemetrySourceKind.Rf2Plugin,
                   "5초 넘게 정상 프레임 없음 → rF2 (실제 " + f.Source.Active + ")");
+            check(f.Info.Exists(l => l.Contains("LMU 내장 공유 메모리 끊김 — 복사 중 계속 바뀜 (찢긴 읽기"))
+                  && !f.Info.Exists(l => l.Contains("검증 대기")),
+                  "찢김으로 끊김 → 사유 '찢긴 읽기' (검증 대기 아님): " + string.Join(" | ", f.Info));
+            f.Rf2.Conn = false;
+            f.Tick();
+            check(f.Keys() == "src_native_idle", "계속 찢김 + DLL 없음 → 매핑은 있음 → src_native_idle (실제 " + f.Keys() + ")");
 
             // 8b) 텔레메트리 슬롯을 복사하는 사이 mElapsedTime이 바뀌면(100Hz 갱신) 다시 읽는다
             f = new Fixture(blob);
@@ -524,9 +657,18 @@ namespace TeamRadio56.Replay
             s = f.Wait(0.2);
             check(s == null && !f.Source.Connected, "멈춤 + DLL 없음 → 대기");
             check(f.Source.NativeIdle, "멈춤: 매핑은 있음 (설정 화면 '세션에 들어가면 연결' 안내)");
+            check(f.Keys() == "src_native_idle", "멈춤 + DLL 없음 → src_native_idle (실제 " + f.Keys() + ")");
+            // 멈춘 매핑은 닫았다 같은 틱에 다시 연다 — 게임이 쥐고 있으면(일시정지) 그대로 Stale
+            check(f.Native.Recycles == 1 && f.Native.State == LmuNativeState.Stale && f.Native.OpenCount == 1
+                  && f.Mem.IsOpen, "일시정지 → 닫고 다시 열림, 상태 유지 (recycles " + f.Native.Recycles + ")");
+            f.Wait(1.0);
+            check(f.Native.Recycles == 1, "다시 열기는 2초 간격");
+            f.Wait(1.2);
+            check(f.Native.Recycles == 2 && f.Native.State == LmuNativeState.Stale, "2초 뒤 또 다시 열기");
             f.Rf2.Conn = true;
             s = f.Tick();
-            check(f.Source.Active == TelemetrySourceKind.LmuNative && s != null, "다시 움직이면 내장");
+            check(f.Source.Active == TelemetrySourceKind.LmuNative && s != null && f.Native.OpenCount == 1,
+                  "다시 움직이면 내장 (세션 상태 그대로)");
             // mCurrentET가 그대로여도 SME_UPDATE_SCORING이 바뀌면 살아 있음
             f.Wait(3.0);
             BitConverter.GetBytes(BitConverter.ToUInt32(f.Mem.Data, LmuNativeLayout.EventUpdateScoring) + 1)
@@ -554,16 +696,35 @@ namespace TeamRadio56.Replay
                       "playerVehicleIdx=" + hint[0] + "/has=" + hint[1] + " → mID로 찾음");
             }
 
-            // 13) 플레이어 슬롯 없음 — 플레이어 정보만 비고, 25프레임 계속되면 형식 이상으로 판정
+            // 13) 플레이어 슬롯 없음 — 정상 상태(리타이어 관전·차 빠짐·로딩)에서도 생기므로 형식
+            //     실패로 보지 않는다: 플레이어 정보만 비고 내장 유지, 진단 플래그·로그 한 번
             f = new Fixture(blob);
             f.I32(slot + LmuNativeLayout.TelIdOffset, 77);
             s = f.Tick();
             check(s != null && s.Player == null && f.Source.Active == TelemetrySourceKind.LmuNative,
                   "플레이어 슬롯 없음 → Player null, 내장 유지");
-            for (int i = 0; i < LmuNativeReader.GuardMissingSlotFramesToFail; i++)
+            for (int i = 0; i < 3 * LmuNativeReader.MissingSlotFramesToReport; i++)
+                s = f.Tick();
+            check(!f.Native.GuardFailed && f.Source.Active == TelemetrySourceKind.LmuNative && s != null,
+                  "슬롯을 75프레임 못 찾아도 가드 실패 아님, 내장 유지");
+            check(f.Native.PlayerSlotMissing && f.Info.FindAll(l => l.Contains("플레이어 텔레메트리 슬롯이 없음")).Count == 1,
+                  "슬롯 없음 진단 플래그 + 로그 한 번");
+            check(f.Keys() == "src_native", "슬롯 없음은 상태 줄 그대로 (실제 " + f.Keys() + ")");
+            f.I32(slot + LmuNativeLayout.TelIdOffset, PlayerId);
+            s = f.Tick();
+            check(!f.Native.PlayerSlotMissing && f.Native.Verified && s.Player != null,
+                  "슬롯이 돌아오면 플래그 풀리고 검증 통과");
+            // 슬롯 없음 + 나쁜 값이 섞여도 슬롯 없음 프레임은 세지 않는다
+            f = new Fixture(blob);
+            for (int w = 0; w < 4; w++)
+                for (int j = 0; j < 3; j++)
+                    f.F64(wheel0 + w * 260 + 128 + j * 8, 80.0);
+            f.Tick();
+            f.Tick();
+            f.I32(slot + LmuNativeLayout.TelIdOffset, 77);
+            for (int i = 0; i < 40; i++)
                 f.Tick();
-            check(f.Native.GuardFailed && f.Source.Active == TelemetrySourceKind.Rf2Plugin,
-                  "슬롯을 계속 못 찾음 → 가드 실패 → rF2");
+            check(!f.Native.GuardFailed, "나쁜 프레임 2개 뒤 슬롯 없음 40프레임 → 실패 아님");
 
             // 14) 값 검증: 타이어 온도가 섭씨처럼 보이면(형식 이동) 3프레임 뒤 실패 → rF2, 크게 로그 1번
             f = new Fixture(blob);
@@ -586,23 +747,52 @@ namespace TeamRadio56.Replay
             s = f.Tick();
             check(f.Source.Active == TelemetrySourceKind.Rf2Plugin, "가드 실패는 매핑을 다시 열 때까지 유지");
             check(f.Warn.Count == 1, "경고는 한 번만");
-            // 매핑을 다시 열면(게임 재시작) 검증부터 — 값이 정상이면 바로 그 프레임에서 복귀
-            f.Mem.Absent = true;
+            check(f.Keys() == "src_rf2+src_native_rejected (warn)", "가드 실패 + DLL → rF2 + 거부 경고 (실제 " + f.Keys() + ")");
+            f.Rf2.Conn = false;
             f.Tick();
-            f.Mem.Absent = false;
-            s = f.Tick();
-            check(f.Source.Active == TelemetrySourceKind.LmuNative && f.Native.Verified && s != null,
-                  "재연결 + 값 정상 → 검증 통과 후 내장");
-            // 재연결했는데 여전히 이상하면 첫 프레임부터 안 쓴다 (쓰레기 값을 엔진에 넘기지 않음)
+            check(f.Keys() == "src_native_rejected+src_native_rejected_nodll (warn)",
+                  "가드 실패 + DLL 없음 → 거부 + DLL 설치 안내만 (src_waiting 없음, 실제 " + f.Keys() + ")");
+            f.Rf2.Conn = true;
+            // LMU 종료 → (우리 핸들이 매핑을 살려 두지만) 멈춤 5초 뒤 닫고 다시 열기 실패 → Absent
+            f.ExitGame();
+            check(f.Native.State == LmuNativeState.Absent && !f.Mem.IsOpen && f.Native.GuardFailed,
+                  "게임 종료 → 핸들 놓고 Absent (실제 " + f.Native.State + ", open " + f.Mem.IsOpen + ")");
+            // 다시 실행하면 매핑을 새로 열어 검증부터 — 값이 정상이면 바로 그 프레임에서 복귀
+            s = f.StartGame();
+            check(f.Source.Active == TelemetrySourceKind.LmuNative && f.Native.Verified && s != null
+                  && !f.Native.GuardFailed && f.Native.OpenCount == 2,
+                  "게임 재시작 + 값 정상 → 가드 풀림, 검증 통과 후 내장 (open " + f.Native.OpenCount + ")");
+            // 재시작했는데 여전히 이상하면 첫 프레임부터 안 쓴다 (쓰레기 값을 엔진에 넘기지 않음)
             for (int w = 0; w < 4; w++)
                 for (int j = 0; j < 3; j++)
                     f.F64(wheel0 + w * 260 + 128 + j * 8, 80.0);
-            f.Mem.Absent = true;
-            f.Tick();
-            f.Mem.Absent = false;
-            s = f.Tick();
+            f.ExitGame();
+            s = f.StartGame();
             check(f.Source.Active == TelemetrySourceKind.Rf2Plugin && ReferenceEquals(s, f.Rf2.Snap),
-                  "한 번 실패한 뒤 재연결은 검증 통과 전까지 안 씀");
+                  "한 번 실패한 뒤 재시작은 검증 통과 전까지 안 씀");
+            // 매핑을 다른 프로그램이 쥐고 있어 같은 매핑을 물려받은 재시작(또는 긴 일시정지): 멈췄다
+            // 다시 움직이면 실패한 가드를 한 번 더 판정 — 진짜 형식 문제면 다시 실패, 경고는 처음 한 번
+            f = new Fixture(blob);
+            for (int w = 0; w < 4; w++)
+                for (int j = 0; j < 3; j++)
+                    f.F64(wheel0 + w * 260 + 128 + j * 8, 80.0);
+            for (int i = 0; i < 3; i++)
+                f.Tick();
+            check(f.Native.GuardFailed, "가드 실패 (같은 매핑 시나리오)");
+            f.Wait(6.0);
+            check(f.Native.State == LmuNativeState.Stale && f.Native.OpenCount == 1, "멈춤 — 다시 열려도 같은 매핑");
+            for (int i = 0; i < 3; i++)
+                f.Tick();
+            check(f.Native.GuardFailed && f.Source.Active == TelemetrySourceKind.Rf2Plugin && f.Warn.Count == 1
+                  && f.Info.Exists(l => l.Contains("값 검증 다시 실패")),
+                  "다시 움직임 + 여전히 이상 → 다시 실패, 경고는 한 번 (warn " + f.Warn.Count + ")");
+            for (int w = 0; w < 4; w++)
+                for (int j = 0; j < 3; j++)
+                    f.F64(wheel0 + w * 260 + 128 + j * 8, 350.0);
+            f.Wait(6.0);
+            s = f.Tick();
+            check(!f.Native.GuardFailed && f.Native.Verified && f.Source.Active == TelemetrySourceKind.LmuNative && s != null,
+                  "멈췄다 다시 움직임 + 값 정상 → 가드 풀리고 내장 (SimHub 재시작 불필요)");
 
             // 15) 차고 안에서는 판정 보류 (타이어 값이 비어 있을 수 있음)
             f = new Fixture(blob);
@@ -613,6 +803,26 @@ namespace TeamRadio56.Replay
                 s = f.Tick();
             check(!f.Native.GuardFailed && !f.Native.Verified && f.Source.Active == TelemetrySourceKind.LmuNative,
                   "차고 안 → 판정 보류, 내장 유지");
+            // 모니터 화면(mInRealtime 0)·완주/리타이어(mFinishStatus ≠ 0)도 보류 — 텔레메트리가 비거나 멈춰 있음
+            int inRealtime = LmuNativeLayout.ScoringInfoOffset
+                             + Marshal.OffsetOf(typeof(rF2ScoringInfo), "mInRealtime").ToInt32();
+            int finishStatus = scoring + Marshal.OffsetOf(typeof(rF2VehicleScoring), "mFinishStatus").ToInt32();
+            foreach (var defer in new[] { new[] { inRealtime, 0 }, new[] { finishStatus, 3 } })
+            {
+                f = new Fixture(blob);
+                f.U8(defer[0], (byte)defer[1]);
+                f.I32(slot + LmuNativeLayout.TelIdOffset, 77);          // 슬롯도 없음
+                for (int i = 0; i < 40; i++)
+                    s = f.Tick();
+                f.I32(slot + LmuNativeLayout.TelIdOffset, PlayerId);
+                for (int w = 0; w < 4; w++)
+                    f.F64(wheel0 + w * 260 + 128, 0.0);                  // 타이어 값 비어 있음
+                for (int i = 0; i < 10; i++)
+                    s = f.Tick();
+                check(!f.Native.GuardFailed && !f.Native.Verified && !f.Native.PlayerSlotMissing
+                      && f.Source.Active == TelemetrySourceKind.LmuNative,
+                      (defer[0] == inRealtime ? "mInRealtime 0" : "mFinishStatus 3") + " → 판정 보류, 내장 유지");
+            }
 
             // 16) 보충: Extended가 있으면 세 필드만 거기서, 없으면 0/빈 문자열
             if (ext != null)
@@ -648,6 +858,18 @@ namespace TeamRadio56.Replay
             for (int i = 0; i < 40; i++)
                 f.Tick();
             check(f.Rf2.Polls == 1, "교차 확인은 세션에 한 번");
+            f.Wait(6.0);                 // 일시정지 → rF2(가짜는 항상 연결)로 잠깐 → 재개
+            for (int i = 0; i < 2 * TelemetrySource.CrossCheckAfterPolls; i++)
+                f.Tick();
+            int pollsAfterPause = f.Rf2.Polls;
+            check(f.Source.Active == TelemetrySourceKind.LmuNative
+                  && f.Warn.FindAll(l => l.Contains("교차 확인")).Count == 1,
+                  "일시정지·원천 전환 뒤에도 교차 확인은 매핑마다 한 번 (polls " + pollsAfterPause + ")");
+            f.ExitGame();
+            f.StartGame();
+            for (int i = 0; i < 2 * TelemetrySource.CrossCheckAfterPolls; i++)
+                f.Tick();
+            check(f.Warn.FindAll(l => l.Contains("교차 확인")).Count == 2, "게임 재시작(매핑 새로 염) → 교차 확인 다시");
             check(SnapshotCompare.Diff(first, first).Count == 0, "SnapshotCompare 자기 자신과 차이 0");
 
             // 19) 읽는 중 매핑이 사라짐 → Absent, rF2
@@ -658,6 +880,140 @@ namespace TeamRadio56.Replay
             check(f.Native.State == LmuNativeState.Absent && f.Source.Active == TelemetrySourceKind.Rf2Plugin,
                   "읽는 중 매핑 사라짐 → rF2");
 
+            // 20) LMU 종료 — 우리 핸들이 매핑을 살려 둬서 읽기는 계속 성공한다(마지막 프레임 그대로).
+            //     멈춤 5초 뒤 닫았다 다시 열기가 실패해야 정말 "없음": idle 안내 대신 src_waiting
+            f = new Fixture(blob);
+            f.Rf2.Conn = false;
+            for (int i = 0; i < 3; i++)
+                f.Tick();
+            f.Mem.GameAlive = false;
+            s = f.Wait(4.0);
+            check(f.Source.Active == TelemetrySourceKind.LmuNative && f.Mem.IsOpen, "종료 직후 4초: 아직 내장 (멈춤 판정 전)");
+            s = f.Wait(2.0);
+            check(f.Native.State == LmuNativeState.Absent && !f.Mem.IsOpen && f.Native.Recycles == 1
+                  && !f.Source.NativeIdle && !f.Source.NativeMappingPresent && f.Keys() == "src_waiting",
+                  "종료 + 멈춤 → 핸들 놓고 Absent → src_waiting (실제 " + f.Native.State + "/" + f.Keys() + ")");
+            check(s == null && !f.Source.Connected, "종료 → 연결 없음");
+            int closes = f.Mem.Closes;
+            for (int i = 0; i < 10; i++)
+                f.Wait(1.0);
+            check(f.Native.State == LmuNativeState.Absent && f.Mem.Closes == closes,
+                  "꺼진 동안은 없음 그대로 (닫을 핸들 없음)");
+            s = f.StartGame();
+            check(f.Source.Active == TelemetrySourceKind.LmuNative && s != null && f.Native.OpenCount == 2,
+                  "다시 실행 → 새로 열고 내장 (open " + f.Native.OpenCount + ")");
+
+            // 21) VersionLiveness (rF2 경로 연결 규칙) — 처음 본 버전·오래 못 보다 다시 본 버전은 기준값
+            var live = new VersionLiveness();
+            live.Observe(500, 10.0);
+            check(!live.Connected && live.Changes == 0, "처음 본 버전은 기준값 (연결 아님)");
+            live.Observe(500, 10.2);
+            check(!live.Connected, "같은 버전 → 연결 아님");
+            live.Observe(501, 10.4);
+            check(live.Connected && live.Changes == 1, "바뀜 → 연결");
+            live.Observe(501, 15.3);
+            check(live.Connected, "5초 안 → 유지");
+            live.Observe(501, 15.5);
+            check(!live.Connected, "5초 넘게 그대로 → 끊김");
+            live.Missing(15.6);
+            live.Observe(900, 40.0);
+            check(!live.Connected && live.Changes == 1, "25초 못 보다 다른 버전 → 기준값 (멈춘 버퍼를 새것으로 안 봄)");
+            live.Observe(901, 40.2);
+            check(live.Connected, "그다음 바뀜 → 연결");
+
+            // 22) 둘 다 있을 때 일시정지 — rF2는 내장 사용 중에도 버전을 따라가므로, 멈춘 rF2가
+            //     "방금 갱신됨"으로 넘어오지 않는다 (예전: rF2로 바뀌고 5초 더 연결)
+            f = new Fixture(blob, null, true);
+            for (int i = 0; i < 5; i++)
+                s = f.Tick();
+            check(f.Source.Active == TelemetrySourceKind.LmuNative && f.V.Tracks >= 5 && f.V.Live.Connected,
+                  "내장 사용 중 rF2 버전 추적 (tracks " + f.V.Tracks + ")");
+            int infoBefore = f.Info.Count;
+            s = f.Wait(4.0);
+            check(f.Source.Active == TelemetrySourceKind.LmuNative, "멈춤 4초 → 내장 유지");
+            s = f.Wait(2.0);
+            check(s == null && f.Source.Active == TelemetrySourceKind.None && !f.Source.Connected,
+                  "멈춤 6초 → 멈춘 rF2로 넘어가지 않고 대기 (실제 " + f.Source.Active + ")");
+            check(!f.Info.GetRange(infoBefore, f.Info.Count - infoBefore)
+                       .Exists(l => l.Contains("rF2 공유 메모리 플러그인 (DLL)")),
+                  "일시정지에 rF2 원천 로그 없음");
+            for (int i = 0; i < 10; i++)
+                s = f.Wait(1.0);
+            check(f.Source.Active == TelemetrySourceKind.None, "계속 멈춤 → 대기 유지");
+            s = f.Tick();
+            check(f.Source.Active == TelemetrySourceKind.LmuNative && s != null, "재개 → 내장");
+            // 경계: rF2가 내장보다 한 틱 늦게 마지막으로 바뀌어도, 내려놓은 뒤 다시 바뀌어야 넘어간다
+            f.Wait(4.9);
+            f.V.Version++;
+            s = f.Wait(0.2);
+            check(f.Source.Active == TelemetrySourceKind.None,
+                  "rF2 마지막 갱신이 조금 늦어도 멈춤이면 넘어가지 않음 (실제 " + f.Source.Active + ")");
+            // 내장만 멈추고 rF2는 움직이는 경우(내장 매핑만 갱신 중단)는 rF2가 움직이면 넘어간다
+            f.V.Version++;
+            s = f.Wait(0.2);
+            check(f.Source.Active == TelemetrySourceKind.Rf2Plugin && ReferenceEquals(s, f.Rf2.Snap),
+                  "내려놓은 뒤 rF2가 실제로 움직이면 rF2 (실제 " + f.Source.Active + ")");
+            // 값 검증 실패(게임은 돔)는 rF2 자체 판정대로 바로 넘어간다
+            f = new Fixture(blob, null, true);
+            for (int w = 0; w < 4; w++)
+                for (int j = 0; j < 3; j++)
+                    f.F64(wheel0 + w * 260 + 128 + j * 8, 80.0);
+            for (int i = 0; i < 3; i++)
+                s = f.Tick();
+            check(f.Native.GuardFailed && f.Source.Active == TelemetrySourceKind.Rf2Plugin && ReferenceEquals(s, f.Rf2.Snap),
+                  "가드 실패 + 살아 있는 rF2 → 같은 틱에 rF2 (실제 " + f.Source.Active + ")");
+            // 처음부터 멈춘 rF2(지난 실행에서 남은 매핑)는 연결로 보지 않는다
+            f = new Fixture(blob, null, true);
+            f.V.Moving = false;
+            f.Mem.Absent = true;
+            for (int i = 0; i < 10; i++)
+                s = f.Tick();
+            check(s == null && f.Source.Active == TelemetrySourceKind.None, "멈춘 rF2만 있음 → 대기");
+
+            // 23) 보충은 DLL이 이번 실행에서 살아 있을 때만 — 버전이 멈춘 Extended(지난 실행의 매핑,
+            //     종료 때 0으로 지운 버퍼)는 일관돼 보여도 쓰지 않는다
+            if (ext != null)
+            {
+                rF2Extended extValue;
+                ext(out extValue);
+                f = new Fixture(blob, null, true, extValue);
+                f.V.Moving = false;
+                for (int i = 0; i < 5; i++)
+                    s = f.Tick();
+                check(!f.Source.GapFill && !f.Native.HasExtended && s != null && s.Session.PitSpeedLimitKmh == 0
+                      && s.Session.StatusMessage == "" && f.Keys() == "src_native",
+                      "멈춘 Extended → 보충 안 함, 0 / 빈 문자열, src_native (실제 " + f.Keys() + ")");
+                f.V.Moving = true;
+                f.Tick();
+                s = f.Tick();
+                check(f.Source.GapFill && s != null && Math.Abs(s.Session.PitSpeedLimitKmh - 81.0) < 1e-6
+                      && f.Keys() == "src_native_gapfill",
+                      "DLL 버전이 움직이면 보충 (실제 " + f.Keys() + ")");
+                f.V.Moving = false;
+                for (int i = 0; i < 30; i++)
+                    s = f.Tick();
+                check(!f.Source.GapFill && s.Session.PitSpeedLimitKmh == 0, "DLL이 멈추면 5초 뒤 보충 중단");
+            }
+
+            // 24) 프레임이 계속 구조 검사에 걸림(형식 변화) — 처음엔 idle, 25프레임 뒤 거부 경고
+            f = new Fixture(blob);
+            f.Rf2.Conn = false;
+            f.I32(LmuNativeLayout.NumVehicles, 300);
+            s = f.Tick();
+            check(f.Native.State == LmuNativeState.Invalid && f.Keys() == "src_native_idle",
+                  "구조 이상 1프레임 → src_native_idle (Enable Plugins 안내 아님, 실제 " + f.Keys() + ")");
+            for (int i = 0; i < LmuNativeReader.InvalidFramesToReject; i++)
+                f.Tick();
+            check(f.Native.StructurallyRejected && f.Source.NativeRejected
+                  && f.Keys() == "src_native_rejected+src_native_rejected_nodll (warn)",
+                  "구조 이상 25프레임 → 거부 경고 (실제 " + f.Keys() + ")");
+            check(f.Warn.Exists(l => l.Contains("구조 검사에 걸림")), "구조 거부 경고 로그");
+            f.I32(LmuNativeLayout.NumVehicles, 5);
+            s = f.Tick();
+            check(!f.Native.StructurallyRejected && f.Source.Active == TelemetrySourceKind.LmuNative && s != null,
+                  "정상 프레임 하나면 풀림");
+            check(f.Keys() == "src_native", "정상 → src_native");
+
             foreach (string failure in failures)
                 Console.WriteLine("❌ " + failure);
             if (failures.Count > 0)
@@ -666,7 +1022,7 @@ namespace TeamRadio56.Replay
                 return 1;
             }
             Console.WriteLine("✅ LMU 내장 메모리 원천 선택·대체 규칙 " + pass
-                              + "건 통과 (매핑 없음·gameVersion 0·차량 수·크기·찢김·멈춤·0대·플레이어 슬롯·값 검증·보충)");
+                              + "건 통과 (매핑 없음·gameVersion 0·차량 수·크기·찢김·멈춤·게임 종료/재시작·0대·플레이어 슬롯·값 검증·보충·상태 줄)");
             return 0;
         }
     }

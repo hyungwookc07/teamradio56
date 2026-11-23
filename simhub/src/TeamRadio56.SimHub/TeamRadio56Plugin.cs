@@ -123,16 +123,22 @@ namespace TeamRadio56.SimHub
             get { return _reader.GapFill; }
         }
 
-        /// <summary>LMU_Data는 있는데 갱신이 없음 (메뉴·로딩·일시정지).</summary>
+        /// <summary>LMU_Data는 있는데 아직 쓸 수 없음 (메뉴·로딩·일시정지).</summary>
         public bool NativeIdle
         {
             get { return _reader.NativeIdle; }
         }
 
-        /// <summary>내장 메모리 값 검증 실패로 쓰지 않는 중인가.</summary>
-        public bool NativeGuardFailed
+        /// <summary>내장 메모리를 형식 문제(값 검증 실패·크기·구조)로 쓰지 않는 중인가.</summary>
+        public bool NativeRejected
         {
-            get { return _reader.NativeGuardFailed; }
+            get { return _reader.NativeRejected; }
+        }
+
+        /// <summary>설정 화면 데이터 원천 줄의 Loc 키들 (TelemetrySource.StatusLineKeys).</summary>
+        public string[] TelemetryStatusKeys(out bool warn)
+        {
+            return _reader.StatusLineKeys(out warn);
         }
 
         /// <summary>독립 실행 앱이 물러나도록 '플러그인 무전 중' 뮤텍스를 쥐거나 놓는다.</summary>

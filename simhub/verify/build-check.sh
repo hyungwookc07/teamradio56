@@ -52,6 +52,9 @@ if set(k) != set(e):
 code = "".join(open("src/TeamRadio56.SimHub/" + f, encoding="utf-8").read()
                for f in ("SettingsControl.cs", "TeamRadio56Plugin.cs"))
 used = set(re.findall(r'\bL\("([^"]+)"\)', code))
+# 데이터 원천 줄의 키는 Core가 고른다 (TelemetrySource.StatusLineKeys → SettingsControl이 L(key))
+src = open("src/TeamRadio56.Core/Telemetry/TelemetrySource.cs", encoding="utf-8").read()
+used |= set(re.findall(r'"(src_[a-z_]+)"', src))
 for note in ("no_kokoro", "pack_incomplete", "pack_partial"):
     used.add("voice_note_" + note)          # "voice_note_" + VoicePolicy.Note*
 missing = sorted(used - set(k))

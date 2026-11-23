@@ -259,7 +259,10 @@ A game update has probably changed how LMU shares its data. teamradio56 then
 stops reading it, so it never acts on wrong values. Until a fixed version is
 out, install the
 [rF2 Shared Memory Map Plugin](#optional-rf2-shared-memory-map-plugin);
-teamradio56 switches to it by itself. Please report it with your log.
+teamradio56 switches to it by itself. Enable Plugins is already on in this
+case, so you don't need to change that setting. teamradio56 checks the data
+again when you restart the game, so you don't need to restart SimHub. Please
+report it with your log.
 
 **No traffic calls in practice or qualifying.**
 **Race only** is on by default. Untick it under **Traffic / Spotter** if you

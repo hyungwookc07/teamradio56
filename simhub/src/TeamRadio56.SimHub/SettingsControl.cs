@@ -507,31 +507,16 @@ namespace TeamRadio56.SimHub
 
         /// <summary>
         /// 텔레메트리 원천 한두 줄 — LMU 내장 메모리(DLL 불필요) / rF2 DLL / 대기 중 안내.
-        /// 내장 메모리 값 검증이 실패했으면 그 사실을 덧붙이고 warn.
+        /// 어떤 줄을 고를지는 Core(TelemetrySource.StatusLineKeys)가 정한다 (셀프테스트로 검사):
+        /// 매핑이 있으면 Enable Plugins 안내(src_waiting)는 내지 않고, 형식 문제로 거부했으면 경고.
         /// </summary>
         private string SourceLine(out bool warn)
         {
-            warn = false;
-            string line;
-            switch (_plugin.TelemetrySourceActive)
-            {
-                case TelemetrySourceKind.LmuNative:
-                    line = _plugin.TelemetryGapFill ? L("src_native_gapfill") : L("src_native");
-                    break;
-                case TelemetrySourceKind.Rf2Plugin:
-                    line = L("src_rf2");
-                    break;
-                default:
-                    // 매핑은 있는데 갱신이 없으면 설정은 이미 켜진 것 — 세션 안내만
-                    line = _plugin.NativeIdle ? L("src_native_idle") : L("src_waiting");
-                    break;
-            }
-            if (_plugin.NativeGuardFailed)
-            {
-                warn = true;
-                line += "\n" + L("src_native_rejected");
-            }
-            return line;
+            string[] keys = _plugin.TelemetryStatusKeys(out warn);
+            var lines = new string[keys.Length];
+            for (int i = 0; i < keys.Length; i++)
+                lines[i] = L(keys[i]);
+            return string.Join("\n", lines);
         }
 
         /// <summary>

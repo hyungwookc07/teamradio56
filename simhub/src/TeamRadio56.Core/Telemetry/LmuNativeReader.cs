@@ -150,18 +150,34 @@ namespace TeamRadio56.Core.Telemetry
     /// 연결: 매핑 열림 + gameVersion &gt; 0 + mCurrentET나 SME_UPDATE_SCORING이 5초 안에 바뀜
     ///       + 5초 안에 정상 프레임 (rF2 경로의 "스코어링 버전이 움직이나"와 같은 규칙).
     ///
-    /// 값 검증(가드): 처음으로 플레이어가 차고 밖에 있는 프레임에서 플레이어 슬롯 mID 일치,
-    /// 타이어 온도 200~600 K, 공기압 0~1000 kPa, 마모 0~1, 모두 유한한지 본다. 3프레임 연속
-    /// 어긋나면(또는 플레이어 슬롯을 25프레임 못 찾으면) 형식이 바뀐 것으로 보고 GuardFailed를
-    /// 걸어 쓰지 않는다 (TelemetrySource가 rF2 DLL로 대체하고 크게 로그). 한 번 실패한 뒤에는
-    /// 매핑을 다시 열어도 검증을 통과해야만 다시 쓴다.
+    /// 핸들 재활용: Windows의 이름 있는 매핑은 핸들이 하나라도 열려 있으면 살아 있다 — 우리가
+    /// 쥐고 있으면 LMU가 꺼져도 마지막 프레임이 그대로 읽혀 "없음"을 영영 못 본다. 그래서
+    /// Stale(5초 멈춤)이거나 NotRunning이 5초 넘게 이어지면 2초마다 닫았다가 같은 틱에 다시 연다.
+    /// 다시 열리면(일시정지·메뉴 — 게임이 쥐고 있음) 상태는 그대로이고, 실패하면 정말 Absent다
+    /// (다음에 열 때 세션 상태·가드를 처음부터). 다음 게임 실행이 우리가 쥔 옛 매핑(옛 크기)을
+    /// 물려받지 않게 하는 효과도 있다.
+    ///
+    /// 값 검증(가드): 플레이어가 실제로 달리는 프레임(차고 밖·mInRealtime·완주/실격 아님·
+    /// 텔레메트리 슬롯을 mID로 찾음)에서 타이어 온도 200~600 K, 공기압 0~1000 kPa, 마모 0~1,
+    /// 모두 유한한지 본다. 3프레임 연속 어긋나면 형식이 바뀐 것으로 보고 GuardFailed를 걸어
+    /// 쓰지 않는다 (TelemetrySource가 rF2 DLL로 대체하고 크게 로그). 슬롯을 못 찾는 것은 형식
+    /// 신호로 쓰지 않는다 — 리타이어 후 관전, 온라인에서 차가 빠짐, 로딩, 모니터 화면처럼 정상
+    /// 상태에서도 생기므로 그 프레임은 플레이어 정보 없이 내보내고 판정을 미룬다(PlayerSlotMissing).
+    /// 한 번 실패한 뒤에는 검증을 다시 통과해야만 쓴다. 실패는 매핑을 다시 열 때(게임 재시작 —
+    /// 위 핸들 재활용으로 실제로 일어난다), gameVersion이 바뀔 때, 또는 5초 넘게 멈췄다가 다시
+    /// 움직일 때(같은 매핑을 물려받은 게임 재시작일 수 있음) 풀리고 다시 판정한다.
     /// </summary>
     public sealed class LmuNativeReader : ISnapshotSource
     {
         public const double StaleAfterSeconds = 5.0;
         public const int ReadRetries = 4;
         public const int GuardBadFramesToFail = 3;
-        public const int GuardMissingSlotFramesToFail = 25;
+        /// <summary>달리는 중인데 플레이어 슬롯이 이만큼(5Hz 약 5초) 계속 없으면 PlayerSlotMissing (진단만).</summary>
+        public const int MissingSlotFramesToReport = 25;
+        /// <summary>구조적으로 버린 프레임(Invalid)이 이만큼 이어지면 StructurallyRejected.</summary>
+        public const int InvalidFramesToReject = 25;
+        /// <summary>멈춘 매핑을 닫았다 다시 여는 간격 (Stale/NotRunning 5초 뒤부터).</summary>
+        public const double RecycleSeconds = 2.0;
 
         private const int WitnessSize = 27;
         private const int WitnessCompareFrom = 8;     // gameVersion부터 (SME_* 제외)
@@ -203,6 +219,9 @@ namespace TeamRadio56.Core.Telemetry
         private bool _everFailed;
         private int _badFrames;
         private int _missingSlotFrames;
+        private int _invalidFrames;
+        private double _notRunningSince = double.NaN;
+        private double _lastRecycle = double.NegativeInfinity;
 
         /// <param name="memory">LMU_Data 창.</param>
         /// <param name="clock">초 단위 단조 시계 (테스트용; null이면 실제 시계).</param>
@@ -237,6 +256,25 @@ namespace TeamRadio56.Core.Telemetry
         public int TornFrames { get; private set; }
         /// <summary>찢김으로 다시 읽은 횟수 (재시도 성공 포함, 진단용).</summary>
         public int Retries { get; private set; }
+        /// <summary>마지막으로 읽은 텔레메트리 헤더의 activeVehicles (진단용).</summary>
+        public int ActiveVehicles { get { return _active; } }
+        /// <summary>매핑을 새로 연 횟수 (게임 실행마다 하나 — 교차 확인을 매핑마다 한 번만 하는 데 쓴다).</summary>
+        public int OpenCount { get; private set; }
+        /// <summary>멈춘 매핑을 닫았다 다시 연 횟수 (진단·테스트용).</summary>
+        public int Recycles { get; private set; }
+        /// <summary>
+        /// 플레이어가 달리는 중인데 텔레메트리 슬롯을 25프레임 넘게 못 찾고 있다 — 플레이어 정보
+        /// 없이 내보내는 중 (형식 실패로 보지 않는다, 진단용).
+        /// </summary>
+        public bool PlayerSlotMissing { get; private set; }
+        /// <summary>
+        /// 매핑은 있는데 프레임이 25번 넘게 연속으로 구조 검사(차량 수 범위·유한한 시간)에 걸렸다 —
+        /// 게임 업데이트로 형식이 바뀐 듯 (정상 프레임 하나면 풀린다).
+        /// </summary>
+        public bool StructurallyRejected
+        {
+            get { return _invalidFrames >= InvalidFramesToReject; }
+        }
 
         /// <summary>
         /// 지금 이 소스를 써도 되는가: 연결됨 + 가드 통과(실패 없음). 예전에 실패한 적이 있으면
@@ -308,14 +346,23 @@ namespace TeamRadio56.Core.Telemetry
                 State = LmuNativeState.NotRunning;
                 Connected = false;
                 _haveLive = false;
+                if (double.IsNaN(_notRunningSince))
+                    _notRunningSince = now;
+                if (now - _notRunningSince > StaleAfterSeconds)
+                    Recycle(now);
                 return null;
             }
+            _notRunningSince = double.NaN;
 
             // 활성 판정 — 찢긴 프레임이라도 두 번째 감시 값은 실제로 읽은 값이다
             long etBits = BitConverter.ToInt64(_w2, 12);
             uint sme = BitConverter.ToUInt32(_w2, 0);
             if (!_haveLive || etBits != _lastEtBits || sme != _lastSme)
             {
+                // 5초 넘게 멈췄다가 다시 움직임 — 같은 매핑을 물려받은 게임 재시작일 수 있다.
+                // 실패한 가드는 한 번 더 기회를 준다 (_everFailed라 검증을 통과해야만 쓴다)
+                if (_haveLive && now - _lastChange > StaleAfterSeconds && GuardFailed)
+                    ResetGuard();
                 _haveLive = true;
                 _lastEtBits = etBits;
                 _lastSme = sme;
@@ -339,6 +386,7 @@ namespace TeamRadio56.Core.Telemetry
                 if (Assemble(out scoring, out telemetry, out reason))
                 {
                     good = true;
+                    _invalidFrames = 0;
                     State = LmuNativeState.Live;
                     _lastGood = now;
                     hasExt = TryExtended(out ext);
@@ -354,12 +402,18 @@ namespace TeamRadio56.Core.Telemetry
                 {
                     InvalidReason = reason;
                     State = LmuNativeState.Invalid;
+                    if (_invalidFrames < InvalidFramesToReject)
+                        _invalidFrames++;
                 }
             }
 
             Connected = alive && now - _lastGood <= StaleAfterSeconds;
             if (!alive)
+            {
                 State = LmuNativeState.Stale;
+                if (Recycle(now))
+                    return null;
+            }
             if (!Usable)
                 return null;
             if (good)
@@ -368,6 +422,23 @@ namespace TeamRadio56.Core.Telemetry
             return _haveLast
                 ? SnapshotBuilder.Build(_lastScoring, _lastTelemetry, _lastHasExt, _lastExt)
                 : null;
+        }
+
+        /// <summary>
+        /// 멈춘 매핑을 쥐고 있지 않는다: 2초마다 닫고 같은 틱에 다시 연다. 다시 못 열면(게임이
+        /// 꺼져 아무도 쥐지 않음) Absent — true. 다시 열리면 상태는 그대로 — false.
+        /// </summary>
+        private bool Recycle(double now)
+        {
+            if (now - _lastRecycle < RecycleSeconds)
+                return false;
+            _lastRecycle = now;
+            Recycles++;
+            _mem.Close();
+            if (_mem.TryOpen())
+                return false;     // 크기는 다음 틱에 원래 검사가 본다
+            Lost(LmuNativeState.Absent);
+            return true;
         }
 
         private void Lost(LmuNativeState state)
@@ -381,6 +452,9 @@ namespace TeamRadio56.Core.Telemetry
         /// <summary>매핑을 새로 열었다 — 게임 재시작일 수 있으니 상태를 비운다.</summary>
         private void ResetSession()
         {
+            OpenCount++;
+            _invalidFrames = 0;
+            _notRunningSince = double.NaN;
             _haveLast = false;
             _lastGood = double.NegativeInfinity;
             _lastChange = double.NegativeInfinity;
@@ -396,6 +470,7 @@ namespace TeamRadio56.Core.Telemetry
             GuardError = null;
             _badFrames = 0;
             _missingSlotFrames = 0;
+            PlayerSlotMissing = false;
         }
 
         private bool ReadWitness(byte[] w)
@@ -517,21 +592,37 @@ namespace TeamRadio56.Core.Telemetry
             }
         }
 
+        /// <summary>
+        /// 값 검증 — 플레이어가 실제로 달리는 프레임에서만. 슬롯을 못 찾는 것은 형식 신호가 아니다
+        /// (정상 상태에서도 생긴다): 그 프레임은 플레이어 없이 내보내고 판정을 미룬다.
+        /// </summary>
         private void CheckGuard(rF2Scoring scoring, rF2Telemetry telemetry)
         {
-            if (Verified || GuardFailed || _playerIdx < 0)
-                return;                       // 플레이어 없음(관전·메뉴) — 판정 보류
+            if (_playerIdx < 0)
+            {
+                _missingSlotFrames = 0;       // 플레이어 없음(관전·메뉴) — 판정 보류
+                PlayerSlotMissing = false;
+                return;
+            }
             rF2VehicleScoring me = scoring.mVehicles[_playerIdx];
-            if (me.mInGarageStall != 0)
-                return;                       // 차고 안 — 판정 보류
+            if (me.mInGarageStall != 0 || scoring.mScoringInfo.mInRealtime == 0 || me.mFinishStatus != 0)
+            {
+                _missingSlotFrames = 0;       // 차고 안·모니터·완주/리타이어/실격 — 판정 보류
+                PlayerSlotMissing = false;
+                return;
+            }
             if (_slot < 0)
             {
-                if (++_missingSlotFrames >= GuardMissingSlotFramesToFail)
-                    Fail("플레이어(mID " + me.mID + ") 텔레메트리 슬롯을 " + _missingSlotFrames
-                         + "프레임 동안 못 찾음 (activeVehicles " + _active + ")");
+                // 차가 빠졌거나(온라인 끊김) 전환 중 — 이 프레임만 플레이어 없이. 가드에는 세지 않는다
+                if (_missingSlotFrames < MissingSlotFramesToReport)
+                    _missingSlotFrames++;
+                PlayerSlotMissing = _missingSlotFrames >= MissingSlotFramesToReport;
                 return;
             }
             _missingSlotFrames = 0;
+            PlayerSlotMissing = false;
+            if (Verified || GuardFailed)
+                return;
             string bad = CheckPlayer(me, telemetry.mVehicles[0]);
             if (bad == null)
             {
@@ -544,11 +635,12 @@ namespace TeamRadio56.Core.Telemetry
             }
         }
 
-        /// <summary>플레이어 텔레메트리가 그럴듯한가 — 어긋나면 사유, 정상이면 null.</summary>
+        /// <summary>
+        /// 플레이어 텔레메트리가 그럴듯한가 — 어긋나면 사유, 정상이면 null. 슬롯은 mID가 맞을 때만
+        /// 고르므로(CopyFrame) mID는 여기서 다시 보지 않는다.
+        /// </summary>
         public static string CheckPlayer(rF2VehicleScoring me, rF2VehicleTelemetry vt)
         {
-            if (vt.mID != me.mID)
-                return "플레이어 mID 불일치 (스코어링 " + me.mID + " / 텔레메트리 " + vt.mID + ")";
             if (!Finite(vt.mFuel) || vt.mFuel < 0 || !Finite(vt.mEngineRPM)
                 || !Finite(vt.mLocalVel.x) || !Finite(vt.mLocalVel.y) || !Finite(vt.mLocalVel.z))
                 return "연료/RPM/속도 값이 이상함";

@@ -20,10 +20,12 @@ pathLateral, 횡속도, 블루 플래그, 섹터 플래그, FCY 피트 오픈 �
 
 1. **LMU 내장 공유 메모리 `LMU_Data`** (LMU 1.2+, 게임 설정 Settings → Gameplay → Enable Plugins +
    재시작) — `LmuNativeReader` + `LmuNativeLayout`. 쓸 만하면(열림·gameVersion > 0·차량 수
-   범위·값 검증·5초 안 갱신) 이것. rF2 Extended 버퍼가 있으면 거기 없는 세 필드(피트 제한속도,
-   상태/히스토리 메시지)만 보충.
-2. **rF2 Shared Memory Map Plugin** (`Rf2SharedMemoryReader`, 예전 그대로) — DLL만 있는 사용자는
-   동작이 같다.
+   범위·값 검증·5초 안 갱신) 이것. rF2 DLL이 이번 실행에서 살아 있으면(스코어링 버전이 움직임)
+   Extended 버퍼에서 거기 없는 세 필드(피트 제한속도, 상태/히스토리 메시지)만 보충. 멈춘 매핑은
+   5초 뒤부터 2초마다 닫았다 다시 열어 게임 종료(Absent)를 알아챈다 (핸들을 쥐면 매핑이 안 사라짐).
+2. **rF2 Shared Memory Map Plugin** (`Rf2SharedMemoryReader`) — DLL만 있는 사용자는 동작이 같다.
+   버전 규칙(`VersionLiveness`): 처음 본 버전·5초 넘게 못 보다 다시 본 버전은 기준값. 내장을 쓰는
+   동안에도 버전만 따라가고, 내장이 멈춰서 내려놓으면 rF2가 그 뒤 실제로 움직여야 넘어간다.
 3. 둘 다 없으면 "게임 대기".
 
 내장 메모리 레코드는 rF2 V01 레코드와 크기·앞부분이 같아서, 필요한 범위만 복사해 기존 rF2
@@ -381,8 +383,9 @@ UTF-8 `key=value` 줄, `#` 주석, 모르는 키는 무시 (뒤 버전이 키를
 명세만 보고 합성 `LMU_Data` 덤프·같은 상태의 rF2 버퍼·기대 스냅샷을 만들고, 러너
 `--lmu-native-dump`(실제 리더)와 `--rf2-dump` 출력을 대조한다 (C# 오프셋 실수를 C# 코드와 독립적으로
 잡고, 두 원천이 같은 스냅샷을 내는지 확인). `--lmu-native-selftest`는 원천 선택·대체 규칙(매핑 없음,
-gameVersion 0, 차량 수 범위 밖, 크기 부족, 찢긴 읽기, 멈춤, 차량 0대, 플레이어 슬롯, 값 검증 래치,
-Extended 보충)을 돈다.
+gameVersion 0, 차량 수 범위 밖, 크기 부족, 찢긴 읽기, 멈춤, 게임 종료 — 핸들이 매핑을 살려 둔 채
+내용이 멈춤 → 닫고 Absent → 재시작 시 가드 초기화, 차량 0대, 플레이어 슬롯, 값 검증 래치·다시 판정,
+Extended 보충(멈춘 DLL이면 안 함), 멈춘 rF2로 넘어가지 않기, 설정 화면 상태 줄 키)을 돈다.
 
 `verify/replay-check.sh`가 릴리스 도구도 검사한다: 음성 팩 기술자와 매니페스트를 Core
 파서(`ReleaseManifest`)로 대조하고, pwsh가 있으면 `ps-check.ps1`로 Windows PowerShell 5
