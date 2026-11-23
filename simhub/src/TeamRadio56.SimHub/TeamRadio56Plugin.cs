@@ -198,6 +198,7 @@ namespace TeamRadio56.SimHub
             _voice = null;
             _radio = null;
             _player = null;
+            _engineInputs = null;
             if (radio != null)
                 radio.Stop();
             if (voice != null)
@@ -212,6 +213,41 @@ namespace TeamRadio56.SimHub
         /// <summary>음성 팩(오디오 캐시) 진단 — 설정 화면 엔진 섹션에 표시.</summary>
         public string BuiltinCacheDir { get; private set; }
         public int BuiltinCacheCount { get; private set; }
+
+        // 지금 엔진이 시작할 때 읽은 설정의 지문 (InitBuiltin) — 엔진이 없으면 null
+        private volatile string _engineInputs;
+
+        /// <summary>
+        /// 엔진이 시작할 때 읽은 뒤로 바뀐 설정이 있나 — [엔진 재시작]을 눌러야 반영된다
+        /// (설정 화면이 버튼 옆에 안내한다). 매 틱 다시 읽는 음성 출력만 바꿨으면 false.
+        /// 바꿨다가 원래 값으로 되돌려도 false.
+        /// </summary>
+        public bool EngineSettingsPending
+        {
+            get
+            {
+                string applied = _engineInputs;
+                PluginSettings settings = Settings;
+                return applied != null && settings != null
+                    && !string.Equals(applied, EngineInputs(settings), StringComparison.Ordinal);
+            }
+        }
+
+        /// <summary>
+        /// InitBuiltin이 엔진을 만들 때 한 번만 읽는 설정의 지문 (음성 팩 폴더는 그 안의 CreateRadio →
+        /// ResolveCacheDir가 읽는다). 음성 출력(VoiceEnabled)은 매 틱 다시 읽어 넣지 않는다.
+        /// InitBuiltin이 읽는 설정을 늘리면 여기에도 넣는다 — 빠지면 그 설정을 바꿔도 안내가 안 뜬다
+        /// (build-check가 검사). 슬라이더가 같은 칸으로 돌아오면(0.2 간격의 4.6000000000000005 등)
+        /// 같은 값으로 보게 소수는 셋째 자리까지.
+        /// </summary>
+        private static string EngineInputs(PluginSettings s)
+        {
+            return string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "{0:0.###}|{1}|{2:0.###}|{3:0.###}|{4}|{5}|{6}|{7}|{8}",
+                s.CooldownScale, s.RequireRealtime, s.AlongsideMeters, s.StartSpotterSeconds,
+                s.SideInvert, s.TrafficRaceOnly, s.LapTimeEveryLap, s.StatusEveryLaps,
+                s.AudioCacheDir ?? "");
+        }
 
         // -- IWPFSettingsV2 --------------------------------------------------
 
@@ -447,6 +483,8 @@ namespace TeamRadio56.SimHub
         /// <summary>내장(C#) 엔진 초기화 — 분석기 9종 + 보이스 워커 + kokoro 음성 팩.</summary>
         private void InitBuiltin()
         {
+            // 이 엔진이 읽는 설정 — 설정 화면의 "설정이 바뀌었습니다" 안내 기준 (EngineSettingsPending)
+            _engineInputs = EngineInputs(Settings);
             var cfg = new EngineSettings
             {
                 CooldownScale = Settings.CooldownScale,

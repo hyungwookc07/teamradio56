@@ -38,7 +38,9 @@ fi
 
 # 설정 화면 문자열 — ko/en 키가 같고, 코드가 쓰는 키가 다 있고, 코드가 안 쓰는 키가 없고,
 # 음성 팩이 없을 때의 안내는 [음성 팩 업데이트]를 가리킨다 (다른 목소리로 대신 말한다고 하지 않는다).
-# 호버 설명 — hint_*/*_hint 키는 툴팁 전용이라 늘 보이는 글씨로 그리면 실패한다.
+# 호버 설명 — hint_*/*_hint 키는 툴팁 전용이라 늘 보이는 글씨로 그리면 실패한다. 툴팁을 단 패널은
+# 투명 배경(틈에서 툴팁이 닫혔다 다시 뜨지 않게)과 스크린 리더용 reader가 있어야 하고, 엔진이 시작할 때만
+# 읽는 설정은 전부 [엔진 재시작] 안내의 지문(EngineInputs)에 들어가야 한다.
 python3 - <<'PY'
 import re, sys
 def read(p):
@@ -97,14 +99,16 @@ for key, text in list(k.items()) + list(e.items()):
         bad.append(key + ": 빠진 기능을 가리킴 — " + text[:60])
 
 # 호버 설명 가드 — hint_*/*_hint(와 예전 subtitle) 키는 툴팁 전용이다. L("…")을 감싼 괄호를
-# 거슬러 올라가 그 글이 들어가는 호출과 인자 위치를 본다: Tip(el, ●) / Row(…, …, …, ●) /
-# Section(…, …, ●) / UpdateTip(…, …, ref …, ●)만 허용 (string.Format·+ 이어 붙이기는 통과).
+# 거슬러 올라가 그 글이 들어가는 호출과 인자 위치를 본다: Tip(el, ●[, reader]) / Row(…, …, …, ●) /
+# Section(…, …, ●) / UpdateTip(…, …, ref …, ●, reader)만 허용 (string.Format·+ 이어 붙이기는 통과).
 # TextBlock.Text·SetText·Content 등 늘 보이는 글씨로 가면 실패한다.
 def blank(m):
     return re.sub(r"[^\n]", " ", m.group(0))
 # 문자열·문자·주석 속 괄호에 속지 않게 같은 길이 공백으로 지운 사본에서 괄호를 센다
-flat = re.sub(r'@"(?:[^"]|"")*"|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)+\'|//[^\n]*|/\*.*?\*/',
-              blank, ui, flags=re.S)
+STRIP = r'@"(?:[^"]|"")*"|"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)+\'|//[^\n]*|/\*.*?\*/'
+def flatten(text):
+    return re.sub(STRIP, blank, text, flags=re.S)
+flat = flatten(ui)
 TIP_SINKS = {"Tip": 1, "Row": 3, "Section": 2, "UpdateTip": 3}   # 호출 → 설명 인자 위치(0부터)
 def sink_of(pos):
     while True:
@@ -137,20 +141,22 @@ for m in re.finditer(HINT_KEY, ui):
         where = "%s(%d번째 인자)" % (name, arg + 1) if name else "대입/초기화"
         bad.append("SettingsControl.cs:%d: 설명 %s를 늘 보이는 글씨로 씀 (%s) — Tip / Row·Section의 hint로"
                    % (line, m.group(1), where))
-def body(name):
-    m = re.search(r"\b" + name + r"\s*\([^)]*\)\s*\{", flat)
-    if not m:
-        return None
-    depth, i = 0, m.end() - 1
-    while i < len(flat):
-        depth += {"{": 1, "}": -1}.get(flat[i], 0)
+def block(text, start):
+    # text[start] == "{" → 짝이 맞는 "}"까지의 안쪽 (못 찾으면 None)
+    depth, i = 0, start
+    while i < len(text):
+        depth += {"{": 1, "}": -1}.get(text[i], 0)
         if depth == 0:
-            return flat[m.end():i]
+            return text[start + 1:i]
         i += 1
     return None
+def body(name, text=None):
+    text = flat if text is None else text
+    m = re.search(r"\b" + name + r"\s*\([^)]*\)\s*\{", text)
+    return block(text, m.end() - 1) if m else None
 for sink, param in (("Row", "hint"), ("Section", "hint"), ("UpdateTip", "text")):
     b = body(r"(?:StackPanel|void)\s+" + sink)
-    if b is None or not re.search(r"\bTip\(\s*\w+\s*,\s*" + param + r"\s*\)", b):
+    if b is None or not re.search(r"\bTip\(\s*\w+\s*,\s*" + param + r"\s*[,)]", b):
         bad.append(sink + "(): " + param + "를 Tip(…)으로 넘기지 않음")
     elif re.search(r"\b(?:Text|Content)\s*=\s*" + param + r"\b", b):
         bad.append(sink + "(): " + param + "를 늘 보이는 글씨로 그림")
@@ -161,13 +167,71 @@ elif re.search(r"\b(?:Foreground|Background)\b", tip):
     bad.append("Tip(): 툴팁 글자색·배경을 박음 — SimHub 테마 ToolTip 스타일에 맡긴다")
 if re.search(r"\bHint\s*\(", flat):
     bad.append("SettingsControl.cs: 예전 회색 설명 헬퍼 Hint()가 돌아옴 — Tip / Row·Section의 hint로")
+# 툴팁을 단 패널 — (1) 배경이 null인 패널은 자식 위에서만 마우스가 걸려, 글자와 ⓘ 사이 여백·라벨 칸의
+# 빈 곳·라벨과 컨트롤 사이를 지날 때 툴팁이 닫혔다가 다시 뜬다 → 초기화에 Background(투명이라도)를.
+# (2) 패널은 AutomationPeer가 없어 거기 단 HelpText는 스크린 리더가 못 읽는다 → Tip(패널, 글, reader).
+# 툴팁 주인이 이 파일에서 new 패널로 만든 변수일 때만 본다 (버튼·매개변수는 해당 없음).
+PANEL = r"(?:StackPanel|DockPanel|WrapPanel|Grid|Canvas|UniformGrid)"
+def top_args(text, open_paren):
+    # text[open_paren] == "(" → 최상위 인자 수
+    depth, commas, i = 0, 0, open_paren
+    while i < len(text):
+        c = text[i]
+        if c in "({[":
+            depth += 1
+        elif c in ")}]":
+            depth -= 1
+            if depth == 0:
+                return commas + 1
+        elif c == "," and depth == 1:
+            commas += 1
+        i += 1
+    return -1
+for m in re.finditer(r"\b(Tip|UpdateTip)\(\s*(\w+)\s*,", flat):
+    call, owner = m.group(1), m.group(2)
+    decls = [d for d in re.finditer(r"\b" + owner + r"\s*=\s*new\s+" + PANEL + r"\b(\s*\(\s*\))?\s*(\{)?", flat)
+             if not re.search(r"\bprivate\b[^\n]*$", flat[:d.start()])]   # 필드 자리 표시자는 Build가 갈아끼운다
+    if not decls:
+        continue
+    line = ui.count("\n", 0, m.start()) + 1
+    assigned = re.search(r"\b" + owner + r"\.Background\s*=", flat)
+    for d in decls:
+        init = block(flat, d.start(2)) if d.group(2) else None
+        if not assigned and (init is None or not re.search(r"\bBackground\s*=", init)):
+            bad.append("SettingsControl.cs:%d: 툴팁을 단 패널 %s에 배경이 없음 — 틈에서 툴팁이 닫혔다 다시 뜬다"
+                       " (Background = HitArea)" % (ui.count("\n", 0, d.start()) + 1, owner))
+    if call == "Tip" and top_args(flat, m.end(1)) < 3:
+        bad.append("SettingsControl.cs:%d: Tip(%s, …)의 HelpText가 패널에 — 스크린 리더가 못 읽는다"
+                   " (Tip(패널, 글, 컨트롤·TextBlock))" % (line, owner))
+if not re.search(r"Background\s*=\s*HitArea", flat) or not re.search(r"HitArea\s*=\s*Brushes\.Transparent", flat):
+    bad.append("SettingsControl.cs: 툴팁 패널의 투명 배경(HitArea)이 없음")
+
+# [엔진 재시작] 옆 "설정이 바뀌었습니다" — 엔진이 시작할 때만 읽는 설정(InitBuiltin, 음성 팩 폴더는
+# ResolveCacheDir)은 전부 EngineInputs 지문에 있어야 바꿨을 때 안내가 뜬다. 매 틱 읽는 VoiceEnabled만 뺀다.
+pflat = flatten(read("src/TeamRadio56.SimHub/TeamRadio56Plugin.cs"))
+init_b = body(r"void\s+InitBuiltin", pflat)
+cache_b = body(r"string\s+ResolveCacheDir", pflat)
+fp_b = body(r"string\s+EngineInputs", pflat)
+if init_b is None or cache_b is None or fp_b is None:
+    bad.append("TeamRadio56Plugin.cs: InitBuiltin / ResolveCacheDir / EngineInputs를 못 찾음")
+else:
+    reads = set(re.findall(r"\bSettings\.(\w+)", init_b)) | set(re.findall(r"\b[Ss]ettings\.(\w+)", cache_b))
+    lost = sorted(reads - {"VoiceEnabled"} - set(re.findall(r"\bs\.(\w+)", fp_b)))
+    if lost:
+        bad.append("TeamRadio56Plugin.EngineInputs(): 엔진이 시작할 때 읽는 설정이 빠짐 — " + ", ".join(lost)
+                   + " (바꿔도 [엔진 재시작] 안내가 안 뜬다)")
+    if not re.search(r"_engineInputs\s*=\s*EngineInputs\(\s*Settings\s*\)", init_b):
+        bad.append("TeamRadio56Plugin.InitBuiltin(): 읽은 설정의 지문(_engineInputs)을 남기지 않음")
+if "EngineSettingsPending" not in flat or 'L("engine_apply_note")' not in ui:
+    bad.append("SettingsControl.cs: [엔진 재시작] 옆 '설정이 바뀌었습니다' 안내(EngineSettingsPending)가 없음")
 if bad:
     print("❌ 설정 화면 문자열(Loc.cs / SettingsControl.cs):")
     for b in bad:
         print("   " + b)
     sys.exit(1)
 tips = len(re.findall(HINT_KEY, ui))
-print(f"✅ 설정 화면 문자열 {len(k)}개 (ko/en 일치, 안 쓰는 키 없음, 음성 팩 안내 확인, 호버 설명 {tips}곳은 툴팁으로만)")
+print(f"✅ 설정 화면 문자열 {len(k)}개 (ko/en 일치, 안 쓰는 키 없음, 음성 팩 안내 확인, 호버 설명 {tips}곳은 툴팁으로만,"
+      " 툴팁 패널 배경·reader, 엔진 재시작 안내 지문)")
 PY
 
 # LMU 내장 공유 메모리 명세 — pack(4) 오프셋·크기 재계산, rF2 공통 필드가 rf2data.py와 같은지.

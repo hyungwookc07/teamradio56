@@ -38,6 +38,9 @@ namespace TeamRadio56.SimHub
             { "btn_engine_restart", "엔진 재시작" },
             { "engine_hint", "C# 내장 엔진 — 설치 없이 판단/콜과 영어 무전을 kokoro 음성 팩 한 목소리로 냅니다. 음성 팩에 없는 멘트는 다른 목소리로 읽지 않고 자막·최근 무전에만 남깁니다." },
             { "engine_apply_hint", "설정을 바꾸면 [엔진 재시작]을 눌러야 엔진에 반영됩니다." },
+            // 늘 보이는 안내 — 엔진이 아직 안 읽은 변경이 있을 때만 [엔진 재시작] 옆에
+            { "engine_apply_note", "설정이 바뀌었습니다 — [엔진 재시작]을 누르면 반영됩니다" },
+            { "hint_engine_restart", "바꾼 설정을 엔진에 반영합니다 (엔진을 내렸다가 다시 띄웁니다)" },
             { "row_cache_dir", "음성 팩 폴더" },
             { "hint_cache_dir", "비우면 자동 탐색 (DLL 옆 audio_cache → teamradio56-engine\\audio_cache)" },
             { "row_voice_on", "음성 출력" },
@@ -171,6 +174,8 @@ namespace TeamRadio56.SimHub
             { "btn_engine_restart", "Restart engine" },
             { "engine_hint", "Native C# engine — calls and English radio in one voice, the Kokoro voice pack, with nothing to install. Lines missing from the voice pack are never read in another voice; they show as subtitles and in recent radio only." },
             { "engine_apply_hint", "After changing settings, press [Restart engine] to apply." },
+            { "engine_apply_note", "Settings changed — press [Restart engine] to apply" },
+            { "hint_engine_restart", "Applies changed settings to the engine (stops and restarts it)" },
             { "row_cache_dir", "Voice pack folder" },
             { "hint_cache_dir", "empty = auto-detect (audio_cache next to the DLL → teamradio56-engine\\audio_cache)" },
             { "row_voice_on", "Voice output" },

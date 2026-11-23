@@ -28,6 +28,10 @@ namespace TeamRadio56.SimHub
         private static readonly Brush Accent = new SolidColorBrush(Color.FromRgb(0x4F, 0xC3, 0xF7));
         private static readonly Brush Ok = new SolidColorBrush(Color.FromRgb(0x81, 0xC7, 0x84));
         private static readonly Brush Off = new SolidColorBrush(Color.FromRgb(0xE5, 0x73, 0x73));
+        // 툴팁을 단 패널의 배경. 배경이 없는(null) 패널은 자식 위에서만 마우스가 걸려, 라벨 칸의 빈 곳·
+        // 글자와 ⓘ 사이 여백·라벨과 컨트롤 사이를 지날 때 툴팁이 닫혔다가 새 자리에서 다시 뜬다
+        // (깜빡이며 튄다). 투명으로라도 칠하면 패널 전체가 툴팁 영역이 된다
+        private static readonly Brush HitArea = Brushes.Transparent;
 
         // 툴팁 — 기본 표시 시간 5초는 문단 하나 읽기에 짧다. 폭은 긴 설명이 화면 끝까지
         // 늘어지지 않게 줄바꿈하는 기준
@@ -47,6 +51,8 @@ namespace TeamRadio56.SimHub
         private DockPanel _engineInfo = new DockPanel();
         private Border _engineMark = new Border();
         private string _engineTip;
+        // [엔진 재시작] 옆 "설정이 바뀌었습니다" — 엔진이 아직 안 읽은 변경이 있을 때만 보인다
+        private TextBlock _enginePending = new TextBlock();
         private TextBlock _testSpeak = new TextBlock();
         private readonly DispatcherTimer _timer = new DispatcherTimer();
 
@@ -137,17 +143,23 @@ namespace TeamRadio56.SimHub
             var root = new StackPanel { Margin = new Thickness(14, 10, 14, 20) };
 
             var header = new StackPanel { Orientation = Orientation.Horizontal };
-            // 제목 + ⓘ — 무엇을 하는 플러그인인지는 호버로, 늘 보이는 줄은 버전만
-            var title = new StackPanel { Orientation = Orientation.Horizontal };
-            title.Children.Add(new TextBlock
+            // 제목 + ⓘ — 무엇을 하는 플러그인인지는 호버로, 늘 보이는 줄은 버전만.
+            // 투명 배경: 글자와 ⓘ 사이 여백도 툴팁 영역이 되게 (HitArea 주석 참고)
+            var title = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Background = HitArea,
+            };
+            var titleText = new TextBlock
             {
                 Text = "teamradio56",
                 FontSize = 20,
                 FontWeight = FontWeights.Bold,
                 Foreground = Accent,
-            });
+            };
+            title.Children.Add(titleText);
             title.Children.Add(InfoMark());
-            Tip(title, L("app_hint"));
+            Tip(title, L("app_hint"), titleText);
             header.Children.Add(title);
             // 화면 언어 전환 — 헤더 우측, 바꾸면 화면을 즉시 다시 그린다
             var langCombo = MakeCombo(PluginSettings.UiLanguageChoices,
@@ -262,6 +274,7 @@ namespace TeamRadio56.SimHub
             _engineInfo = new DockPanel
             {
                 HorizontalAlignment = HorizontalAlignment.Left,
+                Background = HitArea,   // 글과 ⓘ 사이 여백에서도 툴팁이 닫히지 않게
                 Margin = new Thickness(0, 2, 0, 6),
             };
             _engineInfo.Children.Add(_engineMark);
@@ -275,16 +288,30 @@ namespace TeamRadio56.SimHub
                 S.AudioCacheDir = v;
             }), L("hint_cache_dir"));
 
-            var buttons = new StackPanel
+            // 버튼 + 오른쪽에 "설정이 바뀌었습니다" 안내 — 같은 줄이라 높이를 더 쓰지 않는다 (좁으면 안내만 줄바꿈)
+            var buttons = new DockPanel
             {
-                Orientation = Orientation.Horizontal,
+                LastChildFill = true,
                 Margin = new Thickness(0, 6, 0, 0),
             };
             // 재시작은 보이스 워커 정지(최대 10초)를 기다린다 — UI 스레드 밖에서
             var restart = (Button)MakeButton(L("btn_engine_restart"),
                 () => InBackground(_plugin.RestartEngine));
-            Tip(restart, L("engine_apply_hint"));
+            restart.VerticalAlignment = VerticalAlignment.Center;
+            Tip(restart, L("hint_engine_restart"));
+            DockPanel.SetDock(restart, Dock.Left);
             buttons.Children.Add(restart);
+            // 엔진이 시작할 때만 읽는 설정을 바꿨으면 눌러야 반영된다 — 사용자가 해야 할 일이라
+            // 호버로 숨기지 않고, 아직 반영 안 된 변경이 있을 때만 Refresh가 켠다
+            _enginePending = new TextBlock
+            {
+                Text = L("engine_apply_note"),
+                Foreground = Accent,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = Visibility.Collapsed,
+            };
+            buttons.Children.Add(_enginePending);
             box.Children.Add(buttons);
         }
 
@@ -497,6 +524,13 @@ namespace TeamRadio56.SimHub
                 block.Foreground = brush;
         }
 
+        private static void SetVisible(UIElement el, bool visible)
+        {
+            Visibility v = visible ? Visibility.Visible : Visibility.Collapsed;
+            if (el.Visibility != v)
+                el.Visibility = v;
+        }
+
         private void Refresh()
         {
             try
@@ -519,7 +553,10 @@ namespace TeamRadio56.SimHub
                 // 캐시 폴더 경로는 ⓘ 툴팁으로 — "무전이 안 들린다" 진단의 첫 확인 지점이라
                 // 숨기지 않고 블록에 붙여 둔다 (긴 경로가 매초 화면을 차지하지 않게)
                 UpdateTip(_engineInfo, _engineMark, ref _engineTip,
-                    cacheDir == null ? null : string.Format(L("cache_path_hint"), cacheDir));
+                    cacheDir == null ? null : string.Format(L("cache_path_hint"), cacheDir),
+                    _engineState);
+                // 엔진이 시작할 때 읽은 뒤로 바뀐 설정 → [엔진 재시작] 옆 안내 (음성 출력은 바로 반영돼 제외)
+                SetVisible(_enginePending, _plugin.EngineSettingsPending);
 
                 RefreshUpdate();
 
@@ -827,23 +864,26 @@ namespace TeamRadio56.SimHub
         /// </summary>
         private StackPanel Section(StackPanel parent, string title, string hint = null)
         {
+            // 제목 폭만큼(Left)만, 투명 배경으로 — 글자와 ⓘ 사이 여백에서도 툴팁이 닫히지 않게
             var head = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Left,
+                Background = HitArea,
                 Margin = new Thickness(0, 18, 0, 4),
             };
-            head.Children.Add(new TextBlock
+            var text = new TextBlock
             {
                 Text = title,
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 Foreground = Accent,
                 VerticalAlignment = VerticalAlignment.Center,
-            });
+            };
+            head.Children.Add(text);
             if (!string.IsNullOrEmpty(hint))
                 head.Children.Add(InfoMark());
-            Tip(head, hint);
+            Tip(head, hint, text);
             parent.Children.Add(head);
             var panel = new StackPanel();
             parent.Children.Add(panel);
@@ -851,16 +891,19 @@ namespace TeamRadio56.SimHub
         }
 
         /// <summary>
-        /// 라벨 | 컨트롤 한 줄. hint는 컨트롤 오른쪽 회색 글씨가 아니라 줄 전체(라벨·ⓘ·컨트롤)의
-        /// 툴팁이다 — 줄에 단 툴팁 하나를 자식들이 물려받아, 라벨에서 컨트롤로 옮겨 가도
-        /// 툴팁이 다시 뜨며 깜빡이지 않는다.
+        /// 라벨 | 컨트롤 한 줄. hint는 컨트롤 오른쪽 회색 글씨가 아니라 줄 전체(라벨 칸·ⓘ·컨트롤)의
+        /// 툴팁이다. 줄은 투명 배경이라 라벨 칸의 빈 곳과 ⓘ·컨트롤 사이 틈도 줄의 툴팁 영역 —
+        /// 라벨에서 컨트롤로 옮겨 가도 툴팁이 닫혔다 다시 뜨지 않는다.
         /// </summary>
         private StackPanel Row(StackPanel parent, string label, UIElement control, string hint = null)
         {
             bool hasHint = !string.IsNullOrEmpty(hint);
+            // 폭은 내용만큼(Left) — 줄 오른쪽 빈 화면에서까지 툴팁이 뜨지 않게
             var row = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Background = HitArea,
                 Margin = new Thickness(0, 3, 0, 3),
             };
             // 라벨 칸은 170px 고정 — ⓘ가 붙어도 컨트롤 열이 줄을 맞춘다 (ⓘ 몫 20px은 라벨 폭에서)
@@ -870,39 +913,62 @@ namespace TeamRadio56.SimHub
                 Width = 170,
                 VerticalAlignment = VerticalAlignment.Center,
             };
-            cell.Children.Add(new TextBlock
+            var text = new TextBlock
             {
                 Text = label,
                 MaxWidth = hasHint ? 150 : 170,
                 Foreground = Fg,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
-            });
+            };
+            cell.Children.Add(text);
             if (hasHint)
                 cell.Children.Add(InfoMark());
             row.Children.Add(cell);
             row.Children.Add(control);
-            Tip(row, hint);
-            // 스크린 리더는 포커스를 받은 컨트롤의 HelpText를 읽는다
-            if (hasHint)
-                AutomationProperties.SetHelpText(control, hint);
+            // 스크린 리더는 포커스를 받은 컨트롤의 이름(라벨)과 HelpText(설명)를 읽는다 —
+            // 슬라이더 줄은 컨트롤이 패널이라 그 안의 Slider에
+            UIElement focus = FocusTarget(control);
+            if (focus != null)
+                AutomationProperties.SetLabeledBy(focus, text);
+            Tip(row, hint, focus ?? text);
             parent.Children.Add(row);
             return row;   // 호출부가 Visibility를 토글할 수 있게
+        }
+
+        /// <summary>컨트롤이면 그 자신, 패널이면 그 안의 첫 컨트롤 (슬라이더 줄의 Slider). 없으면 null.</summary>
+        private static UIElement FocusTarget(UIElement el)
+        {
+            if (el is Control)
+                return el;
+            var panel = el as Panel;
+            if (panel == null)
+                return null;
+            foreach (UIElement child in panel.Children)
+            {
+                UIElement found = FocusTarget(child);
+                if (found != null)
+                    return found;
+            }
+            return null;
         }
 
         /// <summary>
         /// 호버 설명(툴팁)을 단다. 빈 글이면 툴팁을 지운다.
         /// 글자색·배경은 SimHub 테마의 ToolTip 스타일에 맡긴다 — 여기서 Fg(Gainsboro)를 박으면
         /// 밝은 툴팁 위에서 글씨가 안 보인다. 긴 설명은 TipMaxWidth에서 줄바꿈.
+        /// 같은 글을 스크린 리더용 HelpText로 reader(없으면 el)에 — 패널은 AutomationPeer가 없어
+        /// 거기 단 HelpText는 아무도 읽지 못하므로, 툴팁을 패널에 달 때는 컨트롤·TextBlock을 넘긴다.
         /// </summary>
-        private static void Tip(FrameworkElement el, string text)
+        private static void Tip(FrameworkElement el, string text, UIElement reader = null)
         {
             if (el == null)
                 return;
+            UIElement help = reader ?? el;
             if (string.IsNullOrEmpty(text))
             {
                 el.ClearValue(FrameworkElement.ToolTipProperty);
-                el.ClearValue(AutomationProperties.HelpTextProperty);
+                help.ClearValue(AutomationProperties.HelpTextProperty);
                 return;
             }
             el.ToolTip = new TextBlock
@@ -914,22 +980,22 @@ namespace TeamRadio56.SimHub
             ToolTipService.SetShowDuration(el, TipShowMs);
             ToolTipService.SetInitialShowDelay(el, TipDelayMs);
             ToolTipService.SetShowOnDisabled(el, true);
-            AutomationProperties.SetHelpText(el, text);
+            AutomationProperties.SetHelpText(help, text);
         }
 
         /// <summary>
         /// 매초 갱신되는 블록의 툴팁 — 글이 바뀔 때만 Tip을 부른다 (매초 새 툴팁을 만들면
-        /// 열려 있던 툴팁이 깜빡인다). 빈 글이면 툴팁과 ⓘ를 함께 숨긴다.
+        /// 열려 있던 툴팁이 깜빡인다). 빈 글이면 툴팁과 ⓘ를 함께 숨긴다. reader는 Tip과 같다.
         /// </summary>
         private static void UpdateTip(FrameworkElement owner, FrameworkElement mark,
-                                      ref string current, string text)
+                                      ref string current, string text, UIElement reader)
         {
             if (string.IsNullOrEmpty(text))
                 text = null;
             if (string.Equals(current, text, StringComparison.Ordinal))
                 return;
             current = text;
-            Tip(owner, text);
+            Tip(owner, text, reader);
             mark.Visibility = text != null ? Visibility.Visible : Visibility.Collapsed;
         }
 
