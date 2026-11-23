@@ -372,9 +372,12 @@ attest(`attest-check.sh files`), publish(`publish-release.sh`)가 각각 보고�
 - **0.18** — 파이썬 엔진 옆의 오디오 캐시는 찾지 않는다. 그걸 쓰던 경우 [음성 팩 업데이트]로 DLL 옆에
   새로 받거나 설정의 **음성 팩 폴더**에 그 경로를 넣는다.
 - **0.19** — 음성 팩 `kokoro-v017` (zip 8개, 약 185 MB / 화면 표기 약 176 MB).
-- **다음 버전 (미출시)** — LMU 1.2+ 내장 공유 메모리(`LMU_Data`)를 직접 읽어 rF2 Shared Memory Map
+- **0.20** — LMU 1.2+ 내장 공유 메모리(`LMU_Data`)를 직접 읽어 rF2 Shared Memory Map
   Plugin(DLL)이 선택이 된다 (게임 Settings → Gameplay → Enable Plugins + 재시작). DLL은 대체 수단으로
   남고, 있으면 피트 제한속도·페널티 메시지를 거기서 보충한다. 실차 확인 전 ([DATA_SOURCES.md](DATA_SOURCES.md#lmu-내장-공유-메모리-lmu_data)).
+  음성 팩은 `kokoro-v017` 그대로.
+- **0.20.1** — 설정 화면의 항목·섹션 설명은 늘 보이는 글씨 대신 마우스를 올리면 뜬다 (ⓘ). 엔진이 시작할
+  때만 읽는 설정을 바꾸면 [엔진 재시작] 옆에 반영 안내가 뜬다. 음성 팩은 `kokoro-v017` 그대로.
 
 ## 개발 마일스톤
 
