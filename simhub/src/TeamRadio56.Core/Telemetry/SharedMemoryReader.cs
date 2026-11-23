@@ -120,7 +120,7 @@ namespace TeamRadio56.Core.Telemetry
     /// 연결 판정은 "버퍼가 열렸는가"가 아니라 "버전 카운터가 실제로 움직이는가"로
     /// 한다. 게임이 종료돼도 매핑이 잠시 남아 있을 수 있기 때문.
     /// </summary>
-    public sealed class Rf2SharedMemoryReader : IDisposable
+    public sealed class Rf2SharedMemoryReader : ISnapshotSource
     {
         public const string TelemetryName = "$rFactor2SMMP_Telemetry$";
         public const string ScoringName = "$rFactor2SMMP_Scoring$";
@@ -197,6 +197,15 @@ namespace TeamRadio56.Core.Telemetry
                 e => e.mVersionUpdateBegin, e => e.mVersionUpdateEnd, out extended);
 
             return SnapshotBuilder.Build(scoring, telemetry, hasExtended, extended);
+        }
+
+        /// <summary>
+        /// Extended 버퍼만 읽는다 — LMU 내장 메모리 경로가 거기 없는 세 필드(피트 제한속도,
+        /// 상태/히스토리 메시지)를 보충할 때 쓴다 (TelemetrySource 참고). 없으면 false.
+        /// </summary>
+        public bool TryReadExtended(out rF2Extended extended)
+        {
+            return _extended.TryRead(e => e.mVersionUpdateBegin, e => e.mVersionUpdateEnd, out extended);
         }
 
         private void MarkStale()

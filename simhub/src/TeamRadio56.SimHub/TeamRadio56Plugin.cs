@@ -11,6 +11,9 @@ using PluginSettings = TeamRadio56.Core.Config.PluginSettings;
 using SettingsStore = TeamRadio56.Core.Config.SettingsStore;
 using FileLog = TeamRadio56.Core.Diagnostics.FileLog;
 using Rf2SharedMemoryReader = TeamRadio56.Core.Telemetry.Rf2SharedMemoryReader;
+using LmuNativeLayout = TeamRadio56.Core.Telemetry.LmuNativeLayout;
+using TelemetrySource = TeamRadio56.Core.Telemetry.TelemetrySource;
+using TelemetrySourceKind = TeamRadio56.Core.Telemetry.TelemetrySourceKind;
 using Snapshot = TeamRadio56.Core.Telemetry.Snapshot;
 using RF2Sizes = TeamRadio56.Core.Telemetry.RF2Sizes;
 using CrewChiefEngine = TeamRadio56.Core.Logic.CrewChiefEngine;
@@ -41,6 +44,9 @@ namespace TeamRadio56.SimHub
     /// pathLateral/횡속도/블루플래그/섹터 플래그)가 SimHub 정규화 계층에
     /// 없기 때문. 그래서 포팅해도 기능 손실이 없다.
     ///
+    /// 공유 메모리 원천은 TelemetrySource가 고른다: LMU 1.2+ 내장 메모리(LMU_Data, DLL
+    /// 불필요)가 있으면 그것, 없으면 rF2 Shared Memory Map Plugin(DLL) 버퍼 — 예전 그대로.
+    ///
     /// 무전은 항상 C# 내장 엔진(Core) + 영어 + kokoro 음성 팩 한 목소리로 나간다.
     /// 음성 팩이 없으면 소리 없이 자막·최근 무전에만 — 다른 목소리로 대신 읽지 않는다.
     /// (파이썬 엔진·온라인 TTS·Windows 음성·한국어 무전은 파이썬 단독 앱에만 있다.)
@@ -65,7 +71,8 @@ namespace TeamRadio56.SimHub
 
         private const double PollHz = 5.0;
 
-        private readonly Rf2SharedMemoryReader _reader = new Rf2SharedMemoryReader();
+        // 텔레메트리 원천 — LMU 내장 메모리 우선, 없으면 rF2 DLL 버퍼 (원천이 바뀔 때마다 로그)
+        private readonly TelemetrySource _reader = TelemetrySource.CreateDefault(FileLog.Info, FileLog.Warn);
 
         private CrewChiefEngine _chief;
         private VoiceWorker _voice;
@@ -102,6 +109,30 @@ namespace TeamRadio56.SimHub
         public bool IsConnected
         {
             get { return _reader.Connected; }
+        }
+
+        /// <summary>지금 쓰는 텔레메트리 원천 (설정 화면 상태 표시용).</summary>
+        public TelemetrySourceKind TelemetrySourceActive
+        {
+            get { return _reader.Active; }
+        }
+
+        /// <summary>내장 메모리 + rF2 Extended 보충(피트 제한속도·페널티 메시지) 중인가.</summary>
+        public bool TelemetryGapFill
+        {
+            get { return _reader.GapFill; }
+        }
+
+        /// <summary>LMU_Data는 있는데 갱신이 없음 (메뉴·로딩·일시정지).</summary>
+        public bool NativeIdle
+        {
+            get { return _reader.NativeIdle; }
+        }
+
+        /// <summary>내장 메모리 값 검증 실패로 쓰지 않는 중인가.</summary>
+        public bool NativeGuardFailed
+        {
+            get { return _reader.NativeGuardFailed; }
         }
 
         /// <summary>독립 실행 앱이 물러나도록 '플러그인 무전 중' 뮤텍스를 쥐거나 놓는다.</summary>
@@ -208,6 +239,19 @@ namespace TeamRadio56.SimHub
             else
             {
                 FileLog.Warn("구조체 레이아웃 불일치! 텔레메트리 읽기를 중단한다 — " + layoutError);
+            }
+            // LMU 내장 메모리(LMU_Data) 상수 자체 검사 — 어긋나면 내장 경로만 끄고 rF2 DLL 경로는 그대로
+            string nativeError = LmuNativeLayout.Verify();
+            if (nativeError == null)
+            {
+                FileLog.Info("LMU 내장 공유 메모리 레이아웃 검증 통과 ({0} {1}B, 최대 {2}대)",
+                    LmuNativeLayout.MappingName, LmuNativeLayout.TotalSize, LmuNativeLayout.MaxVehicles);
+            }
+            else
+            {
+                _reader.NativeEnabled = false;
+                FileLog.Warn("LMU 내장 공유 메모리 레이아웃 불일치 — 내장 경로를 끄고 rF2 DLL만 씁니다: "
+                             + nativeError);
             }
 
             StatusText = "대기 중";

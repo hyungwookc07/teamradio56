@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using TeamRadio56.Core.Config;
 using TeamRadio56.Core.Diagnostics;
 using TeamRadio56.Core.Logic;
+using TeamRadio56.Core.Telemetry;
 using TeamRadio56.Core.Update;
 
 namespace TeamRadio56.SimHub
@@ -30,6 +31,7 @@ namespace TeamRadio56.SimHub
         // 요소를 새 패널에 붙이면 예외를 던져, 재조립(언어 전환)이 실패한다
         private TextBlock _connection = new TextBlock();
         private TextBlock _status = new TextBlock();
+        private TextBlock _source = new TextBlock();
         private TextBlock _recent = new TextBlock();
         private TextBlock _engineState = new TextBlock();
         private TextBlock _testSpeak = new TextBlock();
@@ -189,6 +191,12 @@ namespace TeamRadio56.SimHub
             _connection.Foreground = Dim;
             _connection.FontWeight = FontWeights.Bold;
             box.Children.Add(_connection);
+
+            // 어떤 공유 메모리로 읽는지 (LMU 내장 / rF2 DLL), 연결이 없으면 무엇을 켜야 하는지
+            _source = new TextBlock();
+            _source.Foreground = Dim;
+            _source.TextWrapping = TextWrapping.Wrap;
+            box.Children.Add(_source);
 
             _status.Foreground = Fg;
             _status.TextWrapping = TextWrapping.Wrap;
@@ -466,6 +474,8 @@ namespace TeamRadio56.SimHub
                 bool connected = _plugin.IsConnected;
                 SetText(_connection, connected ? L("conn_on") : L("conn_off"),
                         connected ? Ok : Off);
+                bool sourceWarn;
+                SetText(_source, SourceLine(out sourceWarn), sourceWarn ? Off : Dim);
                 SetText(_status, _plugin.StatusText ?? "", Fg);
 
                 bool voiceWarn;
@@ -493,6 +503,35 @@ namespace TeamRadio56.SimHub
             {
                 // 설정 화면 때문에 SimHub이 흔들리지 않게
             }
+        }
+
+        /// <summary>
+        /// 텔레메트리 원천 한두 줄 — LMU 내장 메모리(DLL 불필요) / rF2 DLL / 대기 중 안내.
+        /// 내장 메모리 값 검증이 실패했으면 그 사실을 덧붙이고 warn.
+        /// </summary>
+        private string SourceLine(out bool warn)
+        {
+            warn = false;
+            string line;
+            switch (_plugin.TelemetrySourceActive)
+            {
+                case TelemetrySourceKind.LmuNative:
+                    line = _plugin.TelemetryGapFill ? L("src_native_gapfill") : L("src_native");
+                    break;
+                case TelemetrySourceKind.Rf2Plugin:
+                    line = L("src_rf2");
+                    break;
+                default:
+                    // 매핑은 있는데 갱신이 없으면 설정은 이미 켜진 것 — 세션 안내만
+                    line = _plugin.NativeIdle ? L("src_native_idle") : L("src_waiting");
+                    break;
+            }
+            if (_plugin.NativeGuardFailed)
+            {
+                warn = true;
+                line += "\n" + L("src_native_rejected");
+            }
+            return line;
         }
 
         /// <summary>
