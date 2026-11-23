@@ -1,288 +1,301 @@
 # teamradio56 🏁🎙️
 
-**Voice race-engineer radio for Le Mans Ultimate.** Reads telemetry in real
-time, judges what matters, and calls it to you as team radio in English.
-Runs as a lightweight SimHub plugin — no Python needed (it requires the rF2
-Shared Memory Map Plugin, and the voice pack installs from the settings screen).
-The Python app in this repository is the reference implementation and the tool
-that renders the voice pack. (The name comes from Le Mans' iconic Garage 56.)
+**A race engineer in your ear for Le Mans Ultimate.**
 
-한국어 문서: [README.ko.md](README.ko.md)
+teamradio56 is a SimHub plugin that watches your race and talks to you on
+team radio, in English. It calls cars alongside, faster classes coming
+through, flags, damage, fuel and the gaps that matter. When nothing matters,
+it stays quiet. No Python, no extra apps: you install the plugin, download
+the voice pack once from the settings screen, and drive.
 
-The goal is a race engineer that speaks only when it matters and says what
-it means — not a stream of raw numbers.
+한국어: [README.ko.md](README.ko.md)
 
-> "Gap behind 2.4 seconds. Closing four tenths a lap. Just no mistakes."
+A few minutes of a race sound like this:
 
-## Features
+> "Radio check. Race day, here we go."
+> "Car left!"
+> "Faster traffic, Hypercar in 2.4 seconds."
+> "Impact. Checking wheels and pressures."
+> "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on."
+> "FCY pit open. Box box."
+> "Chequered flag. P3, that's a podium!"
 
-- **Judgment calls, not readouts** — traffic and side-by-side spotting,
-  race control (FCY, pit open, restarts, yellows, blue flags), automatic
-  damage checks, fuel and tyre warnings, rival pit/pace intel, gap trends,
-  session briefings. All rule-based and deterministic
-- **Silence discipline** — if there's nothing worth saying, it says nothing.
-  No per-lap chatter; per-type cooldowns and a chattiness preset
-- **Natural voice with zero latency** — urgent calls come from pre-generated
-  phrase pools with a pre-rendered voice pack (Kokoro), so nothing is
-  synthesised mid-corner. Every safety call (spotter, flags, damage, box,
-  critical fuel) is in the pack
-- **One voice, never mixed** — the plugin speaks only with the Kokoro voice
-  pack. A line that isn't in the pack is shown as a subtitle (and in recent
-  radio) instead of being read in another voice. With no voice pack
-  installed every call is subtitle-only, and the settings screen tells you to
-  press *Update voice pack*
-- **Radio effect** — bandpass, saturation, band-limited noise and squelch
-  for a real team-radio texture
-- **English radio** with a bilingual (Korean/English) settings UI
-- **Multiclass aware** — faster-class approach warnings (named Hypercar /
-  LMP2 / LMP3 / GTE / GT3), in-class positions
-- **Protects game performance** — 5 Hz polling, audio on its own thread, no
-  GPU-based TTS
-- **One-way voice output** — no speech recognition or conversation
+(The name comes from Garage 56, the Le Mans entry for experimental cars.)
 
-The SimHub plugin is deliberately lean (0.18 "lite"): it has no Python engine
-mode, no online (edge) or Windows voices, no voice mixing, no LLM settings and
-no Korean radio. Those experiments — LLM-generated lines via the Anthropic API
-(your own key), Korean radio, edge/ElevenLabs voices, post-lap sector feedback
-— live only in the Python app, which is kept for development and for rendering
-the voice pack. Old plugin settings for them are ignored.
+---
 
-## Quick start
+## What it calls
 
-See [docs/INSTALL.md](docs/INSTALL.md) for full installation (including the
-shared-memory plugin). For the SimHub plugin, see
-[simhub/README.md](simhub/README.md). The plugin always runs its built-in C#
-engine (no Python needed); after installing, press *Update voice pack* once —
-until a voice pack is installed the radio is subtitles only. Don't run the
-Python app at the same time as the plugin.
+It speaks only when something is worth saying. There is no lap-by-lap
+chatter unless you turn on the optional reports.
 
-**Updating the SimHub plugin**: from 0.16 the plugin updates itself from
-[GitHub Releases](https://github.com/hyungwookc07/teamradio56/releases) —
-open the teamradio56 settings in SimHub → **Updates** → *Check for updates*,
-then *Update plugin* (restart SimHub afterwards) or *Update voice pack*.
-Nothing installs without a click. If your plugin has no **Updates** section
-yet (0.15 or older, or a source build), install the latest release (0.17 or
-newer) once by hand (copy the two DLLs from the release zip into the SimHub
-folder). 0.17 uses a new voice pack (`kokoro-v016`, about 175 MB): when the
-plugin finds no pack or an older one, it offers *Update voice pack* — run it;
-the engine restarts by itself and uses the new pack right away. Until then,
-lines that aren't in the installed pack are shown as subtitles instead of being
-spoken (with no pack at all, everything is). From 0.18 the plugin no longer
-looks for an audio cache next to a Python engine; if you used one, let *Update
-voice pack* install a fresh copy next to the DLLs or point *Voice pack folder*
-at it. Building from source still works with a double-click on `update.bat`
-(pull + build + copy DLLs).
+| Situation | What you hear (examples) |
+|---|---|
+| **Session start** | A radio check, then a briefing that fits the session. Race: your start position in class, fuel, the formation lap and the green call: *"Formation lap, get heat in the tyres and brakes. Hold your slot, I'll call the green."* Qualifying: *"Find a gap on the out lap, we want clear air."* |
+| **Race start** | For the first seconds after the green, left and right calls only, so you can concentrate on turn one: *"Through the start it's left and right calls only."* |
+| **Spotter** | *"Car left!"*, *"Car right!"*, *"Three wide, you're the meat!"*, *"Clear left."* |
+| **Traffic** | Faster classes coming up behind: *"Faster traffic, LMP2 in 3 seconds."* Slower cars ahead: *"Backmarker ahead, GT3. Easy does it."*, *"Car ahead is a lap down. Not a fight."* A stopped car ahead in a race: *"Stopped car ahead. Change your line early."* |
+| **Flags and race control** | *"FCY. Eighty kph, no overtaking."*, *"FCY pit open. Box box."*, *"Green green! Restart."*, *"Yellow in sector 2. No overtaking, be ready to lift."*, *"Blue flag. Let him by on the straight."*, *"Limiter! Limiter!"*, plus time-remaining and final-lap calls. |
+| **Damage** | On impact: *"Impact. Checking wheels and pressures."* About eight seconds later you get the result: *"Check done. Just marks. Wheels, tyres, pressures all fine. Carry on."* A lost wheel is called at once, and slow punctures, a bent steering alignment and front aero damage are spotted for you: *"Front left losing pressure. Slow puncture. We change it next stop."* |
+| **Car condition** | Water and oil temperature, brake temperature: *"Brakes averaging 820 degrees. Brake a touch earlier, cool them."* |
+| **Fuel and pit stops** | *"Fuel critical. Box within 2 laps."*, *"Box box, box box."*, a fuel-save target when you are borderline on a no-stop run, *"Pit window open. Box within 3 laps."* Fuel is in litres. |
+| **Rivals and gaps** | *"Gap behind 2.4 seconds. Opening up. Good."*, *"P4 in class, car ahead, just pitted."*, *"Car behind in class is 0.7 a lap quicker. With us in 8 laps. Be ready."* |
+| **Chequered flag and after** | The flag call depends on your result (win, class win, podium, places gained or lost): *"Chequered flag. P3, that's a podium!"* Then a cool-down lap call (*"Easy now, faster class still on track. Stay wide and let them by."*), a short summary and *"Limiter on, straight to the garage. Thanks for today."* After you finish, only safety calls remain. |
+| **Optional reports** (off by default) | For driving with the HUD off: your lap time every lap (*"Last lap 2 01.8. Best lap."*) and a position, gaps, fuel and tyres report every few laps. |
 
-Releases (plugin zip + `teamradio56-release.txt` manifest) are made in one
-step: push a `vX.Y.Z` tag matching `TeamRadio56Plugin.Version` on a `main`
-commit, or create that release in the GitHub UI. GitHub Actions builds the
-plugin against the real SimHub assemblies; if the sentence set changed it first
-renders and publishes a new voice pack (its own `audio-<pack>` pre-release,
-about 2 hours extra) and commits the pack descriptor to `main`; then it fills
-the release. Where tags can't be pushed, pushing a `main` commit to a
-`release/vX.Y.Z` branch publishes the same way (the tag is created on publish).
-Push a `release-dry/**` branch for a dry run; the `audio-pack`
-workflow can still be run on its own. If a run fails no plugin release is left
-behind; fix the cause and use *Re-run failed jobs* if it was outside the code
-(network, permissions, approval). A re-run builds the same tag commit, so for a
-code fix commit to `main`, delete the tag and push it again on `main`'s latest
-commit (for a release created in the GitHub UI, delete that release and its
-tag, then create the release again). A voice pack that was already published
-is not rendered again. Right now `v0.17.0` is an empty release created by hand;
-0.17.1 is the first real one. Maintainers: see the release section of
-[simhub/README.md](simhub/README.md).
+### Multiclass
 
-The Python app (development, reference implementation and voice-pack tools —
-not needed for the plugin):
+- Other classes are called by name: **Hypercar, LMP2, LMP3, GTE, GT3.**
+- Only **faster** classes get a warning as they come up behind you. Slower
+  classes ahead are backmarkers.
+- A car of **your own class** is never called by its class name. In an
+  LMP3-only race you hear *"Car behind."*, not *"LMP3 right behind."*. A car
+  of your own class is a battle, never "faster traffic".
+- If the game reports a class the plugin does not recognise, the car is
+  called without a class name. It only gets a warning if it is clearly
+  faster on lap times.
 
-```bat
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-copy config.yaml.example config.yaml
-python main.py
-```
+---
 
-Testing without the game:
+## What you need
 
-```bat
-python tools\make_test_replay.py data\test.jsonl
-python main.py --replay data\test.jsonl --speed 5
-```
+- **Windows 10 or 11**
+- **Le Mans Ultimate**
+- **[SimHub](https://www.simhubdash.com/)**
+- **rF2 Shared Memory Map Plugin** by The Iron Wolf
+  ([download](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases)).
+  teamradio56 reads the game through it, so it is required. If you already
+  use other sim-racing tools you may have it installed.
+- An internet connection only for downloading updates and the voice pack.
 
-## Layout
+You do **not** need Python or anything else from this repository.
 
-```
-main.py            # main loop (5 Hz polling + lap-event dispatch)
-telemetry.py       # shared-memory reader / replay / recording
-rf2data.py         # rF2 shared-memory ctypes structs (based on pyRfactor2SharedMemory)
-state.py           # session state + lap history
-analyzers/
-  fuel.py          # burn rate / laps remaining / pit window
-  tyres.py         # temp imbalance / wear trend / life estimate
-  pace.py          # lap-time trend / gap rates
-  traffic.py       # nearby-car detection (5 Hz)
-vehicle_class.py   # class string → family / rank / spoken name (single source)
-events.py          # priority event queue (dedup, cooldowns)
-voice.py           # line generation (pre-generated pools / live LLM)
-tts.py             # TTS playback thread + audio cache
-config.py          # config.yaml loader
-messages.py        # sentence tables (en/ko) + slot helpers
-simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
-```
+---
 
-## Milestones
+## Install
 
-- [x] v0.1 — shared-memory hookup, fuel/laptime/gap console output, waits for
-  the game, replay mode
-- [x] v0.2 — lap-complete analysis (fuel/pace) + event queue + template TTS
-- [x] v0.3 — traffic analyzer + pre-generated phrase pools + audio cache
-- [x] v0.4 — live LLM lines (Anthropic API, persona/narrative) — experimental
-- [x] v0.5 — tyre analyzer, race JSON save, PyInstaller packaging
+A step-by-step guide with more detail and troubleshooting is in
+[docs/INSTALL.md](docs/INSTALL.md) (in Korean). The short version:
 
-### Naturalness (v0.6)
+**1. Shared memory plugin** (skip if you already have it enabled)
 
-(LLM items here are experimental and opt-in.)
+1. Download `rFactor2SharedMemoryMapPlugin64.dll` from the
+   [Iron Wolf releases](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases).
+2. Copy it into
+   `<Steam library>\steamapps\common\Le Mans Ultimate\Plugins\`.
+3. With the game closed, open
+   `<game folder>\UserData\player\CustomPluginVariables.JSON` and set:
 
-- [x] Per-car traffic state machine — speaks only on state transitions, and
-  chains lines about the same car into a narrative ("closing" → "alongside" →
-  "past you"); multiple cars get one combined sentence ordered by threat
-- [x] Class normalisation — the game's class string (`mVehicleClass`) is
-  folded into a family (`Hyper`/`HY`/`LMH`/`LMDh` → Hypercar, `LMP2_ELMS`/
-  `LMP2 Pro-Am` → LMP2, `LMP3`, `LMGTE Am` → GTE, `LMGT3` → GT3). Only a
-  faster family (Hypercar > LMP2 > LMP3 > GTE > GT3), or a same-class car a
-  lap up, gets the "faster traffic" approach call; a car of the same family
-  is a battle, never "faster car". An unknown class string is compared by
-  observed pace (median best lap per class, 2 % margin) and otherwise is
-  neither faster traffic nor a backmarker; it is spoken without a class name
-  (multi-car summary: "car"). A car of your own class is never called by
-  your class name either — "Car behind.", "He's there.", a lapping class
-  leader is "Traffic behind, 3 seconds.", two cars are "two cars behind" /
-  "one car, one Hypercar behind" — so a single-class LMP3 race never says
-  "LMP3". Each session logs every raw class string it
-  sees with its family/rank/name (`클래스 진단:` lines in the log)
-- [x] Tone tags on the phrase pools (casual/urgent) +
-  `scripts/generate_variants.py` (LLM bulk regeneration)
-- [x] Bridge technique — an urgent cached call (zero latency) followed
-  asynchronously by an LLM explanation, auto-discarded if the situation has
-  passed. Playback micro-randomisation (0–300 ms, ±5 % volume)
-- [x] Race narrative context (ongoing issues) + LLM strategy engine
-  (triggered only at decision points, hourly call budget — under 30 calls in
-  a 2-hour race)
-- [x] Stronger silence discipline (LLM PASS = stay quiet) + speech log
-  `data/speech_log.jsonl`
-- [x] Training mode — sector-delta feedback after each lap, LLM debrief at
-  session end, trend comments vs. your history when revisiting a track
+   ```json
+   "rFactor2SharedMemoryMapPlugin64.dll": {
+     " Enabled": 1
+   }
+   ```
 
-### Race information (v0.7)
+   The space before `Enabled` is intentional. Keep it. If the entry is not in
+   the file yet, start the game once with the DLL in place, quit, then edit.
 
-- [x] Race control — FCY/safety car deployment, pit-open and restart calls
-  (the money calls in endurance racing), local sector yellows, green/chequered,
-  time-remaining milestones, final lap, pit-limiter warning
-- [x] Session briefing like a real WEC/IMSA engineer — always opens with a radio
-  check (no track name) and differs per session: practice (length, track/rain,
-  build-up run plan), qualifying (find a gap, track limits, "make it count" — no
-  fuel), warm-up (car check), race (grid slot of N in class, fuel, formation lap
-  and green call, start spotter, calm first lap); mid-join variants (practice,
-  qualifying and warm-up count as mid-join only when the car is already out —
-  joining a running session from the garage gets the full briefing with the
-  time remaining). Every sentence slot has 2–5 variants picked by an FNV-1a
-  hash of the snapshot (reduced with the high bits, so slots vary
-  independently), so Python and C# say the same words while sessions still
-  differ
-- [x] Chequered flag and after — the flag call is tiered by result (win, class
-  win, podium, places gained / about the same / lost vs. the class start
-  position, or result-only after a mid-join) and says the real class position.
-  Then a cool-down lap call (with a "faster cars still racing" note when
-  needed), one summary (fastest lap in class or our best-lap rank) and a
-  pit-in line (skipped when the driver jumps straight to the garage). After our finish, strategy, fuel, tyre, rival, position and
-  periodic report calls go quiet; only safety calls remain (pit limiter,
-  yellows, wheel loss, cars alongside / faster cars approaching)
-- [x] Class standings — real (in-class) positions in multiclass, called only
-  on change
-- [x] Blue flag / backmarkers — dual detection from the mFlag edge + lap
-  delta. Yield guidance when a leader on another lap arrives; "not a battle"
-  notice for backmarkers you're catching
-- [x] Rival intel — detects same-class rivals pitting (undercut/overcut
-  judgment), pace comparison with the cars around you ("seven tenths a lap
-  quicker, with us in about eight laps")
-- [x] Car condition — water/oil temps, overheating, brake-temp warnings
-- [x] Automatic damage check — 8 s after an impact, sweeps dents / wheels /
-  punctures / pressures from data and reports ("just marks, carry on" /
-  "losing pressure, prepare to box"). Instant call on wheel loss; continuous
-  slow-puncture watch — the tool does the checking, not the driver. Alignment
-  ("steering pull on the straights") compares the median steering of samples
-  where the car is really going straight (low yaw rate and not sliding, so fast
-  sweepers never count, while a car crabbing straight on bent rear toe still does)
-  before the first impact and after it; an impact without a pre-impact baseline is
-  not judged (the baseline restarts, so a later impact still is), and there is no
-  call while a tyre is flat. Front-wing ("front aero down N millimetres") compares
-  splitter height like with like: samples at 150 km/h and up, never under braking,
-  grouped into 10 km/h speed bins, before the first impact and after it — the
-  healthy height drops with speed (aero load) and under brake dive, so a tap in a
-  slow section followed by a long straight is not damage. Same baseline, flat-tyre
-  and one-judgement-per-impact rules as alignment, and the call waits for the
-  impact's damage report. A judged wing or alignment call that is still waiting
-  out the report cooldown lets a newer impact's damage report go first and is
-  held while a tyre is flat or losing pressure
-- [x] Fuel-save coaching — target-burn delta guidance in no-stop borderline
-  situations
-- [x] Wet/dry crossover — tyre-switch decision trigger from track wetness
-- [x] Optional HUD-replacement radio — for immersive HUD-off driving, the
-  `reports` settings give per-lap laptime calls + a position/gap/fuel/tyre
-  report every N laps. Off by default
+**2. teamradio56**
 
-### SimHub plugin & C# port (v0.8–v0.18)
+1. Download the latest `teamradio56-plugin-x.y.z.zip` from the
+   [Releases page](https://github.com/hyungwookc07/teamradio56/releases).
+   It contains two files: `TeamRadio56.Core.dll` and `TeamRadio56.SimHub.dll`.
+2. Close SimHub. Copy **both** DLLs into the SimHub install folder itself,
+   not a subfolder. The default is `C:\Program Files (x86)\SimHub\`.
+3. Start SimHub. When it asks whether to enable the new plugin, tick
+   **teamradio56**. (If it doesn't ask, enable it under SimHub
+   **Settings → Plugins**.)
+4. **teamradio56** now appears in SimHub's left menu.
 
-- [x] v0.8–v0.17 — SimHub plugin with a bilingual (한국어/English) settings UI;
-  it ran the Python engine as a child process, or the **built-in C# engine** —
-  all nine analyzers, session briefing, phrase pools, cached audio (Kokoro),
-  runtime edge synthesis for the edge voice, Korean radio. Verified against the
-  Python engine by a replay regression (identical accepted events, en/ko, down
-  to the sentence text). The experimental LLM lines required Python mode.
-- [x] v0.18 "lite" — the plugin keeps only the built-in engine, English radio
-  and the Kokoro voice pack (plus the in-app updater, overlay and bilingual
-  settings UI). Python engine mode, edge/Windows voices, voice mixing, LLM
-  settings and Korean radio were removed from the plugin (they remain in the
-  Python app); with no voice pack the radio is subtitles only and the settings
-  screen points to *Update voice pack*. The replay regression now compares
-  English only.
+---
 
-Items not in shared memory (virtual energy, weather forecast, pit strategy)
-will be supplemented from LMU's built-in REST API (the localhost server the
-game UI uses) — `resttelemetry.py` has an auto-disabling poller ready, and
-`tools/probe_rest.py` collects real responses with the game running to pin
-down the parsing. Hybrid battery state exists in neither source.
+## First run
 
-Shared-memory quirks confirmed on the real game (the code defends against
-each):
+1. **Switch the settings screen to English.** It opens in Korean. Use the
+   language dropdown at the top (it shows **한국어**) and pick **English**.
+2. **Install the voice pack.** Until you do, a red banner at the top says
+   there is no voice pack, and every call appears as a subtitle only, with no
+   sound. Scroll down to **Updates** and press **[Update voice pack]**, then
+   confirm. If the button is greyed out, press **[Check for updates]** first.
+   The download is under 200 MB. You can watch the progress or **[Cancel]**.
+   When it finishes, the radio switches over by itself, with no restart
+   needed.
+3. **Check the sound.** Press **[Test speak]** in the **Status** section. You
+   should hear *"Box box, box box."* in your default Windows audio device.
+4. **Drive.** Once you are in a session in LMU, the lamp in **Status** turns
+   to **● LMU connected** (instead of **○ waiting for game**). Live position,
+   lap and fuel appear below it, together with the last five radio calls.
 
-- `mEstimatedLapTime`: every vehicle gets the same track default → unused;
-  faster-class detection uses the class family hierarchy instead
-  (Hypercar > LMP2 > LMP3 > GTE > GT3), and the observed best laps for a
-  class string it doesn't recognise
-- `mSectorFlag`: garbage values (e.g. 11) appear constantly → only 0→1..2
-  transitions (edges) are trusted
-- Extended `mCurrentPitSpeedLimit`: sometimes left at 0 → 80 km/h fallback
-- `mWear`: a fresh tyre reads 1.0 (remaining-life convention) — confirmed
-- No ghost-vehicle flag → stopped/slow cars are filtered by speed estimation;
-  private practice/qualifying still streams phantom participants, so traffic
-  calls default to race sessions only
-- Session clock keeps running during the pre-start grid wait → the briefing
-  uses the game phase, not elapsed time, to tell a race start from a mid-join
+The volume follows Windows. If the radio is too loud or quiet, adjust
+SimHub in the Windows volume mixer.
 
-Future ideas: two-way radio via STT, multi-stint fuel-plan optimisation.
+---
 
-## Requirements
+## Updating
 
-- Windows 10/11 (shared-memory mode) — replay mode is OS-independent
-- Python 3.11+ — only for the Python app and the voice-pack tools, not for the SimHub plugin
-- LMU + [rF2 Shared Memory Map Plugin](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin) (The Iron Wolf)
+teamradio56 updates itself from the
+[Releases page](https://github.com/hyungwookc07/teamradio56/releases).
+
+- Open the teamradio56 settings, go to **Updates** and press
+  **[Check for updates]**. You see your version and the latest one, your
+  voice pack and the latest one, and what's new.
+- **[Update plugin]** installs the new version. **Restart SimHub** afterwards
+  to use it.
+- **[Update voice pack]** lights up when a newer voice pack is out. It
+  applies by itself when the download finishes.
+- With **Check on startup** ticked (the default), the plugin checks once a
+  day, shortly after SimHub starts, and shows a banner when something new is
+  available. **It only checks.** Nothing is installed until you press a
+  button and confirm.
+
+Downloads are verified before anything is replaced. If a plugin update
+fails halfway, your old version is put back. Updates only go forward; to go
+back to an older version, download it from the Releases page and copy its
+two DLLs by hand.
+
+---
+
+## Settings
+
+Changes are saved as you make them. Press **[Restart engine]** in the
+**Engine** section to apply them to the radio.
+
+| Section | Setting | Default | What it does |
+|---|---|---|---|
+| **Status** | [Test speak], [Open log], [Open settings file] | | Sound check, the log file, the settings file. |
+| **Engine** | Voice pack folder | empty | Leave empty to find the voice pack automatically. |
+| | [Restart engine] | | Applies changed settings. |
+| **Voice** | Voice output | on | Off = subtitles and recent radio only, no sound. |
+| **Chatter** | Preset | normal | **quiet**: calls spaced further apart, essentials only. **chatty**: more frequent calls. Urgent calls (car alongside, impact, puncture, pit limiter) come through on every preset. |
+| **Traffic / Spotter** | Alongside window | 4.6 m | How close a car must be to count as alongside (4.6 m is about one car length). |
+| | Start spotter mode | 45 s | After the start, left and right calls only for this long. |
+| | Swap left/right | off | Tick it if "left" and "right" sound reversed. |
+| | Race only | on | Traffic and spotter calls in races only. LMU's online practice and qualifying are private sessions, and other cars there can cause ghost calls. Untick it if you share the track in practice. |
+| **HUD-replacement reports** | Lap time every lap | off | *"Last lap 2 01.8. Best lap."* |
+| | Status report | 0 (off) | Position, gaps, fuel and tyres every N laps. |
+| **Behaviour** | Speak only while driving | on | Silent in the monitor and menus. |
+| **Updates** | [Check for updates], [Update plugin], [Update voice pack], [Cancel], [Releases page] | | See [Updating](#updating). |
+| | Check on startup | on | Checks for a new version at most once a day. |
+
+### On-screen subtitles and spotter bars (optional)
+
+For SimHub Dash Studio overlays, the plugin provides properties such as
+`TeamRadio56Plugin.LastRadio` (the last call as text),
+`LastRadioAgeSec` (seconds since it was said), `SpotterLeft` /
+`SpotterRight`, `GapAheadSec` / `GapBehindSec`, `ClassPosition` and
+`HasDamage`. No ready-made dashboard is included; you build your own. The
+full list is in the overlay section of [simhub/README.md](simhub/README.md#오버레이-simhub-프로퍼티)
+(in Korean).
+
+---
+
+## Troubleshooting
+
+**No sound at all, and a red banner at the top.**
+No voice pack is installed, or its download was interrupted. Press
+**[Update voice pack]** in **Updates** (press **[Check for updates]** first if
+it is greyed out).
+
+**Some calls show "(not spoken)" in Recent radio.**
+That line isn't in your voice pack, so it is shown as text instead of being
+read in a different voice. Update the voice pack. If it keeps happening,
+please report it with your log.
+
+**[Test speak] is silent even though the voice pack is installed.**
+Check SimHub's volume in the Windows volume mixer and your default audio
+device. If the result under the button says playback failed, look at the
+log.
+
+**The lamp stays on "○ waiting for game".**
+The shared memory plugin is missing or not enabled. Check that the DLL is in
+the game's `Plugins` folder and that `" Enabled": 1` (with the space) is set.
+You also need to be in a session, not in the main menu.
+
+**No traffic calls in practice or qualifying.**
+**Race only** is on by default. Untick it under **Traffic / Spotter** if you
+share the track with others.
+
+**Nothing is said while I'm in the monitor or menus.**
+That's **Speak only while driving**. It's on by default.
+
+**Left and right are the wrong way round.**
+Tick **Swap left/right**.
+
+**teamradio56 isn't in SimHub's plugin list.**
+Both DLLs must be directly in the SimHub folder, not in a subfolder. Restart
+SimHub afterwards.
+
+**I hear the radio twice, in two different voices.**
+An older stand-alone version of teamradio56 is also running. If you added
+`launch_with_lmu.bat` to LMU's Steam launch options, remove it. Check Task
+Manager for a leftover `python.exe` or `teamradio56.exe`.
+
+**An update shows an error.**
+- *cannot reach the internet*: you're offline, or a firewall or proxy is
+  blocking GitHub.
+- *release file not found*: a new release is being uploaded. Try again in a
+  little while.
+- *no write permission for the folder*: run SimHub as administrator once for
+  the update, or install from the Releases page by hand.
+- *the downloaded file is corrupt*: just try again. Your current version is
+  unchanged.
+
+**SimHub doesn't load teamradio56 after an update.**
+Close SimHub and open `teamradio56_backup.txt` in the SimHub folder. Each
+line reads `backup -> original`. For every line, delete the right-hand file
+and rename the left-hand file to that name. Or simply copy the two DLLs from
+an older release.
+
+**Why is some text in Korean?**
+The developer is Korean. The log file and the live status line in **Status**
+are still written in Korean, even with the English settings screen.
+
+**Reporting a problem.** Press **[Open log]** and attach `teamradio56.log`
+(it lives in your SimHub folder) to a
+[GitHub issue](https://github.com/hyungwookc07/teamradio56/issues).
+
+---
+
+## What it doesn't do
+
+- **English radio only, one voice.** There is no voice choice and no Korean
+  radio. The settings screen is in Korean and English.
+- **One-way radio.** No voice commands, no speech recognition, no
+  conversation.
+- **No volume slider.** Use the Windows volume mixer.
+- **No virtual energy, weather forecast or pit-strategy data.** LMU doesn't
+  share these through shared memory.
+
+It is light on your PC. It thinks five times a second, plays pre-recorded
+audio on its own thread, and does no speech synthesis while you drive.
+
+---
+
+## Privacy
+
+- Your telemetry stays on your PC. Nothing about your driving is sent
+  anywhere.
+- The only time the plugin goes online is the update check and downloads.
+  It reads a small text file from this project's GitHub Releases and, when you
+  press an update button, downloads the plugin or voice pack from there. No
+  account or login is used.
+- Untick **Check on startup** and it never goes online unless you press a
+  button.
+
+---
+
+## For developers
+
+This repository also contains the Python reference app that the plugin's
+behaviour is checked against and that renders the voice pack, plus the
+plugin's source. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and
+[simhub/README.md](simhub/README.md) (both in Korean).
 
 ## Credits
 
-- Shared-memory plugin/layout: The Iron Wolf
-- Python struct mapping reference: [pyRfactor2SharedMemory](https://github.com/TonyWhitley/pyRfactor2SharedMemory)
+- rF2 Shared Memory Map Plugin: The Iron Wolf
+- Shared memory layout reference: [pyRfactor2SharedMemory](https://github.com/TonyWhitley/pyRfactor2SharedMemory)
+- The voice pack is rendered with the Kokoro text-to-speech model.
 
 ## License
 

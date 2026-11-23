@@ -1,30 +1,44 @@
-# 설치 가이드 — LMU 공유 메모리 플러그인 + teamradio56
+# 설치 가이드 — teamradio56 SimHub 플러그인
+
+르망 얼티밋(LMU)에서 teamradio56을 처음 설치하는 순서예요. 전부 해도 10분이면 끝나요.
+(English readers: the essential install steps are in [README.md](../README.md#install).)
+
+순서는 이래요.
+
+1. 공유 메모리 플러그인 설치 (게임 쪽)
+2. teamradio56 플러그인 설치 (SimHub 쪽)
+3. 음성 팩 받기
+4. 동작 확인
+
+준비물: Windows 10/11, 르망 얼티밋, [SimHub](https://www.simhubdash.com/).
+파이썬은 필요 없어요.
 
 ## 1. 공유 메모리 플러그인 설치 (필수)
 
-Le Mans Ultimate는 rFactor 2 엔진 기반이라 The Iron Wolf가 만든
-**rF2 Shared Memory Map Plugin**을 그대로 사용합니다.
+르망 얼티밋은 rFactor 2 엔진 기반이라 The Iron Wolf가 만든
+**rF2 Shared Memory Map Plugin**을 그대로 써요. teamradio56은 이 플러그인을 통해
+게임 데이터를 읽기 때문에 꼭 있어야 해요.
 
-### 1-1. DLL 다운로드
+### 1-1. DLL 받기
 
 - 배포처: https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin (Releases)
 - 파일: `rFactor2SharedMemoryMapPlugin64.dll`
 
-> 이미 SimHub, CrewChief, pitwall 앱 등을 쓰고 있다면 설치되어 있을 수 있습니다.
+> 다른 심레이싱 툴(CrewChief, 각종 대시 앱 등)을 쓰고 있다면 이미 깔려 있을 수 있어요.
 > 아래 경로에 DLL이 있는지 먼저 확인하세요.
 
 ### 1-2. DLL 복사
 
-게임 설치 폴더의 `Plugins` 디렉토리에 복사합니다.
+게임 설치 폴더의 `Plugins` 폴더에 복사해요.
 
 ```
 <Steam 라이브러리>\steamapps\common\Le Mans Ultimate\Plugins\rFactor2SharedMemoryMapPlugin64.dll
 ```
 
-### 1-3. 플러그인 활성화
+### 1-3. 플러그인 켜기
 
 `<게임 폴더>\UserData\player\CustomPluginVariables.JSON` 파일을 열어
-플러그인 항목의 `" Enabled"` 값을 `1`로 설정합니다.
+플러그인 항목의 `" Enabled"` 값을 `1`로 바꿔요.
 
 ```json
 {
@@ -34,143 +48,101 @@ Le Mans Ultimate는 rFactor 2 엔진 기반이라 The Iron Wolf가 만든
 }
 ```
 
-⚠️ **키 이름 `" Enabled"` 앞의 공백 한 칸은 오타가 아니라 의도된 것입니다.**
-공백을 지우면 게임이 설정을 인식하지 못합니다.
+⚠️ **키 이름 `" Enabled"` 앞의 공백 한 칸은 오타가 아니라 원래 그래요.**
+공백을 지우면 게임이 설정을 못 알아봐요.
 
-- 파일에 해당 항목이 없으면 게임을 (플러그인 DLL을 복사한 상태로) 한 번
-  실행했다가 종료하세요. 항목이 자동 생성됩니다. 그 후 값을 1로 바꾸면 됩니다.
-- 게임 실행 중에는 이 파일을 수정하지 마세요. 게임 종료 후 수정 → 재실행.
+- 파일에 이 항목이 없으면 DLL을 복사한 상태로 게임을 한 번 켰다가 끄세요.
+  항목이 자동으로 생겨요. 그다음 값을 1로 바꾸면 돼요.
+- 게임이 켜져 있을 때는 이 파일을 고치지 마세요. 게임을 끄고 고친 뒤 다시 켜세요.
 
-### 1-4. 동작 확인
+## 2. teamradio56 플러그인 설치
 
-게임을 실행하고 세션(연습주행이라도)에 들어간 상태에서 teamradio56을 실행했을 때
-`게임 대기 중...` 대신 상태 라인이 출력되면 정상입니다.
+1. [릴리스 페이지](https://github.com/hyungwookc07/teamradio56/releases)에서 최신
+   `teamradio56-plugin-x.y.z.zip`을 받아요. 압축을 풀면 DLL이 두 개 있어요.
+   - `TeamRadio56.Core.dll`
+   - `TeamRadio56.SimHub.dll`
+2. **SimHub을 끄고**, 두 DLL을 **SimHub 설치 폴더 바로 아래**에 복사해요.
+   하위 폴더에 넣으면 안 돼요. 기본 경로는 이래요.
 
-## 2. teamradio56 설치
+   ```
+   C:\Program Files (x86)\SimHub\
+   ```
 
-> **SimHub 플러그인만 쓴다면 이 절(2~5)은 필요 없습니다.** 플러그인은 파이썬 없이 C# 내장
-> 엔진으로 돌고, 영어 무전을 Kokoro 음성 팩으로 냅니다 — 설치는 [simhub/README.md](../simhub/README.md),
-> 설치 후 설정 화면 [업데이트] → [음성 팩 업데이트]를 한 번 누르면 됩니다 (그 전까지 무전은 자막만).
-> 아래는 저장소 루트의 파이썬 앱(레퍼런스 구현·음성 팩 렌더 도구, 그리고 LLM·한국어 무전·edge 목소리
-> 같은 실험 기능이 있는 단독 실행) 설치입니다.
+3. SimHub을 켜면 **새 플러그인을 활성화할지 묻는 창**이 떠요. **teamradio56**에
+   체크하세요. 창이 안 뜨면 SimHub **Settings → Plugins**에서 직접 켜면 돼요.
+4. SimHub **왼쪽 메뉴에 teamradio56**이 생기면 성공이에요. 누르면 설정 화면이 열려요.
 
-요구사항: **Windows 10/11, Python 3.11 이상**
+> 설정 화면은 처음에 한국어로 나와요. 맨 위 언어 선택에서 **English**로 바꿀 수 있어요.
+>
+> 설정은 DLL 옆의 `teamradio56.settings.txt`에, 로그는 같은 폴더의 `teamradio56.log`에 저장돼요.
 
-```bat
-git clone https://github.com/hyungwookc07/teamradio56.git
-cd teamradio56
-pip install pipenv
-pipenv install
-pipenv run python main.py        :: 또는 pipenv shell 후 python main.py
-```
+## 3. 음성 팩 받기
 
-pipenv 대신 venv를 쓴다면:
+음성 팩이 없으면 무전이 **소리 없이 자막으로만** 나와요. 설정 화면 맨 위에 빨간 안내가
+떠 있을 거예요.
 
-```bat
-cd teamradio56
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
+1. 설정 화면 아래쪽 **업데이트** 섹션으로 가요.
+2. **[음성 팩 업데이트]**를 누르고, 확인 창에서 **예**를 눌러요.
+   - 버튼이 꺼져 있으면 먼저 **[업데이트 확인]**을 누르세요. (**시작 시 확인**이
+     켜져 있으면 SimHub을 켜고 15초쯤 뒤에 자동으로 확인해서, 보통은 바로 누를 수 있어요.)
+   - 크기는 200 MB가 안 돼요. 받는 동안 진행률이 보이고 **[취소]**할 수 있어요.
+     주행 중이 아닐 때 받는 걸 추천해요.
+3. "음성 팩 … 설치 완료 — 엔진을 다시 시작해 바로 적용했습니다."가 뜨면 끝이에요.
+   SimHub을 재시작할 필요는 없어요.
 
-## 3. 설정
+음성 팩은 DLL 옆의 `audio_cache` 폴더에 설치돼요. 다른 곳에 두고 싶으면 **엔진** 섹션의
+**음성 팩 폴더**에 경로를 넣고 **[엔진 재시작]**을 누르세요.
 
-```bat
-copy config.yaml.example config.yaml
-```
+## 4. 동작 확인
 
-`config.yaml`을 열어 필요한 항목을 수정합니다. 최소한 아래를 확인하세요.
+1. **상태** 섹션의 **[테스트 발화]**를 눌러요. Windows 기본 오디오 장치로
+   *"Box box, box box."*가 들리고, 버튼 아래에 "테스트 발화: 음성 팩으로 재생"이 뜨면 정상이에요.
+   (이 버튼은 **음성 출력**을 꺼 둬도 소리를 내요.)
+2. LMU를 켜고 세션(연습주행이라도)에 들어가요.
+3. **상태**의 램프가 **○ 게임 대기 중**에서 **● LMU 연결됨**으로 바뀌고, 순위·랩·연료가
+   보이면 정상이에요. 무전이 나오면 **최근 무전**에 쌓여요.
 
-- `llm.api_key` — Anthropic API 키 (또는 환경변수 `ANTHROPIC_API_KEY` 설정)
-- `tts.engine` — 설정에 없으면 기본 `kokoro` (음성 팩 재생, 인터넷 불필요). 예시 파일은
-  `edge`(무료, 인터넷 필요)로 되어 있습니다. ElevenLabs 사용 시 `elevenlabs` + 키 입력.
-  **세션당 한 목소리**: 고른 목소리로 낼 수 없는 멘트는 다른 목소리로 읽지 않고 로그(`[무전]`)와
-  자막으로만 남깁니다 — kokoro는 음성 팩에 없는 멘트, edge는 오프라인이라 합성하지 못한 멘트.
-  kokoro 음성 팩(`audio_cache\`)이 없으면 세션 전체를 edge로, 한국어 무전은 항상 edge로 말합니다.
-  다른 목소리로라도 듣고 싶으면 `tts.allow_fallback: true` (목소리가 섞입니다).
-  kokoro 음성 팩은 임의 문장을 말할 수 없어서, kokoro로 말할 때는 LLM 멘트를 요청하지 않고
-  템플릿 멘트를 씁니다 (`pip install kokoro-onnx`로 로컬 런타임이 있거나 edge면 LLM 사용)
-- `voice.volume`, 각종 `thresholds` — 취향대로
+> 트래픽·스포터 콜은 기본값으로 **레이스에서만** 나와요. 연습에서 조용한 건 정상이에요.
 
-## 4. 실행
+## 업데이트와 삭제
 
-```bat
-pipenv run python main.py
-```
+- **업데이트**: 설정 화면 **업데이트** 섹션의 **[업데이트 확인]** →
+  **[플러그인 업데이트]**(끝나면 SimHub 재시작) 또는 **[음성 팩 업데이트]**.
+  버튼을 누르기 전에는 아무것도 설치하지 않아요.
+  - 설정 화면에 **업데이트** 섹션이 없는 아주 예전 버전(0.15 이하)이라면 위 2번처럼
+    최신 릴리스를 한 번만 손으로 설치하세요. 그다음부터는 설정 화면에서 돼요.
+- **이전 버전으로**: 업데이트는 새 버전으로만 가요. 릴리스 페이지에서 원하는 버전 zip을 받아
+  SimHub을 끈 상태로 DLL 두 개를 덮어쓰세요.
+- **삭제**: SimHub을 끄고 SimHub 폴더에서 `TeamRadio56.Core.dll`, `TeamRadio56.SimHub.dll`
+  (그리고 남아 있다면 `TeamRadio56.*.dll.old*`), `teamradio56.settings.txt`,
+  `teamradio56.log`, `audio_cache` 폴더를 지우면 돼요.
 
-게임보다 먼저 실행해도 됩니다. 게임/세션이 시작되면 자동으로 붙습니다.
-
-### 게임과 자동 동시 실행 (Steam 시작 옵션)
-
-> **SimHub 플러그인을 쓴다면 이 설정은 하지 마세요** (이미 했다면 시작 옵션을
-> 지우세요). 플러그인이 내장 엔진으로 직접 무전을 내므로, 이 런처까지 쓰면
-> 무전이 두 번(서로 다른 목소리로) 나옵니다. 0.14부터 런처와 파이썬 앱은
-> 플러그인이 돌고 있으면 스스로 물러나지만, 지우는 편이 확실합니다.
-
-플러그인 없이 독립 실행만 쓸 때, 매번 따로 켜기 귀찮으면 Steam이 게임을
-켤 때 teamradio56을 같이 띄우게 할 수 있습니다:
-
-1. Steam 라이브러리 → **Le Mans Ultimate** 우클릭 → **속성** → 일반
-2. **시작 옵션**에 입력 (경로는 실제 설치 위치로):
-
-```
-"D:\teamradio56\launch_with_lmu.bat" %command%
-```
-
-이후 Steam에서 게임을 실행하면 teamradio56이 최소화 창으로 같이 뜨고,
-게임을 끄면 20초 뒤(디브리핑/저장 마무리 시간) 자동 종료됩니다.
-시작 옵션을 지우면 원래대로 돌아갑니다.
-
-### 게임 없이 테스트 (리플레이 모드)
-
-실주행 중 `--record`로 녹화해 두면, 게임 없이 전체 파이프라인을 재생·테스트할 수
-있습니다.
-
-```bat
-python main.py --record data\myrace.jsonl     :: 주행하며 녹화
-python main.py --replay data\myrace.jsonl     :: 재생 (게임 불필요)
-python main.py --replay data\myrace.jsonl --speed 10   :: 10배속
-```
-
-녹화 파일이 없으면 합성 레이스 데이터를 만들어 테스트할 수 있습니다:
-
-```bat
-python tools\make_test_replay.py data\test.jsonl
-python main.py --replay data\test.jsonl --speed 5
-```
-
-## 5. (선택) 단일 exe로 패키징
-
-파이썬 없이 배포하고 싶다면 PyInstaller로 단일 실행 파일을 만들 수 있습니다.
-
-```bat
-pipenv install --dev
-pipenv run pyinstaller teamradio56.spec
-```
-
-- 결과물: `dist\teamradio56.exe`
-- `config.yaml`을 exe와 같은 폴더에 두고 실행하세요. `audio_cache\`, `data\`도
-  실행 위치 기준으로 생성됩니다.
-- 사전 생성 오디오 캐시(`python tools\pregen_audio.py`)를 미리 만들어
-  `audio_cache\` 폴더째 함께 배포하면 첫 실행부터 긴급 콜이 지연 없이 나옵니다.
-- 영어 kokoro 팩(`tts.engine: kokoro`)은 제작자 PC(`pip install kokoro-onnx`)에서
-  두 번 돌려 만듭니다:
-
-  ```bat
-  python tools\pregen_audio.py --engine kokoro
-  python tools\pregen_audio.py --segments --tiers 1,2,3
-  ```
-
-  배포할 파일은 `*_rfx3.wav`(통문장), `*_seg1.wav`(문장 세그먼트),
-  `_seg1_*.wav`(조립 자산 4개)입니다. 효과 전 원본 `*.wav`는 넣지 않습니다.
-  파이썬 엔진은 조립한 멘트를 `audio_cache\_assembled\`에 최근 200개까지
-  저장해 재사용합니다 (배포 대상 아님).
+> 예전에 파이썬 단독 실행판을 쓰면서 LMU Steam 시작 옵션에 `launch_with_lmu.bat`을
+> 넣었다면 지우세요. 그대로 두면 무전이 두 번(서로 다른 목소리로) 나올 수 있어요.
 
 ## 문제 해결
 
-| 증상 | 확인 사항 |
+| 증상 | 확인할 것 |
 |------|-----------|
-| 계속 `게임 대기 중...` | 플러그인 DLL 위치, `" Enabled": 1` (공백 포함), 게임이 64비트인지 |
-| `세션 대기 중...` | 게임은 연결됨. 메뉴가 아니라 실제 세션(주행 화면)에 들어가야 함 |
-| 음성이 안 나옴 | `voice.enabled: true`, Edge TTS는 인터넷 필요, 볼륨 설정 |
-| LLM 멘트가 안 나옴 | `ANTHROPIC_API_KEY` 설정 여부, 콘솔의 API 오류 로그 |
+| 램프가 계속 **○ 게임 대기 중** | 공유 메모리 플러그인 DLL 위치(`Plugins` 폴더), `" Enabled": 1` (공백 포함). 메뉴가 아니라 실제 세션(주행 화면)에 들어가 있는지 |
+| 왼쪽 메뉴에 teamradio56이 없음 | DLL 두 개가 SimHub 폴더 **바로 아래**에 있는지. SimHub 재시작. **Settings → Plugins**에서 켜져 있는지 |
+| 소리가 전혀 안 남 / 맨 위 빨간 안내 | 음성 팩이 없거나 받다 끊김 → **[음성 팩 업데이트]** (꺼져 있으면 먼저 **[업데이트 확인]**) |
+| 음성 팩이 있는데 조용함 | **음성 출력**이 켜져 있는지, Windows 볼륨 믹서의 SimHub 볼륨, 기본 오디오 장치. **[테스트 발화]** 결과 확인 |
+| 최근 무전에 `(무음)` | 음성 팩에 없는 멘트라 글자로만 낸 것 → 음성 팩 업데이트. 계속되면 로그 첨부해서 알려주세요 |
+| 연습·퀄리에서 트래픽 콜이 없음 | **레이스에서만**이 기본으로 켜져 있음. 트랙을 같이 쓰는 세션이면 끄기 |
+| 모니터·메뉴에서 조용함 | **주행 중에만 발화**가 켜져 있음 (정상) |
+| 왼쪽·오른쪽이 반대 | **좌우 반전** 켜기 |
+| 무전이 두 번 들림 | 예전 파이썬 단독판이 같이 돌고 있음 → Steam 시작 옵션의 `launch_with_lmu.bat` 지우기, 작업 관리자에서 `python.exe`/`teamradio56.exe` 확인 |
+| 업데이트 오류 "인터넷에 연결할 수 없습니다" | 오프라인·방화벽·프록시. 안 되면 릴리스 페이지에서 직접 받기 |
+| 업데이트 오류 "폴더에 쓸 권한이 없습니다" | SimHub을 관리자 권한으로 한 번 실행해 업데이트하거나 직접 복사 |
+| 업데이트 뒤 플러그인이 안 뜸 | SimHub을 끄고 SimHub 폴더의 `teamradio56_backup.txt`를 열어, 줄마다 오른쪽 파일을 지우고 왼쪽 파일을 오른쪽 이름으로 바꾸기. 또는 이전 릴리스 DLL 복사 |
+
+그래도 안 되면 설정 화면의 **[로그 열기]**로 `teamradio56.log`를 열어
+[GitHub 이슈](https://github.com/hyungwookc07/teamradio56/issues)에 첨부해 주세요.
+클래스 이름을 이상하게 부르면 로그의 `클래스 진단:` 줄을, 콜이 소리 없이 나가면
+`[무음]` 줄을 같이 붙여 주시면 원인을 찾기 쉬워요.
+
+---
+
+파이썬 앱(개발·음성 팩 렌더용) 설치·실행·리플레이·exe 패키징은
+[DEVELOPMENT.md](DEVELOPMENT.md)로 옮겼어요.
