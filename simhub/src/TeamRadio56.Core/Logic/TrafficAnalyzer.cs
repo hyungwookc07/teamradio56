@@ -93,8 +93,10 @@ namespace TeamRadio56.Core.Logic
         private sealed class CarTrack
         {
             public int Cid;
-            public string Cls;
+            public string Cls;            // 게임 클래스 문자열 그대로 (진단·브리지 문맥)
             public string Driver;
+            public bool SameCls;          // 내 클래스와 같은 클래스 (문자열이 같거나 같은 계열)
+            public string SayCls = "";    // 무전에서 부르는 클래스 — 같은 클래스면 "" (이름 없이)
             public string State = Far;
             public double GapM;
             public double? Rate;          // dgap/dt EMA (m/s)
@@ -486,7 +488,11 @@ namespace TeamRadio56.Core.Logic
             // 같은 클래스(같은 문자열·같은 계열)는 랩핑할 때만 빠른 차, 다른 클래스는 계열 서열 →
             // 계열을 모르면 관측 페이스 → 그것도 없으면 빠른 차가 아니다 (예전: 무조건 빠른 차)
             int rel = VehicleClass.Relation(me.Class, v.Class, pace);
-            if (VehicleClass.SameClass(me.Class, v.Class))
+            t.SameCls = VehicleClass.SameClass(me.Class, v.Class);
+            // 무전 호칭: 내 클래스와 같은 클래스의 차는 클래스 이름 없이 부른다 — LMP3 단일 클래스
+            // 경기에서 "LMP3 right behind"가 아니라 "Car behind" (모르는 클래스와 같은 경로)
+            t.SayCls = VehicleClass.Spoken(me.Class, v.Class);
+            if (t.SameCls)
             {
                 t.Lapping = t.LapDelta >= 0.9;
                 t.Faster = t.Lapping;
@@ -620,6 +626,12 @@ namespace TeamRadio56.Core.Logic
             return "동클래스 같은 랩 포지션 배틀 상황";
         }
 
+        /// <summary>브리지 문맥의 차 이름 — 같은 클래스는 "같은 클래스", 다른 클래스는 게임 문자열.</summary>
+        private static string BridgeCar(CarTrack t)
+        {
+            return t.SameCls ? "같은 클래스" : t.Cls;
+        }
+
         private void EmitSingle(CarTrack t, string old, double now, EventBus bus)
         {
             Mark(t, now);
@@ -637,7 +649,7 @@ namespace TeamRadio56.Core.Logic
                     DedupKey = "along_" + cid,
                     Ttl = 3.0,
                     Tone = "urgent",
-                    BridgeTopic = t.Cls + " 차량(" + t.Driver + ")이 지금 옆에 나란히 있다. "
+                    BridgeTopic = BridgeCar(t) + " 차량(" + t.Driver + ")이 지금 옆에 나란히 있다. "
                                   + RelContext(t),
                     ValidFn = () =>
                     {
@@ -646,7 +658,7 @@ namespace TeamRadio56.Core.Logic
                     },
                 };
                 ev.Data["pool"] = pool;
-                ev.Data["cls"] = t.Cls;
+                ev.Data["cls"] = t.SayCls;
                 ev.Data["driver"] = t.Driver;
                 bus.Push(ev);
             }
@@ -659,7 +671,7 @@ namespace TeamRadio56.Core.Logic
                     DedupKey = "near_" + cid,
                     Ttl = 4.0,
                     Tone = tone,
-                    BridgeTopic = t.Cls + " 차량이 뒤 50m 안에 붙었다. " + RelContext(t),
+                    BridgeTopic = BridgeCar(t) + " 차량이 뒤 50m 안에 붙었다. " + RelContext(t),
                     ValidFn = () =>
                     {
                         string s = CarState(cid);
@@ -667,7 +679,7 @@ namespace TeamRadio56.Core.Logic
                     },
                 };
                 ev.Data["pool"] = "nearby_behind";
-                ev.Data["cls"] = t.Cls;
+                ev.Data["cls"] = t.SayCls;
                 ev.Data["driver"] = t.Driver;
                 bus.Push(ev);
             }
@@ -685,7 +697,7 @@ namespace TeamRadio56.Core.Logic
                     Ttl = 5.0,
                     Tone = tone,
                 };
-                ev.Data["cls"] = t.Cls;
+                ev.Data["cls"] = t.SayCls;
                 ev.Data["gap_sec"] = Math.Min(eta, 6);
                 bus.Push(ev);
             }
@@ -703,7 +715,7 @@ namespace TeamRadio56.Core.Logic
                         ValidFn = () => CarState(cid) == NearbyAhead,
                     };
                     ev.Data["pool"] = "pass_complete";
-                    ev.Data["cls"] = t.Cls;
+                    ev.Data["cls"] = t.SayCls;
                     bus.Push(ev);
                 }
                 else
@@ -715,7 +727,7 @@ namespace TeamRadio56.Core.Logic
                         DedupKey = "bm_" + cid,
                         Ttl = 8.0,
                         Tone = tone,
-                        BridgeTopic = "전방에 백마커(" + t.Cls + ", 랩 차이 "
+                        BridgeTopic = "전방에 백마커(" + BridgeCar(t) + ", 랩 차이 "
                                       + Math.Abs(t.LapDelta).ToString("F0")
                                       + "랩)를 잡았다. 무리 없는 추월 조언을 짧게.",
                         ValidFn = () =>
@@ -725,7 +737,7 @@ namespace TeamRadio56.Core.Logic
                         },
                     };
                     ev.Data["pool"] = "backmarker_ahead";
-                    ev.Data["cls"] = t.Cls;
+                    ev.Data["cls"] = t.SayCls;
                     bus.Push(ev);
                 }
             }
@@ -741,7 +753,7 @@ namespace TeamRadio56.Core.Logic
                     ValidFn = () => CarState(cid) == Far,
                 };
                 ev.Data["pool"] = "dropped";
-                ev.Data["cls"] = t.Cls;
+                ev.Data["cls"] = t.SayCls;
                 bus.Push(ev);
             }
         }
@@ -780,13 +792,14 @@ namespace TeamRadio56.Core.Logic
 
         private static string ComposeMulti(List<CarTrack> active)
         {
+            // 종합 문장의 재료는 무전 호칭 — 같은 클래스 차는 "" → 중립어 "car"
             var cars = new List<MultiCar>(active.Count);
             foreach (CarTrack t in active)
-                cars.Add(new MultiCar { State = t.State, Cls = t.Cls, Side = t.Side });
+                cars.Add(new MultiCar { State = t.State, Cls = t.SayCls, Side = t.Side });
             return ComposeMulti(cars);
         }
 
-        /// <summary>다중 차량 문장의 재료 — 상태·클래스·측면만 (traffic.compose_multi와 같은 입력).</summary>
+        /// <summary>다중 차량 문장의 재료 — 상태·무전 호칭(같은 클래스면 "")·측면 (traffic.MultiCar).</summary>
         public sealed class MultiCar
         {
             public string State;

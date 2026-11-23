@@ -620,7 +620,9 @@ namespace TeamRadio56.Replay
                     if (pb > 0 && !pace.ContainsKey(f[2]))
                         pace[f[2]] = pb;
                     return string.Join("\t", line, VehicleClass.SameClass(f[1], f[2]) ? "1" : "0",
-                        VehicleClass.Relation(f[1], f[2], pace).ToString(CultureInfo.InvariantCulture));
+                        VehicleClass.Relation(f[1], f[2], pace).ToString(CultureInfo.InvariantCulture),
+                        VehicleClass.Spoken(f[1], f[2]),
+                        Messages.MultiClassName(VehicleClass.Spoken(f[1], f[2])));
                 }
                 case "D":
                     return string.Join("\t", line, TrafficAnalyzer.ClassDiagLine(f[1], f[2]),

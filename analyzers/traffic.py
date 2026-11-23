@@ -25,7 +25,7 @@ from events import Event, EventBus, EventType, Priority
 from state import SessionState
 from telemetry import Snapshot
 from vehicle_class import (class_display, class_family, class_pace, class_rank,
-                           class_relation, same_class)
+                           class_relation, same_class, spoken_class)
 
 log = logging.getLogger("traffic")
 
@@ -97,8 +97,10 @@ def class_diag_line(raw: str, my_cls: Optional[str] = None) -> str:
 @dataclass
 class CarTrack:
     cid: int
-    cls: str
+    cls: str                           # 게임 클래스 문자열 그대로 (진단·브리지 문맥)
     driver: str
+    same_cls: bool = False             # 내 클래스와 같은 클래스 (문자열이 같거나 같은 계열)
+    say_cls: str = ""                  # 무전에서 부르는 클래스 — 같은 클래스면 "" (이름 없이)
     state: str = FAR
     gap_m: float = 0.0
     rate: Optional[float] = None       # dgap/dt EMA (m/s), +면 앞으로 이동(접근: 뒤차가 +)
@@ -388,7 +390,11 @@ class TrafficAnalyzer:
         # 아니다 (예전: 모르면 무조건 빠른 차 → 하이퍼카 뒤 하이퍼카도 "faster car").
         # LMU의 mEstimatedLapTime은 전 차량 동일값이라 쓰지 않는다.
         rel = class_relation(me["cls"], v["cls"], pace)
-        if same_class(me["cls"], v["cls"]):
+        t.same_cls = same_class(me["cls"], v["cls"])
+        # 무전 호칭: 내 클래스와 같은 클래스의 차는 클래스 이름 없이 부른다 — LMP3 단일 클래스
+        # 경기에서 "LMP3 right behind"가 아니라 "Car behind" (모르는 클래스와 같은 경로)
+        t.say_cls = spoken_class(me["cls"], v["cls"])
+        if t.same_cls:
             t.lapping = t.lap_delta >= 0.9
             t.faster = t.lapping
         else:
@@ -484,6 +490,12 @@ class TrafficAnalyzer:
             return "내가 랩 돌리는 백마커 (배틀 아님, 안전하게 추월)"
         return "동클래스 같은 랩 포지션 배틀 상황"
 
+    @staticmethod
+    def _bridge_car(t: CarTrack) -> str:
+        """브리지 문맥의 차 이름 — 같은 클래스는 클래스 이름 대신 "같은 클래스" (LLM도 내 클래스
+        이름으로 상대를 부르지 않게), 다른 클래스는 게임 문자열 그대로."""
+        return "같은 클래스" if t.same_cls else t.cls
+
     def _emit_single(self, t: CarTrack, old: str, now: float, bus: EventBus) -> None:
         self._mark(t, now)
         tone = "urgent" if (t.state == ALONGSIDE or self.in_battle()) else "casual"
@@ -494,18 +506,18 @@ class TrafficAnalyzer:
                 t.side, "alongside")
             bus.push(Event(
                 type=EventType.TRAFFIC_CLOSE, priority=Priority.CRITICAL,
-                data={"pool": pool, "cls": t.cls, "driver": t.driver},
+                data={"pool": pool, "cls": t.say_cls, "driver": t.driver},
                 dedup_key=f"along_{cid}", ttl=3.0, tone="urgent",
-                bridge={"topic": f"{t.cls} 차량({t.driver})이 지금 옆에 나란히 있다. "
+                bridge={"topic": f"{self._bridge_car(t)} 차량({t.driver})이 지금 옆에 나란히 있다. "
                                  + self._rel_context(t)},
                 valid_fn=lambda: self.car_state(cid) in (ALONGSIDE, NEARBY_BEHIND),
             ))
         elif t.state == NEARBY_BEHIND:
             bus.push(Event(
                 type=EventType.TRAFFIC_CLOSE, priority=Priority.CRITICAL,
-                data={"pool": "nearby_behind", "cls": t.cls, "driver": t.driver},
+                data={"pool": "nearby_behind", "cls": t.say_cls, "driver": t.driver},
                 dedup_key=f"near_{cid}", ttl=4.0, tone=tone,
-                bridge={"topic": f"{t.cls} 차량이 뒤 50m 안에 붙었다. "
+                bridge={"topic": f"{self._bridge_car(t)} 차량이 뒤 50m 안에 붙었다. "
                                  + self._rel_context(t)},
                 valid_fn=lambda: self.car_state(cid) in (NEARBY_BEHIND, ALONGSIDE),
             ))
@@ -513,23 +525,23 @@ class TrafficAnalyzer:
             eta = max(round(-t.gap_m / t.rate), 1) if t.rate else 4
             bus.push(Event(
                 type=EventType.TRAFFIC_APPROACH, priority=Priority.CRITICAL,
-                data={"cls": t.cls, "gap_sec": min(eta, 6)},
+                data={"cls": t.say_cls, "gap_sec": min(eta, 6)},
                 dedup_key=f"appr_{cid}", ttl=5.0, tone=tone,
             ))
         elif t.state == NEARBY_AHEAD:
             if old == ALONGSIDE:           # 추월 완료 (내가 추월당함)
                 bus.push(Event(
                     type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
-                    data={"pool": "pass_complete", "cls": t.cls},
+                    data={"pool": "pass_complete", "cls": t.say_cls},
                     dedup_key=f"passed_{cid}", ttl=6.0, tone="casual",
                     valid_fn=lambda: self.car_state(cid) == NEARBY_AHEAD,
                 ))
             else:                          # 전방 백마커 예고 (내가 잡는 트래픽)
                 bus.push(Event(
                     type=EventType.TRAFFIC_UPDATE, priority=Priority.HIGH,
-                    data={"pool": "backmarker_ahead", "cls": t.cls},
+                    data={"pool": "backmarker_ahead", "cls": t.say_cls},
                     dedup_key=f"bm_{cid}", ttl=8.0, tone=tone,
-                    bridge={"topic": f"전방에 백마커({t.cls}, 랩 차이 "
+                    bridge={"topic": f"전방에 백마커({self._bridge_car(t)}, 랩 차이 "
                                      f"{abs(t.lap_delta):.0f}랩)를 잡았다. "
                                      "무리 없는 추월 조언을 짧게."},
                     valid_fn=lambda: self.car_state(cid) in (NEARBY_AHEAD, ALONGSIDE),
@@ -537,7 +549,7 @@ class TrafficAnalyzer:
         elif t.state == FAR:               # 배틀하던 차가 떨어짐
             bus.push(Event(
                 type=EventType.TRAFFIC_UPDATE, priority=Priority.NORMAL,
-                data={"pool": "dropped", "cls": t.cls},
+                data={"pool": "dropped", "cls": t.say_cls},
                 dedup_key=f"drop_{cid}", ttl=10.0, tone="casual",
                 valid_fn=lambda: self.car_state(cid) == FAR,
             ))
@@ -560,14 +572,25 @@ class TrafficAnalyzer:
         ))
 
     def _compose_multi(self, active: list[CarTrack]) -> Optional[str]:
-        return compose_multi(active)
+        # 종합 문장의 재료는 무전 호칭 — 같은 클래스 차는 "" → 중립어 "car"
+        # ("two cars behind", "one car, one Hypercar behind")
+        return compose_multi([MultiCar(t.state, t.say_cls, t.side) for t in active])
+
+
+@dataclass
+class MultiCar:
+    """다중 차량 문장의 재료 — 상태·무전 호칭(같은 클래스면 "")·측면 (C# TrafficAnalyzer.MultiCar)."""
+    state: str
+    cls: str
+    side: Optional[str]
 
 
 def compose_multi(active: list) -> Optional[str]:
     """
     같은 상태의 차량들을 한 절로 합치고(클래스별 카운트), 위협도 순
     상위 2개 절만 한 문장으로. "뒤로 하이퍼카 하나, GT3 하나 붙는다" 식.
-    차량은 state/cls/side만 본다 (커버리지 퍼즈가 가짜 차량으로 부른다).
+    차량은 state/cls/side만 본다 (커버리지 퍼즈가 가짜 차량으로 부른다). cls는 무전 호칭
+    (MultiCar — 같은 클래스·모르는 클래스는 ""/모르는 문자열 → 중립어 "car").
     C# TrafficAnalyzer.ComposeMulti.
     """
     from messages import msg, multi_class_name, multi_names

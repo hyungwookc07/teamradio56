@@ -1,0 +1,99 @@
+{
+ "cases": [
+  {
+   "backmarker": false,
+   "calls": [
+    "nearby_behind",
+    "car on your right.",
+    "pass_complete",
+    "dropped"
+   ],
+   "car": "ELMS LMP3",
+   "cls": "LMP3_ELMS",
+   "faster": false,
+   "kind": "pass",
+   "me": "LMP3",
+   "note": "같은 계열 \"LMP3_ELMS\"가 뒤에서(오른쪽) 붙고, 앞 LMGT3를 잡는 순간 셋이 나란히 — 근접(호칭 없음) → \"car on your right.\" → 지나감 (호칭 없음)",
+   "old": null,
+   "old019": "근접·지나감 호칭 LMP3, \"LMP3 on your right.\"",
+   "pair": null,
+   "same": true,
+   "show": ""
+  },
+  {
+   "backmarker": true,
+   "calls": [],
+   "car": "GT3 백마커",
+   "cls": "LMGT3",
+   "faster": false,
+   "kind": "catch",
+   "me": "LMP3",
+   "note": "앞(왼쪽) LMGT3를 잡음 — 백마커 예고는 같은 틱의 근접 콜에 밀리고, 나란히는 다중 종합으로, 떨어짐 호칭 GT3",
+   "old": null,
+   "old019": null,
+   "pair": "ELMS LMP3",
+   "same": false,
+   "show": "GT3"
+  }
+ ],
+ "events": [
+  {
+   "data": {
+    "cls": "",
+    "driver": "ELMS LMP3",
+    "pool": "nearby_behind"
+   },
+   "t": 307.2,
+   "type": "traffic_close",
+   "voice": {
+    "pool": "nearby_behind",
+    "slots": {
+     "cls": ""
+    }
+   }
+  },
+  {
+   "data": {},
+   "message": "car on your right.",
+   "t": 323.4,
+   "type": "traffic_multi",
+   "voice": null
+  },
+  {
+   "data": {
+    "cls": "",
+    "pool": "pass_complete"
+   },
+   "t": 327.8,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "pass_complete",
+    "slots": {
+     "cls": ""
+    }
+   }
+  },
+  {
+   "data": {
+    "cls": "LMGT3",
+    "pool": "dropped"
+   },
+   "t": 344.2,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "dropped",
+    "slots": {
+     "cls": "GT3"
+    }
+   }
+  }
+ ],
+ "note": "트래픽 클래스 판정 — 같은 클래스(문자열·계열)는 랩핑일 때만 빠른 차, 다른 계열은 서열, 계열을 모르면 관측 페이스(2%), 그것도 없으면 빠른 차도 백마커도 아님. 모르는 클래스와 내 클래스와 같은 클래스는 호칭 없이 말한다 (예전 \"faster car\", v0.19.0 내 클래스 이름)",
+ "scenario": "traffic_class_meet",
+ "types": [
+  "traffic_approach",
+  "traffic_close",
+  "traffic_update",
+  "traffic_multi"
+ ]
+}

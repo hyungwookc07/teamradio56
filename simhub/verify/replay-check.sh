@@ -184,7 +184,7 @@ echo "▶ 클래스 정규화 대조 (vehicle_class ↔ VehicleClass)"
 python3 tools/class_check.py --in "$OUT/class_in.tsv" --expect "$OUT/class_py.tsv"
 "$RUNNER" --class-check "$OUT/class_in.tsv" --out "$OUT/class_cs.tsv"
 if [ -s "$OUT/class_py.tsv" ] && cmp -s "$OUT/class_py.tsv" "$OUT/class_cs.tsv"; then
-    echo "✅ 일치 — $(wc -l < "$OUT/class_py.tsv")줄 동일 (계열·서열·호칭·같은 클래스·빠른 클래스·진단·페이스)"
+    echo "✅ 일치 — $(wc -l < "$OUT/class_py.tsv")줄 동일 (계열·서열·호칭·같은 클래스·빠른 클래스·무전 호칭·진단·페이스)"
 else
     echo "❌ 클래스 정규화 불일치 (또는 빈 출력):"
     diff "$OUT/class_py.tsv" "$OUT/class_cs.tsv" | head -10
@@ -434,7 +434,7 @@ echo "▶ 세션 브리핑 리플레이 재생성 대조 (연습·퀄리·웜업
 python3 tools/make_session_replays.py --check || fail=1
 
 echo
-echo "▶ 트래픽 클래스 리플레이 재생성 대조 (Hyper·LMP3·LMP2 계열·모르는 클래스 페이스)"
+echo "▶ 트래픽 클래스 리플레이 재생성 대조 (Hyper·LMP3·LMP2 계열·모르는 클래스 페이스·LMP3 단일 클래스·같은 클래스 섞인 다중 종합)"
 python3 tools/make_traffic_class_replay.py --check || fail=1
 
 # 브리핑 변형(FNV-1a 시드)·체커 콜 등급·체커 뒤 무전 규칙·피니시 뒤 침묵 (파이썬 단위 검사 —

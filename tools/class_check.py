@@ -8,7 +8,8 @@
 입력 줄 (탭 구분):
   F <raw>                         → F <raw> <계열> <서열> <호칭> <다중 종합 이름>
   R <mine> <theirs> <내 페이스> <상대 페이스>  (0 = 페이스 없음)
-                                  → R … <same_class 0/1> <class_relation>
+                                  → R … <same_class 0/1> <class_relation> <spoken_class>
+                                    <그 다중 종합 이름> (같은 클래스는 "" → "car")
   D <raw> <mine>                  → D … <진단 로그 줄 (traffic.class_diag_line)>
   M <cls>=<베스트 랩>;…            → M … <cls>=<중앙값 .6f>;… (클래스 문자열 정렬)
 
@@ -83,7 +84,8 @@ def evaluate(line: str) -> str:
         if pb > 0 and b not in pace:
             pace[b] = pb
         return "\t".join([line, "1" if vc.same_class(a, b) else "0",
-                          str(vc.class_relation(a, b, pace))])
+                          str(vc.class_relation(a, b, pace)),
+                          vc.spoken_class(a, b), multi_class_name(vc.spoken_class(a, b))])
     if f[0] == "D":
         return "\t".join([line, class_diag_line(f[1], f[2]), class_diag_line(f[1])])
     if f[0] == "M":

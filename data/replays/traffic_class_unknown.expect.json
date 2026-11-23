@@ -15,6 +15,9 @@
    "me": "LMGT3",
    "note": "계열 모르는 \"Prototype\" — 페이스 6.7% 빠름 → 접근 예고 (클래스 이름 없이)",
    "old": "호칭 faster car (traffic_approach)",
+   "old019": null,
+   "pair": null,
+   "same": false,
    "show": ""
   },
   {
@@ -31,6 +34,9 @@
    "me": "LMGT3",
    "note": "계열·페이스 모두 모르는 \"Mystery\" — 접근 예고 없이 근접·나란히 (호칭 없음)",
    "old": "서열 모름 → 빠른 차: 접근 예고 + 호칭 faster car",
+   "old019": null,
+   "pair": null,
+   "same": false,
    "show": ""
   },
   {
@@ -47,6 +53,9 @@
    "me": "LMGT3",
    "note": "계열 모르는 \"Slow Cup\" — 페이스 8.3% 느림 → 백마커 예고 (호칭 없음)",
    "old": "서열 모름 → 빠른 차: 백마커 예고·떨어짐 콜 없음",
+   "old019": null,
+   "pair": null,
+   "same": false,
    "show": ""
   },
   {
@@ -56,7 +65,9 @@
    "kind": "park",
    "me": "LMGT3",
    "note": "대기만 — 내 클래스 페이스 중앙값 (120.25)",
-   "old": null
+   "old": null,
+   "old019": null,
+   "same": true
   },
   {
    "calls": [],
@@ -65,7 +76,9 @@
    "kind": "park",
    "me": "LMGT3",
    "note": "대기만 — \"Prototype\" 페이스 중앙값 (112.25)",
-   "old": null
+   "old": null,
+   "old019": null,
+   "same": false
   }
  ],
  "events": [
@@ -215,7 +228,7 @@
    }
   }
  ],
- "note": "트래픽 클래스 판정 — 같은 클래스(문자열·계열)는 랩핑일 때만 빠른 차, 다른 계열은 서열, 계열을 모르면 관측 페이스(2%), 그것도 없으면 빠른 차도 백마커도 아님. 모르는 클래스는 호칭 없이 말한다 (예전 \"faster car\")",
+ "note": "트래픽 클래스 판정 — 같은 클래스(문자열·계열)는 랩핑일 때만 빠른 차, 다른 계열은 서열, 계열을 모르면 관측 페이스(2%), 그것도 없으면 빠른 차도 백마커도 아님. 모르는 클래스와 내 클래스와 같은 클래스는 호칭 없이 말한다 (예전 \"faster car\", v0.19.0 내 클래스 이름)",
  "scenario": "traffic_class_unknown",
  "types": [
   "traffic_approach",

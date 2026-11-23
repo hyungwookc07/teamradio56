@@ -1,0 +1,68 @@
+{
+ "cases": [
+  {
+   "backmarker": false,
+   "calls": [
+    "one car, one GT3 behind.",
+    "pass_complete"
+   ],
+   "car": "LMP3 상대",
+   "cls": "LMP3",
+   "faster": false,
+   "kind": "pass",
+   "me": "LMP3",
+   "note": "같은 클래스 LMP3(오른쪽)와 LMGT3(왼쪽)가 같이 붙음 — \"one car, one GT3 behind.\" → 지나감 (호칭 없음)",
+   "old": null,
+   "old019": "\"one LMP3, one GT3 behind.\", 지나감 호칭 LMP3",
+   "pair": null,
+   "same": true,
+   "show": ""
+  },
+  {
+   "backmarker": true,
+   "calls": [],
+   "car": "GT3 드라이버",
+   "cls": "LMGT3",
+   "faster": false,
+   "kind": "pass",
+   "me": "LMP3",
+   "note": "LMP3 상대의 짝 (왼쪽) — 다른 클래스라 다중 종합에 GT3",
+   "old": null,
+   "old019": null,
+   "pair": "LMP3 상대",
+   "same": false,
+   "show": "GT3"
+  }
+ ],
+ "events": [
+  {
+   "data": {},
+   "message": "one car, one GT3 behind.",
+   "t": 303.4,
+   "type": "traffic_multi",
+   "voice": null
+  },
+  {
+   "data": {
+    "cls": "",
+    "pool": "pass_complete"
+   },
+   "t": 322.2,
+   "type": "traffic_update",
+   "voice": {
+    "pool": "pass_complete",
+    "slots": {
+     "cls": ""
+    }
+   }
+  }
+ ],
+ "note": "트래픽 클래스 판정 — 같은 클래스(문자열·계열)는 랩핑일 때만 빠른 차, 다른 계열은 서열, 계열을 모르면 관측 페이스(2%), 그것도 없으면 빠른 차도 백마커도 아님. 모르는 클래스와 내 클래스와 같은 클래스는 호칭 없이 말한다 (예전 \"faster car\", v0.19.0 내 클래스 이름)",
+ "scenario": "traffic_class_mixed",
+ "types": [
+  "traffic_approach",
+  "traffic_close",
+  "traffic_update",
+  "traffic_multi"
+ ]
+}

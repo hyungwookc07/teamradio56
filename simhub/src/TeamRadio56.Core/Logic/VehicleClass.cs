@@ -13,7 +13,8 @@ namespace TeamRadio56.Core.Logic
     /// 정규화: ASCII 대문자만 소문자로, [a-z0-9] 밖의 문자는 구분자. 토큰을 앞에서부터, 그다음
     /// 전부 이어 붙인 문자열을 계열 패턴(토큰 전체 일치)에 맞춘다. 계열 서열 hypercar 5 > lmp2 4 >
     /// lmp3 3 > gte 2 > gt3 1 (LMP3 위치의 랩타임 근거는 vehicle_class.py), 모름 0.
-    /// 모르는 클래스의 호칭은 "" — 클래스 이름 없이 말한다 (예전 "faster car").
+    /// 모르는 클래스의 호칭은 "" — 클래스 이름 없이 말한다 (예전 "faster car"). 내 클래스와 같은
+    /// 클래스의 차도 클래스 이름 없이 부른다 (Spoken).
     /// </summary>
     public static class VehicleClass
     {
@@ -116,6 +117,16 @@ namespace TeamRadio56.Core.Logic
                 return true;
             string fa = Family(a);
             return fa != Unknown && fa == Family(b);
+        }
+
+        /// <summary>
+        /// 무전에서 부를 상대 클래스 문자열 — 내 클래스와 같은 클래스면 "" (클래스 이름 없이),
+        /// 다르면 원래 문자열 그대로 (vehicle_class.spoken_class). 트래픽 이벤트 Data["cls"]와
+        /// 다중 차량 종합이 쓴다.
+        /// </summary>
+        public static string Spoken(string mine, string theirs)
+        {
+            return SameClass(mine, theirs) ? "" : (theirs ?? "");
         }
 
         /// <summary>클래스 문자열 → 베스트 랩 중앙값 (best_lap &gt; 0만, 짝수면 가운데 둘 평균).</summary>

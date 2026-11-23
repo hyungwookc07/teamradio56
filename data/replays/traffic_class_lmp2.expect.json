@@ -12,9 +12,12 @@
    "faster": false,
    "kind": "pass",
    "me": "LMP2",
-   "note": "같은 계열 \"LMP2_ELMS\"가 같은 랩에서 뒤에 붙음 — 배틀, 빠른 차 아님",
+   "note": "같은 계열 \"LMP2_ELMS\"가 같은 랩에서 뒤에 붙음 — 배틀, 빠른 차 아님, 호칭 없음",
    "old": null,
-   "show": "LMP2"
+   "old019": "근접·지나감 호칭이 내 클래스 이름 LMP2",
+   "pair": null,
+   "same": true,
+   "show": ""
   },
   {
    "backmarker": false,
@@ -29,9 +32,12 @@
    "faster": true,
    "kind": "pass",
    "me": "LMP2",
-   "note": "한 랩 앞선 \"LMP2_ELMS\"가 랩 돌리러 옴 — 같은 계열 랩핑 → 접근 예고",
+   "note": "한 랩 앞선 \"LMP2_ELMS\"가 랩 돌리러 옴 — 같은 계열 랩핑 → 접근 예고 (클래스 이름 없는 traffic_approach_any)",
    "old": "문자열이 달라 같은 클래스 랩핑으로 안 봄 → 접근 예고 없음",
-   "show": "LMP2"
+   "old019": "접근 예고가 traffic_approach + 호칭 LMP2 (\"LMP2 coming through\")",
+   "pair": null,
+   "same": true,
+   "show": ""
   },
   {
    "backmarker": false,
@@ -44,15 +50,18 @@
    "faster": false,
    "kind": "catch",
    "me": "LMP2",
-   "note": "앞 \"LMP2 Pro-Am\"을 잡음 — 같은 계열이라 백마커 아님 (나란히·떨어짐만)",
+   "note": "앞 \"LMP2 Pro-Am\"을 잡음 — 같은 계열이라 백마커 아님 (나란히·떨어짐만, 호칭 없음)",
    "old": null,
-   "show": "LMP2"
+   "old019": "data cls가 게임 문자열 (슬롯 호칭 LMP2)",
+   "pair": null,
+   "same": true,
+   "show": ""
   }
  ],
  "events": [
   {
    "data": {
-    "cls": "LMP2_ELMS",
+    "cls": "",
     "driver": "ELMS 동료",
     "pool": "nearby_behind"
    },
@@ -61,13 +70,13 @@
    "voice": {
     "pool": "nearby_behind",
     "slots": {
-     "cls": "LMP2"
+     "cls": ""
     }
    }
   },
   {
    "data": {
-    "cls": "LMP2_ELMS",
+    "cls": "",
     "driver": "ELMS 동료",
     "pool": "alongside_right"
    },
@@ -76,13 +85,13 @@
    "voice": {
     "pool": "alongside_right",
     "slots": {
-     "cls": "LMP2"
+     "cls": ""
     }
    }
   },
   {
    "data": {
-    "cls": "LMP2_ELMS",
+    "cls": "",
     "pool": "pass_complete"
    },
    "t": 290.0,
@@ -90,28 +99,27 @@
    "voice": {
     "pool": "pass_complete",
     "slots": {
-     "cls": "LMP2"
+     "cls": ""
     }
    }
   },
   {
    "data": {
-    "cls": "LMP2_ELMS",
+    "cls": "",
     "gap_sec": 6
    },
    "t": 348.8,
    "type": "traffic_approach",
    "voice": {
-    "pool": "traffic_approach",
+    "pool": "traffic_approach_any",
     "slots": {
-     "cls": "LMP2",
      "gap": "6 seconds"
     }
    }
   },
   {
    "data": {
-    "cls": "LMP2_ELMS",
+    "cls": "",
     "driver": "ELMS 리더",
     "pool": "nearby_behind"
    },
@@ -120,13 +128,13 @@
    "voice": {
     "pool": "nearby_behind",
     "slots": {
-     "cls": "LMP2"
+     "cls": ""
     }
    }
   },
   {
    "data": {
-    "cls": "LMP2_ELMS",
+    "cls": "",
     "driver": "ELMS 리더",
     "pool": "alongside_right"
    },
@@ -135,13 +143,13 @@
    "voice": {
     "pool": "alongside_right",
     "slots": {
-     "cls": "LMP2"
+     "cls": ""
     }
    }
   },
   {
    "data": {
-    "cls": "LMP2_ELMS",
+    "cls": "",
     "pool": "pass_complete"
    },
    "t": 360.0,
@@ -149,13 +157,13 @@
    "voice": {
     "pool": "pass_complete",
     "slots": {
-     "cls": "LMP2"
+     "cls": ""
     }
    }
   },
   {
    "data": {
-    "cls": "LMP2 Pro-Am",
+    "cls": "",
     "driver": "프로암",
     "pool": "alongside_right"
    },
@@ -164,13 +172,13 @@
    "voice": {
     "pool": "alongside_right",
     "slots": {
-     "cls": "LMP2"
+     "cls": ""
     }
    }
   },
   {
    "data": {
-    "cls": "LMP2 Pro-Am",
+    "cls": "",
     "pool": "dropped"
    },
    "t": 443.4,
@@ -178,12 +186,12 @@
    "voice": {
     "pool": "dropped",
     "slots": {
-     "cls": "LMP2"
+     "cls": ""
     }
    }
   }
  ],
- "note": "트래픽 클래스 판정 — 같은 클래스(문자열·계열)는 랩핑일 때만 빠른 차, 다른 계열은 서열, 계열을 모르면 관측 페이스(2%), 그것도 없으면 빠른 차도 백마커도 아님. 모르는 클래스는 호칭 없이 말한다 (예전 \"faster car\")",
+ "note": "트래픽 클래스 판정 — 같은 클래스(문자열·계열)는 랩핑일 때만 빠른 차, 다른 계열은 서열, 계열을 모르면 관측 페이스(2%), 그것도 없으면 빠른 차도 백마커도 아님. 모르는 클래스와 내 클래스와 같은 클래스는 호칭 없이 말한다 (예전 \"faster car\", v0.19.0 내 클래스 이름)",
  "scenario": "traffic_class_lmp2",
  "types": [
   "traffic_approach",

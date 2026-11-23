@@ -155,7 +155,11 @@ simhub/            # SimHub plugin + C# engine port (see simhub/README.md)
   is a battle, never "faster car". An unknown class string is compared by
   observed pace (median best lap per class, 2 % margin) and otherwise is
   neither faster traffic nor a backmarker; it is spoken without a class name
-  (multi-car summary: "car"). Each session logs every raw class string it
+  (multi-car summary: "car"). A car of your own class is never called by
+  your class name either — "Car behind.", "He's there.", a lapping class
+  leader is "Traffic behind, 3 seconds.", two cars are "two cars behind" /
+  "one car, one Hypercar behind" — so a single-class LMP3 race never says
+  "LMP3". Each session logs every raw class string it
   sees with its family/rank/name (`클래스 진단:` lines in the log)
 - [x] Tone tags on the phrase pools (casual/urgent) +
   `scripts/generate_variants.py` (LLM bulk regeneration)

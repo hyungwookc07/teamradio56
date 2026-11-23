@@ -18,6 +18,10 @@
   · 서열 — hypercar 5 > lmp2 4 > lmp3 3 > gte 2 > gt3 1, unknown 0
   · 호칭 — Hypercar / LMP2 / LMP3 / GTE / GT3. unknown은 ""(클래스 이름 없이 말한다 —
     예전처럼 "faster car"라고 부르지 않는다). 다중 차량 종합만 중립어 "car"(messages.multi_car)
+  · 무전에서 부르는 클래스(spoken_class) — 내 클래스와 같은 클래스의 차는 클래스 이름 없이
+    (모르는 클래스와 같은 경로: {cls} 없는 변형 · traffic_approach_any · 중립어 "car").
+    사용자 제보: "LMP3 단일 클래스 경기일 때도 뒤 차를 LMP3로 얘기함" — 실제 엔지니어는 내 클래스
+    이름으로 상대를 부르지 않는다 (단일 클래스면 무의미, 멀티클래스면 같은 클래스 = 배틀 상대)
   · 빠른 클래스 판정(class_relation) — 같은 클래스(문자열이 같거나 같은 계열)면 0, 둘 다 아는
     계열이면 서열 비교, 하나라도 모르면 관측 페이스(클래스 문자열별 베스트 랩 중앙값)가 2% 이상
     빠르거나 느릴 때만, 그 밖엔 0 (= 빠른 차도 백마커도 아니다)
@@ -105,6 +109,13 @@ def same_class(a: str, b: str) -> bool:
         return True
     fa = class_family(a)
     return fa != UNKNOWN and fa == class_family(b)
+
+
+def spoken_class(mine: str, theirs: str) -> str:
+    """무전에서 부를 상대 클래스 문자열 — 내 클래스와 같은 클래스(same_class)면 "" (클래스 이름
+    없이 말한다), 다르면 원래 문자열 그대로. 트래픽 이벤트 data["cls"]와 다중 차량 종합이 쓴다
+    (C# VehicleClass.Spoken)."""
+    return "" if same_class(mine, theirs) else (theirs or "")
 
 
 def class_pace(vehicles) -> dict:
