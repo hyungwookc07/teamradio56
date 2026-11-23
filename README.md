@@ -14,7 +14,7 @@ A few minutes of a race sound like this:
 
 > "Radio check. Race day, here we go."
 > "Car left!"
-> "Faster traffic, Hypercar in 2.4 seconds."
+> "Faster traffic, Hypercar in 2 seconds."
 > "Impact. Checking wheels and pressures."
 > "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on."
 > "FCY pit open. Box box."
@@ -31,26 +31,28 @@ chatter unless you turn on the optional reports.
 
 | Situation | What you hear (examples) |
 |---|---|
-| **Session start** | A radio check, then a briefing that fits the session. Race: your start position in class, fuel, the formation lap and the green call: *"Formation lap, get heat in the tyres and brakes. Hold your slot, I'll call the green."* Qualifying: *"Find a gap on the out lap, we want clear air."* |
+| **Session start** | A radio check, then a briefing that fits the session. In a race that means your start position in class, fuel, then the formation lap and the green call: *"Formation lap, get heat in the tyres and brakes. Hold your slot, I'll call the green."* |
 | **Race start** | For the first seconds after the green, left and right calls only, so you can concentrate on turn one: *"Through the start it's left and right calls only."* |
 | **Spotter** | *"Car left!"*, *"Car right!"*, *"Three wide, you're the meat!"*, *"Clear left."* |
 | **Traffic** | Faster classes coming up behind: *"Faster traffic, LMP2 in 3 seconds."* Slower cars ahead: *"Backmarker ahead, GT3. Easy does it."*, *"Car ahead is a lap down. Not a fight."* A stopped car ahead in a race: *"Stopped car ahead. Change your line early."* |
-| **Flags and race control** | *"FCY. Eighty kph, no overtaking."*, *"FCY pit open. Box box."*, *"Green green! Restart."*, *"Yellow in sector 2. No overtaking, be ready to lift."*, *"Blue flag. Let him by on the straight."*, *"Limiter! Limiter!"*, plus time-remaining and final-lap calls. |
-| **Damage** | On impact: *"Impact. Checking wheels and pressures."* About eight seconds later you get the result: *"Check done. Just marks. Wheels, tyres, pressures all fine. Carry on."* A lost wheel is called at once, and slow punctures, a bent steering alignment and front aero damage are spotted for you: *"Front left losing pressure. Slow puncture. We change it next stop."* |
+| **Flags and race control** | *"FCY. Eighty kph, no overtaking."*, *"Yellow in sector 2. No overtaking, be ready to lift."*, *"Blue flag. Let him by on the straight."* Plus restarts, the pit limiter, and time-remaining and final-lap calls. |
+| **Damage** | On impact: *"Impact. Checking wheels and pressures."* About eight seconds later you get the result. Slow punctures are spotted for you: *"Front left losing pressure. Slow puncture. We change it next stop."* A lost wheel, a bent alignment and aero damage are called too. |
 | **Car condition** | Water and oil temperature, brake temperature: *"Brakes averaging 820 degrees. Brake a touch earlier, cool them."* |
 | **Fuel and pit stops** | *"Fuel critical. Box within 2 laps."*, *"Box box, box box."*, a fuel-save target when you are borderline on a no-stop run, *"Pit window open. Box within 3 laps."* Fuel is in litres. |
-| **Rivals and gaps** | *"Gap behind 2.4 seconds. Opening up. Good."*, *"P4 in class, car ahead, just pitted."*, *"Car behind in class is 0.7 a lap quicker. With us in 8 laps. Be ready."* |
-| **Chequered flag and after** | The flag call depends on your result (win, class win, podium, places gained or lost): *"Chequered flag. P3, that's a podium!"* Then a cool-down lap call (*"Easy now, faster class still on track. Stay wide and let them by."*), a short summary and *"Limiter on, straight to the garage. Thanks for today."* After you finish, only safety calls remain. |
+| **Rivals and gaps** | *"Gap behind 2.4 seconds. Opening up. Good."*, *"P4 in class, car ahead, just pitted. I'll call the gap when he's out."*, *"Car behind in class is 0.7 a lap quicker. With us in 8 laps. Be ready."* |
+| **Chequered flag and after** | The flag call depends on your result (win, class win, podium, places gained or lost): *"Chequered flag. P3, that's a podium!"* Then a safety call on the cool-down lap and a short summary. After you finish, only safety calls remain. |
 | **Optional reports** (off by default) | For driving with the HUD off: your lap time every lap (*"Last lap 2 01.8. Best lap."*) and a position, gaps, fuel and tyres report every few laps. |
 
 ### Multiclass
 
 - Other classes are called by name: **Hypercar, LMP2, LMP3, GTE, GT3.**
-- Only **faster** classes get a warning as they come up behind you. Slower
-  classes ahead are backmarkers.
+- Only **faster** classes get a warning as they come up behind you, plus a
+  car of your own class that is coming round to lap you. Slower classes ahead
+  are backmarkers.
 - A car of **your own class** is never called by its class name. In an
-  LMP3-only race you hear *"Car behind."*, not *"LMP3 right behind."*. A car
-  of your own class is a battle, never "faster traffic".
+  LMP3-only race you hear *"Car behind."*, not *"LMP3 right behind."*, and a
+  leader coming to lap you is *"Traffic behind, 3 seconds."*. A car of your
+  own class on the same lap is a battle, not traffic.
 - If the game reports a class the plugin does not recognise, the car is
   called without a class name. It only gets a warning if it is clearly
   faster on lap times.
@@ -81,31 +83,36 @@ A step-by-step guide with more detail and troubleshooting is in
 
 1. Download `rFactor2SharedMemoryMapPlugin64.dll` from the
    [Iron Wolf releases](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases).
-2. Copy it into
-   `<Steam library>\steamapps\common\Le Mans Ultimate\Plugins\`.
-3. With the game closed, open
-   `<game folder>\UserData\player\CustomPluginVariables.JSON` and set:
+2. Copy it into `<game folder>\Plugins\`, where `<game folder>` is usually
+   `<Steam library>\steamapps\common\Le Mans Ultimate`.
+3. Start LMU once with the DLL in place, then quit. This creates the
+   settings entry.
+4. With the game closed, open
+   `<game folder>\UserData\player\CustomPluginVariables.JSON`, find the
+   `"rFactor2SharedMemoryMapPlugin64.dll"` entry and change `" Enabled"` to
+   `1`. Keep the space before `Enabled`. Don't paste anything in; just change
+   the value. The other lines in that entry can stay as they are. It should
+   look like this:
 
-   ```json
-   "rFactor2SharedMemoryMapPlugin64.dll": {
-     " Enabled": 1
-   }
    ```
-
-   The space before `Enabled` is intentional. Keep it. If the entry is not in
-   the file yet, start the game once with the DLL in place, quit, then edit.
+   "rFactor2SharedMemoryMapPlugin64.dll": {
+     " Enabled": 1,
+     ...
+   ```
 
 **2. teamradio56**
 
-1. Download the latest `teamradio56-plugin-x.y.z.zip` from the
-   [Releases page](https://github.com/hyungwookc07/teamradio56/releases).
-   It contains two files: `TeamRadio56.Core.dll` and `TeamRadio56.SimHub.dll`.
+1. Download `teamradio56-plugin-x.y.z.zip` from the
+   [latest release](https://github.com/hyungwookc07/teamradio56/releases/latest).
+   That one file is all you need. You can ignore the other files, and the
+   voice pack installs from inside the plugin. The zip contains two files: `TeamRadio56.Core.dll` and `TeamRadio56.SimHub.dll`.
 2. Close SimHub. Copy **both** DLLs into the SimHub install folder itself,
    not a subfolder. The default is `C:\Program Files (x86)\SimHub\`.
 3. Start SimHub. When it asks whether to enable the new plugin, tick
    **teamradio56**. (If it doesn't ask, enable it under SimHub
    **Settings → Plugins**.)
-4. **teamradio56** now appears in SimHub's left menu.
+4. **teamradio56** now appears in SimHub's left menu. Click it to open its
+   settings screen.
 
 ---
 
@@ -124,7 +131,7 @@ A step-by-step guide with more detail and troubleshooting is in
    should hear *"Box box, box box."* in your default Windows audio device.
 4. **Drive.** Once you are in a session in LMU, the lamp in **Status** turns
    to **● LMU connected** (instead of **○ waiting for game**). Live position,
-   lap and fuel appear below it, together with the last five radio calls.
+   lap and fuel appear below it, together with the most recent radio calls (up to eight).
 
 The volume follows Windows. If the radio is too loud or quiet, adjust
 SimHub in the Windows volume mixer.
@@ -133,8 +140,9 @@ SimHub in the Windows volume mixer.
 
 ## Updating
 
-teamradio56 updates itself from the
-[Releases page](https://github.com/hyungwookc07/teamradio56/releases).
+You can update teamradio56 from inside SimHub. No need to download anything
+by hand. (New versions are published on the
+[Releases page](https://github.com/hyungwookc07/teamradio56/releases).)
 
 - Open the teamradio56 settings, go to **Updates** and press
   **[Check for updates]**. You see your version and the latest one, your
@@ -145,8 +153,8 @@ teamradio56 updates itself from the
   applies by itself when the download finishes.
 - With **Check on startup** ticked (the default), the plugin checks once a
   day, shortly after SimHub starts, and shows a banner when something new is
-  available. **It only checks.** Nothing is installed until you press a
-  button and confirm.
+  available. **It only checks.** Nothing is installed until you press the
+  button yourself and answer **Yes**.
 
 Downloads are verified before anything is replaced. If a plugin update
 fails halfway, your old version is put back. Updates only go forward; to go
@@ -170,7 +178,7 @@ Changes are saved as you make them. Press **[Restart engine]** in the
 | **Traffic / Spotter** | Alongside window | 4.6 m | How close a car must be to count as alongside (4.6 m is about one car length). |
 | | Start spotter mode | 45 s | After the start, left and right calls only for this long. |
 | | Swap left/right | off | Tick it if "left" and "right" sound reversed. |
-| | Race only | on | Traffic and spotter calls in races only. LMU's online practice and qualifying are private sessions, and other cars there can cause ghost calls. Untick it if you share the track in practice. |
+| | Race only | on | Traffic and spotter calls in races only. In LMU online practice and qualifying you drive in your own private session, but the game still reports other players' cars, so without this you'd get calls about cars that aren't on your track. Untick it if you share the track in practice. |
 | **HUD-replacement reports** | Lap time every lap | off | *"Last lap 2 01.8. Best lap."* |
 | | Status report | 0 (off) | Position, gaps, fuel and tyres every N laps. |
 | **Behaviour** | Speak only while driving | on | Silent in the monitor and menus. |
@@ -179,7 +187,7 @@ Changes are saved as you make them. Press **[Restart engine]** in the
 
 ### On-screen subtitles and spotter bars (optional)
 
-For SimHub Dash Studio overlays, the plugin provides properties such as
+For SimHub Dash Studio overlays, the plugin provides properties (all under `TeamRadio56Plugin.`) such as
 `TeamRadio56Plugin.LastRadio` (the last call as text),
 `LastRadioAgeSec` (seconds since it was said), `SpotterLeft` /
 `SpotterRight`, `GapAheadSec` / `GapBehindSec`, `ClassPosition` and
@@ -197,14 +205,19 @@ No voice pack is installed, or its download was interrupted. Press
 it is greyed out).
 
 **Some calls show "(not spoken)" in Recent radio.**
-That line isn't in your voice pack, so it is shown as text instead of being
-read in a different voice. Update the voice pack. If it keeps happening,
+That line isn't in your installed voice pack yet, so it's shown as text only.
+Update the voice pack. If it keeps happening,
 please report it with your log.
 
 **[Test speak] is silent even though the voice pack is installed.**
 Check SimHub's volume in the Windows volume mixer and your default audio
-device. If the result under the button says playback failed, look at the
-log.
+device. If the line under the button says "the voice pack couldn't play it —
+silent", open the log (**[Open log]**) and include it when you report. If it
+says "no voice pack — silent", press **[Update voice pack]**.
+
+**[Test speak] works, but the radio is silent on track.**
+Check that **Voice output** (under **Voice**) is ticked. [Test speak] plays
+even when it is off.
 
 **The lamp stays on "○ waiting for game".**
 The shared memory plugin is missing or not enabled. Check that the DLL is in
@@ -266,8 +279,8 @@ are still written in Korean, even with the English settings screen.
 - **No virtual energy, weather forecast or pit-strategy data.** LMU doesn't
   share these through shared memory.
 
-It is light on your PC. It thinks five times a second, plays pre-recorded
-audio on its own thread, and does no speech synthesis while you drive.
+It's light on your PC: the voice clips are made in advance, so nothing heavy
+runs while you drive.
 
 ---
 

@@ -1,6 +1,6 @@
 # teamradio56 🏁🎙️
 
-**르망 얼티밋(LMU)에서 내 귀에 붙는 레이스 엔지니어.**
+**르망 얼티밋(LMU), 내 헤드셋 속 레이스 엔지니어.**
 
 teamradio56은 레이스 상황을 지켜보다가 영어 팀라디오로 불러주는 SimHub
 플러그인이에요. 옆에 붙은 차, 뒤에서 오는 빠른 클래스, 깃발, 데미지, 연료,
@@ -13,9 +13,9 @@ English: [README.md](README.md)
 
 > "Radio check. Race day, here we go." — 무전 체크. 레이스 날이야, 가자.
 > "Car left!" — 왼쪽에 차!
-> "Faster traffic, Hypercar in 2.4 seconds." — 빠른 차, 하이퍼카 2.4초 뒤.
+> "Faster traffic, Hypercar in 2 seconds." — 빠른 차, 하이퍼카 2초 뒤.
 > "Impact. Checking wheels and pressures." — 충격. 휠이랑 공기압 확인할게.
-> "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on." — 확인 끝. 자국뿐이야. 휠·타이어·공기압 다 괜찮아. 계속 가.
+> "Check done. Just marks. Wheels, tyres, pressures all fine. Carry on." — 확인 끝. 긁힌 자국뿐이야. 휠·타이어·공기압 다 괜찮아. 계속 가.
 > "FCY pit open. Box box." — FCY 피트 오픈. 박스 박스.
 > "Chequered flag. P3, that's a podium!" — 체커기. P3, 포디움이야!
 
@@ -25,32 +25,33 @@ English: [README.md](README.md)
 
 ## 이런 걸 불러줘요
 
-말할 가치가 있을 때만 말해요. 정기 리포트를 켜지 않으면 랩마다 떠들지 않아요.
+꼭 필요할 때만 말해요. 정기 리포트를 켜지 않으면 랩마다 떠들지 않아요.
 무전은 영어로 나오고, 아래 괄호 안은 뜻이에요.
 
 | 상황 | 이렇게 말해요 (예시) |
 |---|---|
-| **세션 시작** | 무전 체크로 시작해서 세션에 맞는 브리핑을 해요. 레이스면 클래스 내 스타트 순위, 연료, 포메이션 랩과 그린 콜까지. *"Formation lap, get heat in the tyres and brakes. Hold your slot, I'll call the green."* (포메이션 랩이야, 타이어랑 브레이크 데워. 자리 지키고, 그린은 내가 불러줄게.) 퀄리면 *"Find a gap on the out lap, we want clear air."* (아웃랩에서 공간 만들어, 앞이 비어야 해.) |
+| **세션 시작** | 무전 체크로 시작해서 세션에 맞는 브리핑을 해요. 레이스면 클래스 내 스타트 순위, 연료, 포메이션 랩과 그린 콜까지. *"Formation lap, get heat in the tyres and brakes. Hold your slot, I'll call the green."* (포메이션 랩이야, 타이어랑 브레이크 데워. 자리 지키고, 그린은 내가 불러줄게.) |
 | **레이스 스타트** | 그린 직후 몇십 초 동안은 1코너에 집중할 수 있게 좌우 콜만 해요. *"Through the start it's left and right calls only."* (스타트 구간은 좌우 콜만 할게.) |
-| **스포터** | *"Car left!"* (왼쪽 차!), *"Car right!"* (오른쪽 차!), *"Three wide, you're the meat!"* (쓰리 와이드, 네가 가운데야!), *"Clear left."* (왼쪽 비었어.) |
+| **스포터** | *"Car left!"*, *"Car right!"* (왼쪽/오른쪽에 차), *"Three wide, you're the meat!"* (쓰리 와이드, 네가 가운데야!), *"Clear left."* (왼쪽 비었어.) |
 | **트래픽** | 뒤에서 오는 빠른 클래스: *"Faster traffic, LMP2 in 3 seconds."* (빠른 차, LMP2 3초 뒤.) 앞의 느린 차: *"Backmarker ahead, GT3. Easy does it."* (앞에 백마커, GT3. 침착하게.), *"Car ahead is a lap down. Not a fight."* (앞차는 한 랩 뒤처진 차야. 싸울 상대 아니야.) 레이스 중 앞에 멈춘 차: *"Stopped car ahead. Change your line early."* (앞에 멈춘 차. 라인 미리 바꿔.) |
-| **깃발·레이스 컨트롤** | *"FCY. Eighty kph, no overtaking."* (FCY. 80km/h, 추월 금지.), *"FCY pit open. Box box."* (FCY 피트 오픈. 박스 박스.), *"Green green! Restart."* (그린 그린! 리스타트.), *"Yellow in sector 2. No overtaking, be ready to lift."* (섹터 2 옐로. 추월 금지, 발 뗄 준비.), *"Blue flag. Let him by on the straight."* (블루 플래그. 직선에서 보내줘.), *"Limiter! Limiter!"* (리미터! 리미터!), 그리고 남은 시간·마지막 랩 콜. |
-| **데미지** | 부딪히면 *"Impact. Checking wheels and pressures."* (충격. 휠이랑 공기압 확인할게.) 8초쯤 뒤에 결과를 알려줘요. *"Check done. Just marks. Wheels, tyres, pressures all fine. Carry on."* (확인 끝. 자국뿐이야. 다 괜찮아. 계속 가.) 휠이 빠지면 바로 부르고, 슬로우 펑처·얼라인먼트 틀어짐·프론트 에어로 손상도 알아서 잡아줘요. *"Front left losing pressure. Slow puncture. We change it next stop."* (프론트 왼쪽 공기압 빠지는 중. 슬로우 펑처야. 다음 스톱 때 갈자.) |
+| **깃발·레이스 컨트롤** | *"FCY. Eighty kph, no overtaking."* (FCY. 80km/h, 추월 금지.), *"Yellow in sector 2. No overtaking, be ready to lift."* (섹터 2 옐로. 추월 금지, 악셀 뗄 준비.), *"Blue flag. Let him by on the straight."* (블루 플래그. 직선에서 보내줘.) 그 밖에 리스타트, 피트 리미터, 남은 시간·마지막 랩 콜. |
+| **데미지** | 부딪히면 *"Impact. Checking wheels and pressures."* (충격. 휠이랑 공기압 확인할게.) 8초쯤 뒤에 결과를 알려줘요. 슬로우 펑처도 잡아줘요. *"Front left losing pressure. Slow puncture. We change it next stop."* (프론트 왼쪽 공기압 빠지는 중. 슬로우 펑처야. 다음 스톱 때 타이어 갈자.) 휠 빠짐·얼라인먼트·에어로 손상도 알려줘요. |
 | **차량 상태** | 수온·유온, 브레이크 온도. *"Brakes averaging 820 degrees. Brake a touch earlier, cool them."* (브레이크 평균 820도. 조금 일찍 밟아서 식혀.) |
-| **연료·피트** | *"Fuel critical. Box within 2 laps."* (연료 위급. 2랩 안에 박스.), *"Box box, box box."* (박스 박스.), 노피트로 갈까 말까 아슬아슬할 땐 연료 세이브 목표, *"Pit window open. Box within 3 laps."* (피트 윈도우 열렸어. 3랩 안에 박스.) 연료 단위는 리터예요. |
-| **라이벌·갭** | *"Gap behind 2.4 seconds. Opening up. Good."* (뒤차와 2.4초. 벌어지고 있어. 좋아.), *"P4 in class, car ahead, just pitted."* (클래스 P4, 앞차 방금 피트 들어갔어.), *"Car behind in class is 0.7 a lap quicker. With us in 8 laps. Be ready."* (클래스 뒤차가 랩당 0.7초 빨라. 8랩이면 붙어. 대비해.) |
-| **체커기와 그 뒤** | 체커 콜은 결과(우승, 클래스 우승, 포디움, 순위 상승·하락)에 따라 달라요. *"Chequered flag. P3, that's a podium!"* (체커기. P3, 포디움이야!) 이어서 쿨다운 랩 콜(*"Easy now, faster class still on track. Stay wide and let them by."* — 이제 천천히, 빠른 클래스가 아직 달리고 있어. 바깥으로 빠져서 보내줘.), 짧은 요약, 그리고 *"Limiter on, straight to the garage. Thanks for today."* (리미터 켜고 바로 차고로. 오늘 수고했어.) 피니시한 뒤엔 안전 콜만 남아요. |
+| **연료·피트** | *"Fuel critical. Box within 2 laps."* (연료 위급. 2랩 안에 박스.), *"Box box, box box."*, 노피트로 갈까 말까 아슬아슬할 땐 연료 세이브 목표, *"Pit window open. Box within 3 laps."* (피트 윈도우 열렸어. 3랩 안에 박스.) 연료 단위는 리터예요. |
+| **라이벌·갭** | *"Gap behind 2.4 seconds. Opening up. Good."* (뒤차와 2.4초. 벌어지고 있어. 좋아.), *"P4 in class, car ahead, just pitted. I'll call the gap when he's out."* (클래스 P4 앞차가 방금 피트 들어갔어. 나오면 갭 알려줄게.), *"Car behind in class is 0.7 a lap quicker. With us in 8 laps. Be ready."* (클래스 뒤차가 랩당 0.7초 빨라. 8랩이면 붙어. 대비해.) |
+| **체커기와 그 뒤** | 체커 콜은 결과(우승, 클래스 우승, 포디움, 순위 상승·하락)에 따라 달라요. *"Chequered flag. P3, that's a podium!"* (체커기. P3, 포디움이야!) 이어서 쿨다운 랩 안전 콜과 짧은 요약까지 해 줘요. 피니시한 뒤엔 안전 콜만 남아요. |
 | **정기 리포트** (기본 꺼짐) | HUD를 끄고 달릴 때용이에요. 매 랩 랩타임(*"Last lap 2 01.8. Best lap."* — 지난 랩 2분 01초 8. 베스트 랩.)과 몇 랩마다 순위·갭·연료·타이어 리포트. |
 
 ### 멀티클래스
 
 - 다른 클래스는 이름으로 불러요. **Hypercar, LMP2, LMP3, GTE, GT3.**
-- 뒤에서 다가올 때 경고하는 건 **나보다 빠른** 클래스뿐이에요. 앞에 있는 느린
-  클래스는 백마커로 알려줘요.
+- 뒤에서 다가올 때 경고하는 건 **나보다 빠른** 클래스와, 나를 한 바퀴 따라잡으러
+  오는 같은 클래스 차뿐이에요. 앞에 있는 느린 클래스는 백마커로 알려줘요.
 - **내 클래스** 차는 절대 클래스 이름으로 부르지 않아요. LMP3만 나오는
-  레이스라면 *"LMP3 right behind."*가 아니라 *"Car behind."*(뒤에 차.)라고 해요.
-  같은 클래스 차는 배틀 상대지 "빠른 트래픽"이 아니니까요.
-- 게임이 플러그인이 모르는 클래스를 알려주면 클래스 이름 없이 불러요. 랩타임이
+  레이스라면 *"LMP3 right behind."*가 아니라 *"Car behind."*(뒤에 차.)라고 하고,
+  랩을 돌리러 오는 선두 차도 *"Traffic behind, 3 seconds."*(뒤에 차, 3초.)라고만 해요.
+  같은 랩을 달리는 같은 클래스 차는 트래픽이 아니라 배틀 상대예요.
+- 플러그인이 모르는 클래스의 차는 클래스 이름 없이 불러요. 그런 차는 랩타임이
   확실히 빠를 때만 경고해요.
 
 ---
@@ -79,29 +80,32 @@ English: [README.md](README.md)
 
 1. [Iron Wolf 릴리스](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases)에서
    `rFactor2SharedMemoryMapPlugin64.dll`을 받아요.
-2. `<Steam 라이브러리>\steamapps\common\Le Mans Ultimate\Plugins\`에 복사해요.
-3. 게임을 끈 상태에서 `<게임 폴더>\UserData\player\CustomPluginVariables.JSON`을
-   열고 이렇게 설정해요.
+2. `<게임 폴더>\Plugins\`에 복사해요 (`<게임 폴더>`는 보통
+   `<Steam 라이브러리>\steamapps\common\Le Mans Ultimate`예요).
+3. DLL을 넣은 채로 LMU를 한 번 켰다가 끄세요. 그래야 설정 항목이 생겨요.
+4. 게임을 끈 상태에서 `<게임 폴더>\UserData\player\CustomPluginVariables.JSON`을
+   열어 `"rFactor2SharedMemoryMapPlugin64.dll"` 항목을 찾고 `" Enabled"` 값을
+   `1`로 바꾸세요. `Enabled` 앞의 공백 한 칸은 오타가 아니니 그대로 두세요.
+   뭘 붙여 넣는 게 아니라 값만 바꾸면 돼요. 같은 항목의 다른 줄은 그대로 두세요.
+   이렇게 보이면 돼요.
 
-   ```json
-   "rFactor2SharedMemoryMapPlugin64.dll": {
-     " Enabled": 1
-   }
    ```
-
-   `Enabled` 앞의 공백 한 칸은 오타가 아니에요. 지우지 마세요. 파일에 이 항목이
-   아직 없으면 DLL을 넣은 채로 게임을 한 번 켰다 끄고 나서 고치면 돼요.
+   "rFactor2SharedMemoryMapPlugin64.dll": {
+     " Enabled": 1,
+     ...
+   ```
 
 **2. teamradio56**
 
-1. [릴리스 페이지](https://github.com/hyungwookc07/teamradio56/releases)에서 최신
-   `teamradio56-plugin-x.y.z.zip`을 받아요. 안에 `TeamRadio56.Core.dll`과
+1. [최신 릴리스](https://github.com/hyungwookc07/teamradio56/releases/latest)에서
+   `teamradio56-plugin-x.y.z.zip`만 받으면 돼요. 다른 파일은 필요 없고, 음성 팩은
+   플러그인 안에서 받아요. zip 안에 `TeamRadio56.Core.dll`과
    `TeamRadio56.SimHub.dll` 두 파일이 들어 있어요.
 2. SimHub을 끄고, DLL **두 개 모두** SimHub 설치 폴더 바로 아래에 복사해요
    (하위 폴더 아니에요). 기본 경로는 `C:\Program Files (x86)\SimHub\`예요.
 3. SimHub을 켜면 새 플러그인을 활성화할지 묻는 창이 떠요. **teamradio56**에
    체크하세요. (창이 안 뜨면 SimHub **Settings → Plugins**에서 켜면 돼요.)
-4. SimHub 왼쪽 메뉴에 **teamradio56**이 생겨요.
+4. SimHub 왼쪽 메뉴에 **teamradio56**이 생겨요. 누르면 설정 화면이 열려요.
 
 ---
 
@@ -115,7 +119,7 @@ English: [README.md](README.md)
 2. **소리를 확인해요.** **상태** 섹션의 **[테스트 발화]**를 누르면 Windows 기본
    오디오 장치로 *"Box box, box box."*가 들려야 해요.
 3. **달려요.** LMU에서 세션에 들어가면 **상태**의 램프가 **○ 게임 대기 중**에서
-   **● LMU 연결됨**으로 바뀌어요. 그 아래에 순위·랩·연료와 최근 무전 5개가 보여요.
+   **● LMU 연결됨**으로 바뀌어요. 그 아래에 순위·랩·연료와 최근 무전(최대 8개)이 보여요.
 
 설정 화면은 처음에 한국어로 나와요. 맨 위 언어 선택(**한국어** / **English**)에서
 바꿀 수 있어요.
@@ -127,16 +131,16 @@ SimHub 볼륨을 조절하세요.
 
 ## 업데이트
 
-teamradio56은 [릴리스 페이지](https://github.com/hyungwookc07/teamradio56/releases)에서
-스스로 업데이트해요.
+teamradio56은 SimHub 안에서 바로 업데이트할 수 있어요. 직접 내려받을 필요가 없어요.
+(새 버전은 [릴리스 페이지](https://github.com/hyungwookc07/teamradio56/releases)에 올라와요.)
 
 - teamradio56 설정 화면의 **업데이트** 섹션에서 **[업데이트 확인]**을 누르면, 지금
   버전과 최신 버전, 설치된 음성 팩과 최신 음성 팩, 변경 사항이 보여요.
 - **[플러그인 업데이트]**로 새 버전을 설치하고, 끝나면 **SimHub을 재시작**하세요.
 - **[음성 팩 업데이트]**는 새 음성 팩이 나오면 켜져요. 다 받으면 알아서 적용돼요.
-- **시작 시 확인**이 켜져 있으면(기본값) SimHub을 켜고 잠시 뒤 하루 한 번 새 버전을
-  확인하고, 새 게 있으면 화면 위에 안내를 띄워요. **확인만 해요.** 버튼을 누르고
-  확인하기 전에는 아무것도 설치하지 않아요.
+- **시작 시 확인**이 켜져 있으면(기본값) SimHub을 켜고 잠시 뒤 새 버전이 있는지
+  확인해요(하루 한 번). 새 버전이 있으면 화면 위에 알려 줘요. **알려 주기만 해요.**
+  직접 버튼을 누르고 확인 창에서 **[예]**를 누르기 전에는 아무것도 설치하지 않아요.
 
 받은 파일은 검증한 뒤에야 교체해요. 플러그인 업데이트가 중간에 실패하면 원래
 버전으로 되돌려 놓아요. 업데이트는 새 버전으로만 가요. 이전 버전으로 돌아가려면
@@ -158,7 +162,7 @@ teamradio56은 [릴리스 페이지](https://github.com/hyungwookc07/teamradio56
 | **트래픽 / 스포터** | 나란히 판정 거리 | 4.6 m | 얼마나 가까워야 나란히로 볼지 정해요 (4.6 m가 차 한 대 길이쯤). |
 | | 스타트 스포터 모드 | 45초 | 스타트 뒤 이 시간 동안은 좌우 콜만 해요. |
 | | 좌우 반전 | 끔 | "왼쪽/오른쪽"이 반대로 들리면 켜세요. |
-| | 레이스에서만 | 켬 | 트래픽·스포터 콜을 레이스에서만 해요. LMU 온라인 연습·퀄리는 프라이빗 세션이라 다른 차 때문에 유령 콜이 날 수 있거든요. 연습에서 다른 사람과 트랙을 같이 쓰면 끄세요. |
+| | 레이스에서만 | 켬 | 트래픽·스포터 콜을 레이스에서만 해요. LMU 온라인 연습·퀄리는 나 혼자 달리는 세션인데도 게임이 다른 사람 차 정보를 계속 보내서, 이 옵션이 없으면 내 트랙에 없는 차를 두고 콜이 나와요. 연습에서 다른 사람과 트랙을 같이 쓰면 끄세요. |
 | **HUD 대체 정기 무전** | 매 랩 랩타임 | 끔 | *"Last lap 2 01.8. Best lap."* |
 | | 상황 리포트 | 0 (끔) | N랩마다 순위·갭·연료·타이어. |
 | **동작** | 주행 중에만 발화 | 켬 | 모니터 화면이나 메뉴에서는 조용해요. |
@@ -167,7 +171,7 @@ teamradio56은 [릴리스 페이지](https://github.com/hyungwookc07/teamradio56
 
 ### 화면 자막과 스포터 바 (선택)
 
-SimHub Dash Studio 오버레이에 쓸 수 있는 프로퍼티를 제공해요.
+SimHub Dash Studio 오버레이에 쓸 수 있는 프로퍼티를 제공해요(모두 `TeamRadio56Plugin.` 아래에 있어요).
 `TeamRadio56Plugin.LastRadio`(마지막 무전 텍스트), `LastRadioAgeSec`(말한 뒤 지난
 초), `SpotterLeft` / `SpotterRight`, `GapAheadSec` / `GapBehindSec`, `ClassPosition`,
 `HasDamage` 등이에요. 완성된 대시보드는 들어 있지 않아서 직접 만들어야 해요.
@@ -183,12 +187,18 @@ SimHub Dash Studio 오버레이에 쓸 수 있는 프로퍼티를 제공해요.
 누르세요 (꺼져 있으면 먼저 **[업데이트 확인]**).
 
 **최근 무전에 "(무음)"이 붙은 콜이 있어요.**
-음성 팩에 없는 멘트라서, 다른 목소리로 읽는 대신 글자로만 보여준 거예요. 음성 팩을
+설치된 음성 팩에 아직 없는 멘트라서 글자로만 보여준 거예요. 음성 팩을
 업데이트하세요. 계속 그러면 로그와 함께 알려주세요.
 
 **음성 팩이 있는데 [테스트 발화]가 조용해요.**
-Windows 볼륨 믹서의 SimHub 볼륨과 기본 오디오 장치를 확인하세요. 버튼 아래 결과에
-재생 실패가 나오면 로그를 보세요.
+Windows 볼륨 믹서의 SimHub 볼륨과 기본 오디오 장치를 확인하세요. 버튼 아래에
+"음성 팩에서 소리를 내지 못해 무음"이라고 나오면 **[로그 열기]**로 로그를 확인하고,
+제보할 때 같이 보내 주세요. "음성 팩이 없어 무음"이라고 나오면 **[음성 팩 업데이트]**를
+누르세요.
+
+**[테스트 발화]는 들리는데 주행 중에는 무전이 안 나와요.**
+**음성** 섹션의 **음성 출력**이 켜져 있는지 확인하세요. [테스트 발화]는 이 설정이
+꺼져 있어도 소리가 나요.
 
 **램프가 계속 "○ 게임 대기 중"이에요.**
 공유 메모리 플러그인이 없거나 꺼져 있어요. DLL이 게임의 `Plugins` 폴더에 있는지,
@@ -210,7 +220,7 @@ DLL 두 개가 하위 폴더가 아니라 SimHub 폴더 바로 아래에 있어�
 SimHub을 재시작하세요.
 
 **무전이 두 번, 서로 다른 목소리로 들려요.**
-예전 단독 실행판 teamradio56이 같이 돌고 있는 거예요. LMU의 Steam 시작 옵션에
+예전 파이썬 단독 실행판(teamradio56)이 같이 돌고 있는 거예요. LMU의 Steam 시작 옵션에
 `launch_with_lmu.bat`을 넣었다면 지우세요. 작업 관리자에 `python.exe`나
 `teamradio56.exe`가 남아 있는지도 확인하세요.
 
@@ -240,14 +250,14 @@ SimHub을 끄고 SimHub 폴더의 `teamradio56_backup.txt`를 여세요. 줄마�
 - **가상 에너지, 날씨 예보, 피트 전략 정보는 없어요.** LMU가 공유 메모리로 내주지
   않는 정보예요.
 
-PC에는 가벼워요. 1초에 다섯 번 판단하고, 미리 녹음된 음성을 별도 스레드에서
-재생해서, 주행 중에 음성 합성을 하지 않아요.
+PC에도 가벼워요. 목소리를 미리 만들어 둔 파일로 틀기 때문에 주행 중에 무거운
+작업을 하지 않아요.
 
 ---
 
 ## 개인정보
 
-- 텔레메트리는 내 PC 밖으로 나가지 않아요. 주행 정보는 어디에도 보내지 않아요.
+- 주행 데이터(텔레메트리)는 내 PC 밖 어디로도 보내지 않아요.
 - 플러그인이 인터넷에 접속하는 건 업데이트 확인과 다운로드뿐이에요. 이 프로젝트의
   GitHub 릴리스에서 작은 텍스트 파일 하나를 읽고, 업데이트 버튼을 누르면 거기서
   플러그인이나 음성 팩을 받아요. 계정이나 로그인은 쓰지 않아요.

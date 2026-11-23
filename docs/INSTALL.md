@@ -29,36 +29,37 @@
 
 ### 1-2. DLL 복사
 
-게임 설치 폴더의 `Plugins` 폴더에 복사해요.
+게임 설치 폴더(아래에서는 `<게임 폴더>`라고 할게요)의 `Plugins` 폴더에 복사해요.
+`<게임 폴더>`는 보통 `<Steam 라이브러리>\steamapps\common\Le Mans Ultimate`예요.
 
 ```
-<Steam 라이브러리>\steamapps\common\Le Mans Ultimate\Plugins\rFactor2SharedMemoryMapPlugin64.dll
+<게임 폴더>\Plugins\rFactor2SharedMemoryMapPlugin64.dll
 ```
 
 ### 1-3. 플러그인 켜기
 
-`<게임 폴더>\UserData\player\CustomPluginVariables.JSON` 파일을 열어
-플러그인 항목의 `" Enabled"` 값을 `1`로 바꿔요.
+1. DLL을 복사한 상태로 게임을 한 번 켰다가 끄세요. 그래야 설정 항목이 자동으로 생겨요.
+2. 게임을 끈 상태에서 `<게임 폴더>\UserData\player\CustomPluginVariables.JSON` 파일을 열어
+   `"rFactor2SharedMemoryMapPlugin64.dll"` 항목을 찾고, `" Enabled"` 값을 `1`로 바꿔요.
 
-```json
-{
+이렇게 보이면 돼요 (붙여넣지 말고 값만 바꾸세요. 같은 항목의 다른 줄은 그대로 두면 돼요).
+
+```
   "rFactor2SharedMemoryMapPlugin64.dll": {
-    " Enabled": 1
-  }
-}
+    " Enabled": 1,
+    ...
 ```
 
-⚠️ **키 이름 `" Enabled"` 앞의 공백 한 칸은 오타가 아니라 원래 그래요.**
+⚠️ **`" Enabled"`에서 `Enabled` 앞(따옴표 안)의 공백 한 칸은 오타가 아니에요. 원래 이렇게 써야 해요.**
 공백을 지우면 게임이 설정을 못 알아봐요.
 
-- 파일에 이 항목이 없으면 DLL을 복사한 상태로 게임을 한 번 켰다가 끄세요.
-  항목이 자동으로 생겨요. 그다음 값을 1로 바꾸면 돼요.
 - 게임이 켜져 있을 때는 이 파일을 고치지 마세요. 게임을 끄고 고친 뒤 다시 켜세요.
 
 ## 2. teamradio56 플러그인 설치
 
-1. [릴리스 페이지](https://github.com/hyungwookc07/teamradio56/releases)에서 최신
-   `teamradio56-plugin-x.y.z.zip`을 받아요. 압축을 풀면 DLL이 두 개 있어요.
+1. [최신 릴리스](https://github.com/hyungwookc07/teamradio56/releases/latest)에서
+   `teamradio56-plugin-x.y.z.zip`만 받으면 돼요. 다른 파일은 필요 없고, 음성 팩은
+   플러그인 안에서 받아요. 압축을 풀면 DLL이 두 개 있어요.
    - `TeamRadio56.Core.dll`
    - `TeamRadio56.SimHub.dll`
 2. **SimHub을 끄고**, 두 DLL을 **SimHub 설치 폴더 바로 아래**에 복사해요.
@@ -109,12 +110,12 @@
 - **업데이트**: 설정 화면 **업데이트** 섹션의 **[업데이트 확인]** →
   **[플러그인 업데이트]**(끝나면 SimHub 재시작) 또는 **[음성 팩 업데이트]**.
   버튼을 누르기 전에는 아무것도 설치하지 않아요.
-  - 설정 화면에 **업데이트** 섹션이 없는 아주 예전 버전(0.15 이하)이라면 위 2번처럼
+  - 설정 화면에 **업데이트** 섹션이 없다면(아주 예전 버전) 위 2번처럼
     최신 릴리스를 한 번만 손으로 설치하세요. 그다음부터는 설정 화면에서 돼요.
 - **이전 버전으로**: 업데이트는 새 버전으로만 가요. 릴리스 페이지에서 원하는 버전 zip을 받아
   SimHub을 끈 상태로 DLL 두 개를 덮어쓰세요.
 - **삭제**: SimHub을 끄고 SimHub 폴더에서 `TeamRadio56.Core.dll`, `TeamRadio56.SimHub.dll`
-  (그리고 남아 있다면 `TeamRadio56.*.dll.old*`), `teamradio56.settings.txt`,
+  (그리고 남아 있다면 `TeamRadio56.*.dll.old*`, `teamradio56_backup.txt`, `teamradio56_update` 폴더), `teamradio56.settings.txt`,
   `teamradio56.log`, `audio_cache` 폴더를 지우면 돼요.
 
 > 예전에 파이썬 단독 실행판을 쓰면서 LMU Steam 시작 옵션에 `launch_with_lmu.bat`을
@@ -132,9 +133,11 @@
 | 연습·퀄리에서 트래픽 콜이 없음 | **레이스에서만**이 기본으로 켜져 있음. 트랙을 같이 쓰는 세션이면 끄기 |
 | 모니터·메뉴에서 조용함 | **주행 중에만 발화**가 켜져 있음 (정상) |
 | 왼쪽·오른쪽이 반대 | **좌우 반전** 켜기 |
-| 무전이 두 번 들림 | 예전 파이썬 단독판이 같이 돌고 있음 → Steam 시작 옵션의 `launch_with_lmu.bat` 지우기, 작업 관리자에서 `python.exe`/`teamradio56.exe` 확인 |
+| 무전이 두 번 들림 | 예전 파이썬 단독 실행판이 같이 돌고 있음 → Steam 시작 옵션의 `launch_with_lmu.bat` 지우기, 작업 관리자에서 `python.exe`/`teamradio56.exe` 확인 |
 | 업데이트 오류 "인터넷에 연결할 수 없습니다" | 오프라인·방화벽·프록시. 안 되면 릴리스 페이지에서 직접 받기 |
-| 업데이트 오류 "폴더에 쓸 권한이 없습니다" | SimHub을 관리자 권한으로 한 번 실행해 업데이트하거나 직접 복사 |
+| 업데이트 오류 "릴리스 파일을 찾을 수 없습니다" | 새 릴리스를 올리는 중일 수 있어요. 조금 뒤에 다시 시도 |
+| 업데이트 오류 "받은 파일이 손상되었습니다" | 다시 시도. 지금 쓰던 버전은 그대로 유지돼요 |
+| 업데이트 오류 "폴더에 쓸 권한이 없습니다" | 업데이트할 때만 SimHub을 관리자 권한으로 실행하거나, 릴리스 페이지에서 받아 직접 설치 |
 | 업데이트 뒤 플러그인이 안 뜸 | SimHub을 끄고 SimHub 폴더의 `teamradio56_backup.txt`를 열어, 줄마다 오른쪽 파일을 지우고 왼쪽 파일을 오른쪽 이름으로 바꾸기. 또는 이전 릴리스 DLL 복사 |
 
 그래도 안 되면 설정 화면의 **[로그 열기]**로 `teamradio56.log`를 열어
@@ -144,5 +147,4 @@
 
 ---
 
-파이썬 앱(개발·음성 팩 렌더용) 설치·실행·리플레이·exe 패키징은
-[DEVELOPMENT.md](DEVELOPMENT.md)로 옮겼어요.
+개발자용 문서는 [DEVELOPMENT.md](DEVELOPMENT.md)에 있어요.
