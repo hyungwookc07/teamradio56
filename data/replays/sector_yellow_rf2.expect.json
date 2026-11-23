@@ -34,6 +34,16 @@
    "t": 80.0
   }
  ],
+ "prev_rule_calls": [
+  {
+   "sector": 2,
+   "t": 20.0
+  },
+  {
+   "sector": 1,
+   "t": 80.0
+  }
+ ],
  "scenario": "sector_yellow_rf2",
  "types": [
   "sector_yellow"

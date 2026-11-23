@@ -8,9 +8,12 @@ TinyPedal·SimHub·pitwall 모두 '== 1'만 옐로). 그래서 실제 옐로 11 
 
 규칙 (기대값의 근거, analyzers/racecontrol.py _check_sector_yellow · C# CheckSectorYellow와 같은 값):
   · 옐로 = 원시값 1. 0·11·2·7·255·-1 등 나머지는 전부 옐로 아님. 배열 i = 섹터 i+1
-  · 콜 = 직전 샘플 옐로 아님 → 옐로 (엣지). 첫 샘플은 기록만
-  · FCY 중(페이즈 6 또는 mYellowFlagState 1..7)은 콜하지 않는다 — 직전 값은 그래도 매 틱 갱신
-  · 같은 섹터 재콜은 120초 뒤 (분석기가 푸시 전에 기록 — 버스가 거절해도)
+  · 엣지 = 직전 샘플 옐로 아님 → 옐로. 첫 샘플은 기록만
+  · 빚진 콜: 엣지가 그 섹터 마지막 수락 콜에서 120초 밖이면 빚으로 올리고, 섹터가 1인 동안 매 틱
+    다시 푸시한다. 수락돼야 빚을 지우고 120초 기준 시각을 찍는다 (거절된 엣지는 기록 안 함).
+    섹터가 1을 벗어나면 빚도 지운다
+  · FCY(페이즈 6)만 콜하지 않는다 — 빚도 지우고, 직전 값은 그래도 매 틱 갱신. 옐로 상태
+    (mYellowFlagState)는 보지 않는다: 리스타트 준비(그린 + 6)·무효 255·1·2·7도 막지 않는다
   · 버스: sector_yellow 종류 쿨다운 45초(마지막 수락 기준), dedup 키 syellow_<i>. 리플레이 하니스는
     버스를 꺼내지 않아 키마다 리플레이당 한 번만 수락되고, 세션 전환(ET 30초 넘게 되감기)에서만
     대기 키를 비운다 (분석기는 리셋하지 않고, 종류 쿨다운 시각도 남는다)
@@ -25,17 +28,27 @@ TinyPedal·SimHub·pitwall 모두 '== 1'만 옐로). 그래서 실제 옐로 11 
     2 → 1(S1)은 콜. -1은 일부러 원시 JSON에 쓴다: 파이썬은 -1, C# 로더는 바이트 캐스트(255)로
     읽는다 — '== 1' 규칙은 어느 쪽이든 옐로 아님이라 같고, 예전 '0 이하' 규칙은 여기서 두 엔진이
     갈렸다 (파이썬만 콜)
-  · sector_yellow_fcy — 레이스: 로컬 옐로(S2) 콜 → FCY 선언과 함께 전 섹터 1 → 피트 오픈 →
-    그린(리스타트 준비 6이 남은 채) → 그 사이 S3가 풀렸다 다시 1 → 옐로 상태 0 → 섹터 정리 →
-    S1 새 옐로. FCY·리스타트 준비 동안 섹터 콜 없음, FCY가 끝난 순간 1로 남은 섹터도 침묵(억제 중
-    직전 값을 안 갱신하면 여기서 S1이 나간다), 끝난 뒤 새 옐로는 콜. FCY·피트 오픈·그린 콜도 대조
-  · sector_yellow_cooldown — 같은 섹터 120초: S1 콜 → 40초 뒤 S3 → 1은 종류 쿨다운에 거절(기록은
-    남음) → 그 65초·115초 뒤 다시 1은 침묵, 122초 뒤는 콜
-  · sector_yellow_double — 같은 틱 S1·S2 → 1: 낮은 번호(S1) 하나만 (S2는 종류 쿨다운에 거절되고
-    기록돼, 1로 남은 동안 쿨다운이 풀려도 다시 안 부른다). 60초 뒤 S3 → 1은 콜
+  · sector_yellow_fcy — 레이스: 로컬 옐로(S2) 콜 → S1 → 1은 종류 쿨다운에 거절(빚) → 쿨다운이
+    풀리기 전 FCY 선언과 함께 전 섹터 1 → 피트 오픈 → 그린(리스타트 준비 6이 남은 채) → S3가
+    풀렸다 다시 1 → 옐로 상태 0 → 섹터 정리 → S1 새 옐로. FCY 동안 섹터 콜 없음, FCY 진입에 빚도
+    지워져 그린에서 S1이 안 나가고, FCY가 끝난 순간 1로 남은 섹터도 침묵(억제 중 직전 값을 안
+    갱신하면 여기서 나간다). 리스타트 준비 중 S3 새 옐로는 바로 콜, 끝난 뒤 S1 새 옐로도 콜.
+    FCY·피트 오픈·그린 콜도 대조
+  · sector_yellow_restart — 레이스: FCY 동안 섹터는 깨끗(11) → 그린 + 리스타트 준비 6 → 리스타트 랩
+    S1 11 → 1은 바로 콜 (리스타트 준비를 FCY로 치면 엣지가 사라져 옐로 상태 0이 돼도 못 부른다)
+  · sector_yellow_gate — 억제 조건 경계: 그린(페이즈 5)에서 옐로 상태 255(무효 -1의 바이트)·7·1·2여도
+    섹터 엣지는 콜, 페이즈 6이면 옐로 상태 0·255여도 침묵. 대기 키는 중간 ET 되감기로 비운다
+  · sector_yellow_cooldown — 같은 섹터 120초는 수락된 콜 기준: S1 콜 → 30초 뒤 S3 → 1은 종류
+    쿨다운에 거절되고 쿨다운이 풀리기 전에 풀림(말 못 함, 기록 없음) → 40초 뒤 S3 새 옐로는 콜 →
+    그 60초·115초 뒤 다시 1은 침묵(ET 되감기로 대기 키를 비운 뒤), 122초 뒤는 콜
+  · sector_yellow_double — 같은 틱 S1·S2 → 1: 낮은 번호(S1)가 먼저, S2는 1로 남아 있으니 종류
+    쿨다운이 풀리는 45초 뒤 콜. S3 → 1은 쿨다운이 풀리기 전에 풀려 침묵. ET 되감기(대기 키 비움) 뒤
+    S2 새 옐로는 엣지 시각이 아니라 수락 시각에서 85초라 침묵, 125초 뒤는 콜. S1은 끝까지 1 → 반복 없음
 생성기는 자기 규칙 사본으로 기대 콜을 계산해 시나리오에 적은 정답과 맞춘다. 예전 규칙('0 이하 →
 1..2', FCY 억제 없음)이라면 rf2 말고는 결과가 달라진다는 것(이 리플레이가 회귀를 잡는다는 근거),
-새 규칙은 원시값을 부호 있게 읽든 바이트로 읽든 결과가 같다는 것도 확인한다.
+새 규칙은 원시값을 부호 있게 읽든 바이트로 읽든 결과가 같다는 것, 직전 규칙(페이즈 6 또는 옐로
+상태 1..7 억제, 푸시 전 기록, 재시도 없음)과 MUTANTS의 변이(억제 조건 경계·기록 시점·재시도·FCY 빚)
+하나하나가 적어도 한 리플레이의 결과를 바꾼다는 것도 확인한다.
 
 사용법: python tools/make_sector_flag_replays.py [--out-dir data/replays] [--check]
 """
@@ -75,12 +88,40 @@ RACE = 10
 # 규칙 사본 (racecontrol.py · RaceControlAnalyzer.cs와 같은 값 — 분석기를 import하지 않는다)
 YELLOW = 1
 PHASE_FCY = 6
-Y_FCY = (1, 7)
-REARM_S = 120.0                 # 같은 섹터 재콜 간격
+REARM_S = 120.0                 # 같은 섹터 재콜 간격 (수락된 콜 기준)
 TYPE_COOLDOWN_S = 45.0          # config DEFAULTS cooldowns.sector_yellow (하니스 기본값)
 RESTART_ET_BACK = 30.0          # state.update 세션 전환: ET가 이만큼 넘게 뒤로 가면
 
 C = [11, 11, 11]                # LMU 깨끗함
+
+# 규칙 변형 (model의 rule) — edge: "eq1" 원시값 1만 옐로 / "le0" 예전 '0 이하 → 1..2'.
+# gate: 섹터 콜을 쉬는 조건 (GATES). stamp: 120초 기준 시각을 "accept" 수락 때 / "edge" 엣지 때(거절돼도).
+# retry: 거절된 엣지를 섹터가 1인 동안 다시 시도. fcy_clear: FCY 억제에 들어가면 빚을 지움
+NEW = dict(edge="eq1", gate="phase6", stamp="accept", retry=True, fcy_clear=True)
+OLD = dict(edge="le0", gate="none", stamp="edge", retry=False, fcy_clear=True)
+PREV = dict(NEW, gate="fcy17", stamp="edge", retry=False)     # 직전 규칙
+GATES = {
+    "phase6": lambda ph, y: ph == PHASE_FCY,
+    "fcy17": lambda ph, y: ph == PHASE_FCY or 1 <= y <= 7,
+    "ne0": lambda ph, y: ph == PHASE_FCY or y != 0,
+    "ge1": lambda ph, y: ph == PHASE_FCY or y >= 1,
+    "eq6": lambda ph, y: ph == PHASE_FCY or y == 6,
+    "both": lambda ph, y: ph == PHASE_FCY and y != 0,
+    "none": lambda ph, y: False,
+}
+# 리플레이가 잡아야 하는 변이 — 하나하나 적어도 한 시나리오의 결과가 정답과 달라야 한다
+MUTANTS = {
+    "직전 규칙 (리스타트 준비 억제·푸시 전 기록·재시도 없음)": PREV,
+    "억제: 옐로 상태 1..7도 (리스타트 준비 억제)": dict(NEW, gate="fcy17"),
+    "억제: 옐로 상태 != 0 (무효 255도 억제)": dict(NEW, gate="ne0"),
+    "억제: 옐로 상태 >= 1": dict(NEW, gate="ge1"),
+    "억제: 옐로 상태 == 6": dict(NEW, gate="eq6"),
+    "억제: 페이즈 6이면서 옐로 상태 != 0일 때만": dict(NEW, gate="both"),
+    "억제 없음": dict(NEW, gate="none"),
+    "엣지에서 기록 (거절돼도)": dict(NEW, stamp="edge"),
+    "재시도 없음": dict(NEW, retry=False),
+    "FCY에 들어가도 빚 유지": dict(NEW, fcy_clear=False),
+}
 
 # 이름, 세션 종류, 길이(초), 단계 [(t, 바뀌는 값)], 기대 섹터 콜 [(t, 배열 인덱스)],
 # 다른 기대 콜 [(t, 종류, data)], 설명
@@ -130,8 +171,9 @@ SCENARIOS = [
     dict(name="sector_yellow_fcy", stype=RACE, seconds=300.0,
          steps=[(0.0, {"flags": C, "phase": 5, "yellow": 0}),
                 (30.0, {"flags": [11, 1, 11]}),
-                (90.0, {"flags": [1, 1, 1], "phase": 6, "yellow": 1}),
-                (95.0, {"yellow": 2}),
+                (60.0, {"flags": [1, 1, 11]}),
+                (70.0, {"flags": [1, 1, 1], "phase": 6, "yellow": 1}),
+                (75.0, {"yellow": 2}),
                 (130.0, {"yellow": 4}),
                 (170.0, {"yellow": 5}),
                 (190.0, {"phase": 5, "yellow": 6}),
@@ -140,34 +182,87 @@ SCENARIOS = [
                 (205.0, {"yellow": 0}),
                 (230.0, {"flags": C}),
                 (270.0, {"flags": [1, 11, 11]})],
-         want=[(30.0, 1), (270.0, 0)],
-         other=[(90.0, "fcy", {"pool": "fcy_start"}),
+         want=[(30.0, 1), (198.0, 2), (270.0, 0)],
+         other=[(70.0, "fcy", {"pool": "fcy_start"}),
                 (130.0, "fcy_pit_open", {"pool": "fcy_pit_open"}),
                 (190.0, "green_flag", {"pool": "green_flag"})],
-         note="FCY(페이즈 6)·리스타트 준비(그린 + 옐로 상태 6) 동안 전 섹터 1이어도 섹터 콜 없음, "
-              "FCY가 끝난 순간 1로 남은 섹터도 침묵, 끝난 뒤 새 옐로(S1)는 콜"),
-    dict(name="sector_yellow_cooldown", stype=PRACTICE, seconds=200.0,
+         note="FCY(페이즈 6) 동안 전 섹터 1이어도 섹터 콜 없음, FCY 진입 전 쿨다운에 걸린 S1 빚은 FCY가 "
+              "지워 그린에서 안 나감, FCY가 끝난 순간 1로 남은 섹터도 침묵, 리스타트 준비(그린 + 옐로 "
+              "상태 6) 중 S3 새 옐로는 바로 콜, 끝난 뒤 S1 새 옐로도 콜"),
+    dict(name="sector_yellow_restart", stype=RACE, seconds=150.0,
+         steps=[(0.0, {"flags": C, "phase": 5, "yellow": 0}),
+                (20.0, {"phase": 6, "yellow": 1}),
+                (25.0, {"yellow": 2}),
+                (80.0, {"phase": 5, "yellow": 6}),
+                (83.0, {"flags": [1, 11, 11]}),
+                (93.0, {"yellow": 0}),
+                (140.0, {"flags": C})],
+         want=[(83.0, 0)],
+         other=[(20.0, "fcy", {"pool": "fcy_start"}),
+                (80.0, "green_flag", {"pool": "green_flag"})],
+         note="FCY 동안 깨끗(11)하던 S1이 리스타트 랩(그린 + 옐로 상태 6)에 1 → 바로 콜 (리스타트 준비를 "
+              "FCY로 치면 엣지가 사라져 옐로 상태 0이 된 뒤에도 못 부른다)"),
+    dict(name="sector_yellow_gate", stype=PRACTICE, seconds=280.0,
+         steps=[(0.0, {"flags": C, "phase": 5, "yellow": 0}),
+                (10.0, {"yellow": 255}),
+                (20.0, {"flags": [1, 11, 11]}),
+                (30.0, {"flags": C}),
+                (40.0, {"yellow": 7}),
+                (70.0, {"flags": [11, 1, 11]}),
+                (80.0, {"flags": C}),
+                (90.0, {"yellow": 1}),
+                (120.0, {"flags": [11, 11, 1]}),
+                (130.0, {"flags": C}),
+                (135.0, {"rewind": 60.0}),
+                (140.0, {"yellow": 2}),
+                (170.0, {"flags": [1, 11, 11]}),
+                (180.0, {"flags": C}),
+                (190.0, {"phase": 6, "yellow": 0}),
+                (220.0, {"flags": [11, 1, 11]}),
+                (230.0, {"yellow": 255}),
+                (245.0, {"flags": [11, 1, 1]}),
+                (260.0, {"phase": 5, "yellow": 0}),
+                (270.0, {"flags": C})],
+         want=[(20.0, 0), (70.0, 1), (120.0, 2), (170.0, 0)],
+         other=[(190.0, "fcy", {"pool": "fcy_start"}),
+                (260.0, "green_flag", {"pool": "green_flag"})],
+         note="그린(페이즈 5)에선 옐로 상태 255(무효 -1의 바이트)·7·1·2여도 섹터 엣지 콜, 페이즈 6이면 "
+              "옐로 상태 0·255여도 침묵하고 그린 복귀 때 1로 남은 섹터도 침묵 (135초 ET 되감기로 대기 키 "
+              "비움)"),
+    dict(name="sector_yellow_cooldown", stype=PRACTICE, seconds=240.0,
          steps=[(0.0, {"flags": C}),
                 (20.0, {"flags": [1, 11, 11]}),
                 (30.0, {"flags": C}),
-                (60.0, {"flags": [11, 11, 1]}),
-                (70.0, {"flags": C}),
-                (125.0, {"flags": [11, 11, 1]}),
-                (135.0, {"flags": C}),
-                (175.0, {"flags": [11, 11, 1]}),
-                (178.0, {"flags": C}),
-                (182.0, {"flags": [11, 11, 1]}),
-                (190.0, {"flags": C})],
-         want=[(20.0, 0), (182.0, 2)],
-         note="같은 섹터 120초 — S3 60초 엣지는 종류 쿨다운에 거절돼도 기록, 125·175초(65·115초 뒤) "
-              "침묵, 182초(122초 뒤) 콜"),
-    dict(name="sector_yellow_double", stype=PRACTICE, seconds=140.0,
+                (50.0, {"flags": [11, 11, 1]}),
+                (55.0, {"flags": C}),
+                (90.0, {"flags": [11, 11, 1]}),
+                (100.0, {"flags": C}),
+                (150.0, {"flags": [11, 11, 1]}),
+                (160.0, {"flags": C}),
+                (170.0, {"rewind": 60.0}),
+                (205.0, {"flags": [11, 11, 1]}),
+                (208.0, {"flags": C}),
+                (212.0, {"flags": [11, 11, 1]}),
+                (220.0, {"flags": C})],
+         want=[(20.0, 0), (90.0, 2), (212.0, 2)],
+         note="같은 섹터 120초는 수락된 콜 기준 — S3 50초 엣지는 종류 쿨다운에 거절되고 65초 전에 풀려 "
+              "말 못 함(기록 없음), 90초 S3 새 옐로 콜, 150·205초(60·115초 뒤) 침묵, 212초(122초 뒤) 콜 "
+              "(170초 ET 되감기로 대기 키 비움)"),
+    dict(name="sector_yellow_double", stype=PRACTICE, seconds=200.0,
          steps=[(0.0, {"flags": C}),
                 (20.0, {"flags": [1, 1, 11]}),
-                (80.0, {"flags": [1, 1, 1]})],
-         want=[(20.0, 0), (80.0, 2)],
-         note="같은 틱 S1·S2 → 1이면 낮은 번호 하나만 (S2는 종류 쿨다운에 거절·기록, 1로 남은 동안 "
-              "다시 안 부름), 60초 뒤 S3 → 1은 콜"),
+                (70.0, {"flags": [1, 11, 11]}),
+                (80.0, {"flags": [1, 11, 1]}),
+                (100.0, {"flags": [1, 11, 11]}),
+                (110.0, {"rewind": 60.0}),
+                (150.0, {"flags": [1, 1, 11]}),
+                (160.0, {"flags": [1, 11, 11]}),
+                (190.0, {"flags": [1, 1, 11]})],
+         want=[(20.0, 0), (65.0, 1), (190.0, 1)],
+         note="같은 틱 S1·S2 → 1이면 낮은 번호(S1) 먼저, 1로 남은 S2는 종류 쿨다운이 풀리는 65초에 콜. "
+              "S3(80~100초)는 쿨다운이 풀리기 전(110초)에 풀려 침묵. 110초 ET 되감기(대기 키 비움) 뒤 S2 새 "
+              "옐로는 150초(수락 65초에서 85초 — 엣지 20초에서는 130초)엔 침묵, 190초(125초 뒤)엔 콜. "
+              "S1은 끝까지 1이라 반복 없음"),
 ]
 
 
@@ -235,38 +330,50 @@ def snapshot(n, sc):
     }
 
 
-def fcy(phase, yellow):
-    return phase == PHASE_FCY or Y_FCY[0] <= yellow <= Y_FCY[1]
-
-
-def model(snaps, rule="new", as_byte=False):
+def model(snaps, rule=NEW, as_byte=False):
     """
     수락될 섹터 옐로 콜 [(t, i)] — 분석기 규칙 + 버스(종류 쿨다운·대기 키) + 하니스(세션 전환에서
-    대기 키 비움). rule="old"는 예전 '0 이하 → 1..2'(FCY 억제 없음, 모자란 직전 값은 0).
+    대기 키 비움). rule은 NEW·OLD·PREV·MUTANTS의 규칙 변형 (OLD는 모자란 직전 값을 0으로 본다).
     as_byte=True면 원시값을 C# 로더처럼 바이트로 읽는다 (-1 → 255).
     """
-    prev, stamp, pending, last_ok, last_et, out = None, {}, set(), None, None, []
+    gate = GATES[rule["gate"]]
+    prev, stamp, owed, pending, last_ok, last_et, out = None, {}, set(), set(), None, None, []
     for s in snaps:
         ses, t = s["session"], s["t"]
         flags = [(v & 0xFF) if as_byte else v for v in ses["sector_flags"][:3]]
         old_prev, prev = prev, flags
-        gated = rule == "new" and fcy(ses["game_phase"], ses["yellow_state"])
-        if old_prev is not None and not gated:
-            for i, f in enumerate(flags):
-                if rule == "new":
+        if old_prev is not None and gate(ses["game_phase"], ses["yellow_state"]):
+            if rule["fcy_clear"]:
+                owed.clear()                        # 직전 값은 위에서 이미 갱신
+        elif old_prev is not None:
+            for i in range(3):
+                f = flags[i] if i < len(flags) else None
+                if rule["edge"] == "eq1":
                     w = old_prev[i] if i < len(old_prev) else None
-                    edge = w != YELLOW and f == YELLOW
+                    on = f == YELLOW
+                    edge = on and w != YELLOW
                 else:
                     w = old_prev[i] if i < len(old_prev) else 0
-                    edge = w <= 0 < f <= 2
-                if not edge or (i in stamp and t - stamp[i] < REARM_S):
+                    on = f is not None and 0 < f <= 2
+                    edge = on and w <= 0
+                if not on:
+                    owed.discard(i)                 # 옐로가 풀리면 빚도 끝
                     continue
-                stamp[i] = t                        # 버스가 거절해도 기록
-                if i in pending or (last_ok is not None and t - last_ok < TYPE_COOLDOWN_S):
+                if edge and not (i in stamp and t - stamp[i] < REARM_S):
+                    owed.add(i)
+                    if rule["stamp"] == "edge":
+                        stamp[i] = t                # 버스가 거절해도 기록 (예전·직전 규칙)
+                if i not in owed:
                     continue
-                last_ok = t
-                pending.add(i)
-                out.append((t, i))
+                ok = i not in pending and (last_ok is None or t - last_ok >= TYPE_COOLDOWN_S)
+                if ok:
+                    last_ok = t
+                    pending.add(i)
+                    out.append((t, i))
+                    if rule["stamp"] == "accept":
+                        stamp[i] = t
+                if ok or not rule["retry"]:
+                    owed.discard(i)
         # 하니스: 분석기 틱 뒤 state.update가 세션 전환을 보면 대기 키를 비운다
         if last_et is not None and ses["current_et"] < last_et - RESTART_ET_BACK:
             pending.clear()
@@ -282,8 +389,9 @@ def build(sc):
     assert got == want, f"{name}: 규칙 사본 {got} ≠ 시나리오 정답 {want}"
     # 새 규칙은 원시값을 부호 있게 읽든 바이트로 읽든 같다 (파이썬 int ↔ C# byte)
     assert model(snaps, as_byte=True) == got, name
-    old_py = model(snaps, rule="old")
-    old_cs = model(snaps, rule="old", as_byte=True)
+    old_py = model(snaps, rule=OLD)
+    old_cs = model(snaps, rule=OLD, as_byte=True)
+    prev = model(snaps, rule=PREV)
     if name == "sector_yellow_rf2":
         assert old_py == old_cs == got, (name, old_py, old_cs)    # rF2식 데이터는 그대로
     else:
@@ -307,8 +415,12 @@ def build(sc):
         "events": events,
         "old_rule_calls_py": calls(old_py),
         "old_rule_calls_cs": calls(old_cs),
+        "prev_rule_calls": calls(prev),
     }
-    return snaps, expect
+    # 변이마다 이 시나리오에서 정답과 다른지 — generate가 모아서 변이가 하나라도 안 잡히면 실패
+    caught = {name for name, rule in MUTANTS.items()
+              if model(snaps, rule=rule) != got or model(snaps, rule=rule, as_byte=True) != got}
+    return snaps, expect, caught
 
 
 def write(out_dir, name, snaps, expect):
@@ -327,9 +439,13 @@ def write(out_dir, name, snaps, expect):
 def generate(out_dir):
     set_language("en")
     out = []
+    caught = set()
     for sc in SCENARIOS:
-        snaps, expect = build(sc)
+        snaps, expect, hit = build(sc)
+        caught |= hit
         out.append((sc["name"], len(snaps)) + write(out_dir, sc["name"], snaps, expect))
+    missed = [name for name in MUTANTS if name not in caught]
+    assert not missed, f"어느 리플레이도 못 잡는 변이: {missed}"
     return out
 
 

@@ -33,23 +33,25 @@ log = logging.getLogger("racecontrol")
 PHASE_GREEN = 5
 PHASE_FCY = 6
 PHASE_OVER = 8
-# rF2 옐로 상태 (mYellowFlagState — 풀코스 전용: 1 대기 … 6 리스타트 준비, 7 레이스 중단)
+# rF2 옐로 상태 (mYellowFlagState — 풀코스 하위 상태: 1 대기 … 6 리스타트 준비, 7 레이스 중단)
 Y_PIT_CLOSED = 2
 Y_PIT_LEAD_LAP = 3
 Y_PIT_OPEN = 4
-Y_FCY_MIN = 1
-Y_FCY_MAX = 7
 # 섹터 플래그 (ScoringInfo.mSectorFlag[i] = 섹터 i+1) — 원시값 1만 로컬 옐로
+SECTOR_COUNT = 3
 SECTOR_FLAG_YELLOW = 1
-SECTOR_YELLOW_REARM_S = 120.0      # 같은 섹터 재콜 최소 간격 (푸시가 버스에 거절돼도 기록)
+SECTOR_YELLOW_REARM_S = 120.0      # 같은 섹터 재콜 최소 간격 (버스가 수락한 콜 기준)
 
 
-def fcy_active(phase: int, yellow: int) -> bool:
-    """풀코스옐로 진행 중 — 페이즈 6, 또는 FCY 하위 상태(mYellowFlagState 1..7).
-    LMU는 페이즈가 그린으로 돌아온 뒤에도 리스타트 준비(6)를 잠깐 남긴다 (CrewChief LMU 매퍼가
-    이 경우도 FCY로 친다). 상한 7은 부호 없는 바이트로 읽은 -1(=255, 무효)을 FCY로 세지 않게.
-    C# RaceControlAnalyzer.FcyActive."""
-    return phase == PHASE_FCY or Y_FCY_MIN <= yellow <= Y_FCY_MAX
+def sector_calls_muted(phase: int) -> bool:
+    """섹터 옐로 콜을 쉬는 때 — 페이즈 6(풀코스옐로)뿐. mYellowFlagState는 보지 않는다:
+    LMU는 그린(페이즈 5)으로 돌아온 뒤에도 리스타트 준비(6)를 잠깐 남기는데, 그때는 이미 다시
+    레이스 중이라 리스타트 랩의 로컬 옐로를 불러야 한다 (CrewChief LMU 매퍼도 리스타트 준비를
+    RACING으로 두고 그린 페이즈의 섹터 옐로를 알린다). 그린 중 무효값(-1, 부호 없는 바이트로
+    255)이나 다른 하위 상태(1·2·7 등)도 섹터 콜을 막지 않는다.
+    C# RaceControlAnalyzer.SectorCallsMuted."""
+    return phase == PHASE_FCY
+
 
 MILESTONES_MIN = (60, 30, 10)      # 남은 시간 안내 시점 (분)
 
@@ -101,7 +103,8 @@ class RaceControlAnalyzer:
         self._phase: Optional[int] = None
         self._yellow: Optional[int] = None
         self._prev_sector_flags: Optional[list] = None
-        self._sector_yellow_announced: dict[int, float] = {}
+        self._sector_yellow_announced: dict[int, float] = {}   # 섹터 → 마지막 수락 콜 시각
+        self._sector_yellow_owed: set[int] = set()             # 엣지가 났지만 아직 수락 안 된 섹터
         self._milestones_done: set[int] = set()
         self._initial_remaining: Optional[float] = None
         self._class_place: Optional[int] = None
@@ -196,7 +199,7 @@ class RaceControlAnalyzer:
     def _check_sector_yellow(self, ses: dict, me: dict, now: float,
                              bus: EventBus) -> None:
         """
-        섹터 로컬 옐로 — 엣지 트리거: 섹터 값이 '옐로 아님 → 옐로'로 바뀌는 순간만 콜한다.
+        섹터 로컬 옐로 — 엣지 트리거: 섹터 값이 '옐로 아님 → 옐로'로 바뀌는 엣지에서만 콜이 생긴다.
         mSectorFlag[i]는 섹터 i+1이고 원시값 1이 그 섹터의 로컬 옐로다. 깨끗한 섹터는 LMU가 11,
         rF2 헤더 기준 0 — LMU의 깨끗함 11은 lmu-pitwall 인게임 측정(LMU 1.4)과 LmuOverlay 검증
         목록에 있고, CrewChief·TinyPedal·SimHub·pitwall 모두 '== 1'만 옐로로 본다. 그래서 1 말고는
@@ -204,34 +207,48 @@ class RaceControlAnalyzer:
         '0 이하 → 1..2' 규칙은 LMU의 11 → 1을 못 잡아 콜이 한 번도 안 나갔다. '== 1' 비교라
         파이썬 int와 C# byte, 부호 있는 -1과 부호 없는 255가 결과를 가르지 않는다.
         첫 샘플(리셋 직후)은 기록만 한다 — 붙기 전부터 켜져 있던 옐로는 언제 났는지 몰라 부르지 않는다.
-        FCY 중(fcy_active)에는 콜하지 않는다: FCY·피트 오픈·그린 콜이 따로 있고, LMU가 FCY 동안
-        섹터 값을 어떻게 쓰는지 측정한 자료가 없다 (전 섹터를 1로 올리면 FCY 콜에 섹터 콜이 겹친다 —
-        CrewChief는 그린 페이즈에서만, LmuOverlay는 FCY 배너가 섹터 옐로보다 먼저).
+        빚진 콜: 엣지가 그 섹터 마지막 콜에서 120초 밖이면 섹터를 빚 목록에 올리고, 섹터가 1인
+        동안 매 틱 푸시를 다시 시도한다. 버스가 수락해야(종류 쿨다운 45초·대기 키) 빚을 지우고
+        120초 기준 시각을 찍는다 — 다른 섹터 콜 직후라 거절된 옐로도 쿨다운이 풀리면 나가고, 말하지
+        못한 엣지가 그 섹터를 120초 막지 않는다. 섹터가 1을 벗어나면 빚도 지운다 (이미 풀린 옐로는
+        부르지 않는다).
+        FCY(페이즈 6) 중에는 콜하지 않고 빚도 지운다: FCY·피트 오픈·그린 콜이 따로 있고, LMU가
+        FCY 동안 섹터 값을 어떻게 쓰는지 측정한 자료가 없다 (전 섹터를 1로 올리면 FCY 콜에 섹터 콜이
+        겹친다 — CrewChief는 그린 페이즈에서만, LmuOverlay는 FCY 배너가 섹터 옐로보다 먼저).
         직전 값은 억제 중에도 매 틱 갱신한다 — FCY 동안 1이 된 섹터가 FCY가 끝나는 순간 가짜
-        엣지로 나가지 않게. C# RaceControlAnalyzer.CheckSectorYellow.
+        엣지로 나가지 않게. 리스타트 준비(그린 + 옐로 상태 6)는 막지 않는다 (sector_calls_muted).
+        C# RaceControlAnalyzer.CheckSectorYellow.
         """
         if not self.sector_calls:
             return
-        flags = list((ses.get("sector_flags") or [])[:3])
+        flags = list((ses.get("sector_flags") or [])[:SECTOR_COUNT])
         prev = self._prev_sector_flags
         self._prev_sector_flags = flags
         if prev is None:
             return    # 첫 샘플: 이미 켜져 있던 플래그는 신뢰하지 않음
-        if fcy_active(ses["game_phase"], ses["yellow_state"]):
-            return    # FCY는 FCY 콜이 맡는다 (직전 값은 위에서 이미 갱신)
-        for i, flag in enumerate(flags):
-            was = prev[i] if i < len(prev) else None
-            if was == SECTOR_FLAG_YELLOW or flag != SECTOR_FLAG_YELLOW:
-                continue                       # 옐로 아님 → 옐로(1) 전이만
-            last = self._sector_yellow_announced.get(i)
-            if last is not None and now - last < SECTOR_YELLOW_REARM_S:
+        owed = self._sector_yellow_owed
+        if sector_calls_muted(ses["game_phase"]):
+            owed.clear()    # FCY는 FCY 콜이 맡는다 (직전 값은 위에서 이미 갱신)
+            return
+        for i in range(SECTOR_COUNT):
+            if i >= len(flags) or flags[i] != SECTOR_FLAG_YELLOW:
+                owed.discard(i)                # 옐로가 풀리면 빚도 끝
                 continue
-            self._sector_yellow_announced[i] = now
-            bus.push(Event(
+            was = prev[i] if i < len(prev) else None
+            if was != SECTOR_FLAG_YELLOW:      # 옐로 아님 → 옐로(1) 엣지
+                last = self._sector_yellow_announced.get(i)
+                if last is None or now - last >= SECTOR_YELLOW_REARM_S:
+                    owed.add(i)
+            if i not in owed:
+                continue
+            accepted = bus.push(Event(
                 type=EventType.SECTOR_YELLOW, priority=Priority.HIGH,
                 message=msg("sector_yellow", n=i + 1),
                 dedup_key=f"syellow_{i}", ttl=15.0, tone="urgent",
             ))
+            if accepted:                       # 수락된 콜만 120초 기준 — 거절되면 다음 틱에 다시
+                self._sector_yellow_announced[i] = now
+                owed.discard(i)
 
     def _check_blue_flag(self, me: dict, state: SessionState,
                          bus: EventBus, over: bool = False) -> None:

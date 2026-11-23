@@ -8,14 +8,34 @@
   },
   {
    "data": {},
-   "message": "Yellow in sector 3. No overtaking, be ready to lift.",
-   "t": 80.0,
+   "message": "Yellow in sector 2. No overtaking, be ready to lift.",
+   "t": 65.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 2. No overtaking, be ready to lift.",
+   "t": 190.0,
    "type": "sector_yellow"
   }
  ],
- "note": "같은 틱 S1·S2 → 1이면 낮은 번호 하나만 (S2는 종류 쿨다운에 거절·기록, 1로 남은 동안 다시 안 부름), 60초 뒤 S3 → 1은 콜",
+ "note": "같은 틱 S1·S2 → 1이면 낮은 번호(S1) 먼저, 1로 남은 S2는 종류 쿨다운이 풀리는 65초에 콜. S3(80~100초)는 쿨다운이 풀리기 전(110초)에 풀려 침묵. 110초 ET 되감기(대기 키 비움) 뒤 S2 새 옐로는 150초(수락 65초에서 85초 — 엣지 20초에서는 130초)엔 침묵, 190초(125초 뒤)엔 콜. S1은 끝까지 1이라 반복 없음",
  "old_rule_calls_cs": [],
  "old_rule_calls_py": [],
+ "prev_rule_calls": [
+  {
+   "sector": 1,
+   "t": 20.0
+  },
+  {
+   "sector": 3,
+   "t": 80.0
+  },
+  {
+   "sector": 2,
+   "t": 150.0
+  }
+ ],
  "scenario": "sector_yellow_double",
  "types": [
   "sector_yellow"

@@ -10,6 +10,12 @@
  "note": "LMU 11 기준 S1 11 → 1 콜 하나, 1로 남은 동안 반복 없음 (60초 ET 되감기로 대기 키를 비워도 — 레벨 트리거라면 140초에 다시 나간다)",
  "old_rule_calls_cs": [],
  "old_rule_calls_py": [],
+ "prev_rule_calls": [
+  {
+   "sector": 1,
+   "t": 20.0
+  }
+ ],
  "scenario": "sector_yellow_lmu",
  "types": [
   "sector_yellow"

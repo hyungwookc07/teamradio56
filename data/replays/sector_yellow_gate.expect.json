@@ -1,0 +1,57 @@
+{
+ "events": [
+  {
+   "data": {},
+   "message": "Yellow in sector 1. No overtaking, be ready to lift.",
+   "t": 20.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 2. No overtaking, be ready to lift.",
+   "t": 70.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 3. No overtaking, be ready to lift.",
+   "t": 120.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 1. No overtaking, be ready to lift.",
+   "t": 170.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {
+    "pool": "fcy_start"
+   },
+   "t": 190.0,
+   "type": "fcy"
+  },
+  {
+   "data": {
+    "pool": "green_flag"
+   },
+   "t": 260.0,
+   "type": "green_flag"
+  }
+ ],
+ "note": "그린(페이즈 5)에선 옐로 상태 255(무효 -1의 바이트)·7·1·2여도 섹터 엣지 콜, 페이즈 6이면 옐로 상태 0·255여도 침묵하고 그린 복귀 때 1로 남은 섹터도 침묵 (135초 ET 되감기로 대기 키 비움)",
+ "old_rule_calls_cs": [],
+ "old_rule_calls_py": [],
+ "prev_rule_calls": [
+  {
+   "sector": 1,
+   "t": 20.0
+  }
+ ],
+ "scenario": "sector_yellow_gate",
+ "types": [
+  "sector_yellow",
+  "fcy",
+  "green_flag"
+ ]
+}

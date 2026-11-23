@@ -36,6 +36,20 @@
    "t": 140.0
   }
  ],
+ "prev_rule_calls": [
+  {
+   "sector": 2,
+   "t": 80.0
+  },
+  {
+   "sector": 3,
+   "t": 140.0
+  },
+  {
+   "sector": 1,
+   "t": 200.0
+  }
+ ],
  "scenario": "sector_yellow_junk",
  "types": [
   "sector_yellow"

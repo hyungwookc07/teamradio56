@@ -1,0 +1,34 @@
+{
+ "events": [
+  {
+   "data": {
+    "pool": "fcy_start"
+   },
+   "t": 20.0,
+   "type": "fcy"
+  },
+  {
+   "data": {
+    "pool": "green_flag"
+   },
+   "t": 80.0,
+   "type": "green_flag"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 1. No overtaking, be ready to lift.",
+   "t": 83.0,
+   "type": "sector_yellow"
+  }
+ ],
+ "note": "FCY 동안 깨끗(11)하던 S1이 리스타트 랩(그린 + 옐로 상태 6)에 1 → 바로 콜 (리스타트 준비를 FCY로 치면 엣지가 사라져 옐로 상태 0이 된 뒤에도 못 부른다)",
+ "old_rule_calls_cs": [],
+ "old_rule_calls_py": [],
+ "prev_rule_calls": [],
+ "scenario": "sector_yellow_restart",
+ "types": [
+  "sector_yellow",
+  "fcy",
+  "green_flag"
+ ]
+}

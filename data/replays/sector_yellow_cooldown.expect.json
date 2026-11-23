@@ -9,13 +9,29 @@
   {
    "data": {},
    "message": "Yellow in sector 3. No overtaking, be ready to lift.",
-   "t": 182.0,
+   "t": 90.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
+   "message": "Yellow in sector 3. No overtaking, be ready to lift.",
+   "t": 212.0,
    "type": "sector_yellow"
   }
  ],
- "note": "같은 섹터 120초 — S3 60초 엣지는 종류 쿨다운에 거절돼도 기록, 125·175초(65·115초 뒤) 침묵, 182초(122초 뒤) 콜",
+ "note": "같은 섹터 120초는 수락된 콜 기준 — S3 50초 엣지는 종류 쿨다운에 거절되고 65초 전에 풀려 말 못 함(기록 없음), 90초 S3 새 옐로 콜, 150·205초(60·115초 뒤) 침묵, 212초(122초 뒤) 콜 (170초 ET 되감기로 대기 키 비움)",
  "old_rule_calls_cs": [],
  "old_rule_calls_py": [],
+ "prev_rule_calls": [
+  {
+   "sector": 1,
+   "t": 20.0
+  },
+  {
+   "sector": 3,
+   "t": 205.0
+  }
+ ],
  "scenario": "sector_yellow_cooldown",
  "types": [
   "sector_yellow"

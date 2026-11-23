@@ -10,7 +10,7 @@
    "data": {
     "pool": "fcy_start"
    },
-   "t": 90.0,
+   "t": 70.0,
    "type": "fcy"
   },
   {
@@ -29,14 +29,30 @@
   },
   {
    "data": {},
+   "message": "Yellow in sector 3. No overtaking, be ready to lift.",
+   "t": 198.0,
+   "type": "sector_yellow"
+  },
+  {
+   "data": {},
    "message": "Yellow in sector 1. No overtaking, be ready to lift.",
    "t": 270.0,
    "type": "sector_yellow"
   }
  ],
- "note": "FCY(페이즈 6)·리스타트 준비(그린 + 옐로 상태 6) 동안 전 섹터 1이어도 섹터 콜 없음, FCY가 끝난 순간 1로 남은 섹터도 침묵, 끝난 뒤 새 옐로(S1)는 콜",
+ "note": "FCY(페이즈 6) 동안 전 섹터 1이어도 섹터 콜 없음, FCY 진입 전 쿨다운에 걸린 S1 빚은 FCY가 지워 그린에서 안 나감, FCY가 끝난 순간 1로 남은 섹터도 침묵, 리스타트 준비(그린 + 옐로 상태 6) 중 S3 새 옐로는 바로 콜, 끝난 뒤 S1 새 옐로도 콜",
  "old_rule_calls_cs": [],
  "old_rule_calls_py": [],
+ "prev_rule_calls": [
+  {
+   "sector": 2,
+   "t": 30.0
+  },
+  {
+   "sector": 1,
+   "t": 270.0
+  }
+ ],
  "scenario": "sector_yellow_fcy",
  "types": [
   "sector_yellow",
