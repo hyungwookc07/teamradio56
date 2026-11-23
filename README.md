@@ -5,8 +5,9 @@
 teamradio56 is a SimHub plugin that watches your race and talks to you on
 team radio, in English. It calls cars alongside, faster classes coming
 through, flags, damage, fuel and the gaps that matter. When nothing matters,
-it stays quiet. No Python, no extra apps: you install the plugin, download
-the voice pack once from the settings screen, and drive.
+it stays quiet. No Python, no extra apps: you switch on one setting in LMU,
+install the plugin, download the voice pack once from the settings screen,
+and drive.
 
 한국어: [README.ko.md](README.ko.md)
 
@@ -62,13 +63,18 @@ chatter unless you turn on the optional reports.
 ## What you need
 
 - **Windows 10 or 11**
-- **Le Mans Ultimate**
+- **Le Mans Ultimate**, version 1.2 or later. teamradio56 reads the data LMU
+  shares by itself, so there is nothing to add to the game. You only switch
+  it on once (see [Install](#install), step 1).
 - **[SimHub](https://www.simhubdash.com/)**
-- **rF2 Shared Memory Map Plugin** by The Iron Wolf
-  ([download](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases)).
-  teamradio56 reads the game through it, so it is required. If you already
-  use other sim-racing tools you may have it installed.
 - An internet connection only for downloading updates and the voice pack.
+
+**Optional:** the **rF2 Shared Memory Map Plugin** by The Iron Wolf. Earlier
+versions of teamradio56 needed it. Now it is a fallback: install it only if
+your LMU is older than 1.2 or the connection doesn't work without it. If you
+already have it, keep it. teamradio56 then also takes the pit speed limit and
+the penalty messages from it. Without it, the pit limiter warning uses a
+default limit and penalty calls don't name the penalty.
 
 You do **not** need Python or anything else from this repository.
 
@@ -79,7 +85,35 @@ You do **not** need Python or anything else from this repository.
 A step-by-step guide with more detail and troubleshooting is in
 [docs/INSTALL.md](docs/INSTALL.md) (in Korean). The short version:
 
-**1. Shared memory plugin** (skip if you already have it enabled)
+**1. Let LMU share its data** (once)
+
+1. In LMU, open **Settings → Gameplay** and turn on **Enable Plugins**.
+2. Quit LMU completely and start it again. The setting only takes effect
+   after a full restart.
+
+That's all on the game side. If the plugin later stays on
+**○ waiting for game** even in a session, or your LMU is older than 1.2,
+install the [rF2 Shared Memory Map Plugin](#optional-rf2-shared-memory-map-plugin)
+as well.
+
+**2. teamradio56**
+
+1. Download `teamradio56-plugin-x.y.z.zip` from the
+   [latest release](https://github.com/hyungwookc07/teamradio56/releases/latest).
+   That one file is all you need. You can ignore the other files, and the
+   voice pack installs from inside the plugin. The zip contains two files: `TeamRadio56.Core.dll` and `TeamRadio56.SimHub.dll`.
+2. Close SimHub. Copy **both** DLLs into the SimHub install folder itself,
+   not a subfolder. The default is `C:\Program Files (x86)\SimHub\`.
+3. Start SimHub. When it asks whether to enable the new plugin, tick
+   **teamradio56**. (If it doesn't ask, enable it under SimHub
+   **Settings → Plugins**.)
+4. **teamradio56** now appears in SimHub's left menu. Click it to open its
+   settings screen.
+
+### Optional: rF2 Shared Memory Map Plugin
+
+Only if you need the fallback (see [What you need](#what-you-need)). Skip
+this if you already have it enabled.
 
 1. Download `rFactor2SharedMemoryMapPlugin64.dll` from the
    [Iron Wolf releases](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases).
@@ -100,19 +134,8 @@ A step-by-step guide with more detail and troubleshooting is in
      ...
    ```
 
-**2. teamradio56**
-
-1. Download `teamradio56-plugin-x.y.z.zip` from the
-   [latest release](https://github.com/hyungwookc07/teamradio56/releases/latest).
-   That one file is all you need. You can ignore the other files, and the
-   voice pack installs from inside the plugin. The zip contains two files: `TeamRadio56.Core.dll` and `TeamRadio56.SimHub.dll`.
-2. Close SimHub. Copy **both** DLLs into the SimHub install folder itself,
-   not a subfolder. The default is `C:\Program Files (x86)\SimHub\`.
-3. Start SimHub. When it asks whether to enable the new plugin, tick
-   **teamradio56**. (If it doesn't ask, enable it under SimHub
-   **Settings → Plugins**.)
-4. **teamradio56** now appears in SimHub's left menu. Click it to open its
-   settings screen.
+If both are available, teamradio56 uses LMU's own data and takes only the
+pit speed limit and the penalty messages from the plugin.
 
 ---
 
@@ -130,8 +153,11 @@ A step-by-step guide with more detail and troubleshooting is in
 3. **Check the sound.** Press **[Test speak]** in the **Status** section. You
    should hear *"Box box, box box."* in your default Windows audio device.
 4. **Drive.** Once you are in a session in LMU, the lamp in **Status** turns
-   to **● LMU connected** (instead of **○ waiting for game**). Live position,
-   lap and fuel appear below it, together with the most recent radio calls (up to eight).
+   to **● LMU connected** (instead of **○ waiting for game**). The line under
+   it says where the data comes from: **Data: LMU built-in shared memory**
+   (no DLL needed) or **Data: rF2 Shared Memory Map Plugin (DLL)**. Live
+   position, lap and fuel appear below that, together with the most recent
+   radio calls (up to eight).
 
 The volume follows Windows. If the radio is too loud or quiet, adjust
 SimHub in the Windows volume mixer.
@@ -220,9 +246,20 @@ Check that **Voice output** (under **Voice**) is ticked. [Test speak] plays
 even when it is off.
 
 **The lamp stays on "○ waiting for game".**
-The shared memory plugin is missing or not enabled. Check that the DLL is in
-the game's `Plugins` folder and that `" Enabled": 1` (with the space) is set.
-You also need to be in a session, not in the main menu.
+LMU isn't sharing its data yet. Check that **Settings → Gameplay → Enable
+Plugins** is on in LMU and that you restarted the game completely after
+turning it on. You also need to be in a session, not in the main menu. If it
+still doesn't connect, or your LMU is older than 1.2, install the
+[rF2 Shared Memory Map Plugin](#optional-rf2-shared-memory-map-plugin). If you
+use that plugin, check that the DLL is in the game's `Plugins` folder and that
+`" Enabled": 1` (with the space) is set.
+
+**The status says LMU's built-in shared memory "doesn't look as expected".**
+A game update has probably changed how LMU shares its data. teamradio56 then
+stops reading it, so it never acts on wrong values. Until a fixed version is
+out, install the
+[rF2 Shared Memory Map Plugin](#optional-rf2-shared-memory-map-plugin);
+teamradio56 switches to it by itself. Please report it with your log.
 
 **No traffic calls in practice or qualifying.**
 **Race only** is on by default. Untick it under **Traffic / Spotter** if you
@@ -276,8 +313,8 @@ are still written in Korean, even with the English settings screen.
 - **One-way radio.** No voice commands, no speech recognition, no
   conversation.
 - **No volume slider.** Use the Windows volume mixer.
-- **No virtual energy, weather forecast or pit-strategy data.** LMU doesn't
-  share these through shared memory.
+- **No virtual energy, weather forecast or pit-strategy calls.** teamradio56
+  doesn't use that data.
 
 It's light on your PC: the voice clips are made in advance, so nothing heavy
 runs while you drive.
@@ -308,6 +345,10 @@ plugin's source. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and
 
 - rF2 Shared Memory Map Plugin: The Iron Wolf
 - Shared memory layout reference: [pyRfactor2SharedMemory](https://github.com/TonyWhitley/pyRfactor2SharedMemory)
+- LMU built-in shared memory layout: cross-checked against
+  [pyLMUSharedMemory](https://github.com/TinyPedal/pyLMUSharedMemory) and
+  [lmu-pitwall](https://github.com/Swizzjack/lmu-pitwall) (both MIT). The
+  reader is our own code.
 - The voice pack is rendered with the Kokoro text-to-speech model.
 
 ## License

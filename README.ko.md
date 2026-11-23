@@ -5,7 +5,8 @@
 teamradio56은 레이스 상황을 지켜보다가 영어 팀라디오로 불러주는 SimHub
 플러그인이에요. 옆에 붙은 차, 뒤에서 오는 빠른 클래스, 깃발, 데미지, 연료,
 신경 써야 할 갭을 알려주고, 별일 없을 땐 조용히 있어요. 파이썬이나 다른 프로그램은
-필요 없어요. 플러그인을 넣고, 설정 화면에서 음성 팩을 한 번 받으면 바로 달리면 돼요.
+필요 없어요. LMU 설정 하나를 켜고, 플러그인을 넣고, 설정 화면에서 음성 팩을 한 번
+받으면 바로 달리면 돼요.
 
 English: [README.md](README.md)
 
@@ -59,13 +60,16 @@ English: [README.md](README.md)
 ## 준비물
 
 - **Windows 10 또는 11**
-- **르망 얼티밋**
+- **르망 얼티밋** 1.2 이상. teamradio56은 LMU가 직접 내주는 데이터를 읽어서 게임에
+  따로 깔 건 없어요. 설정 하나만 한 번 켜면 돼요 ([설치](#설치) 1단계).
 - **[SimHub](https://www.simhubdash.com/)**
-- The Iron Wolf의 **rF2 Shared Memory Map Plugin**
-  ([다운로드](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases)).
-  teamradio56은 이걸 통해 게임 데이터를 읽어서 꼭 있어야 해요. 다른 심레이싱
-  툴을 쓰고 있다면 이미 깔려 있을 수도 있어요.
 - 인터넷은 업데이트와 음성 팩을 받을 때만 필요해요.
+
+**선택:** The Iron Wolf의 **rF2 Shared Memory Map Plugin**. 예전 버전의 teamradio56은
+이게 꼭 있어야 했지만, 이제는 대체 수단이에요. LMU가 1.2보다 오래됐거나 이것 없이
+연결이 안 될 때만 설치하세요. 이미 깔려 있다면 그대로 두세요. 그러면 피트 제한속도와
+페널티 메시지도 거기서 가져와요. 없으면 피트 리미터 경고는 기본 제한속도로 판단하고,
+페널티 콜은 페널티 종류를 말하지 못해요.
 
 파이썬이나 이 저장소의 다른 파일은 **필요 없어요**.
 
@@ -76,7 +80,30 @@ English: [README.md](README.md)
 한 단계씩 따라 하는 자세한 설치 가이드와 문제 해결은
 [docs/INSTALL.md](docs/INSTALL.md)에 있어요. 요약하면 이래요.
 
-**1. 공유 메모리 플러그인** (이미 켜져 있으면 건너뛰세요)
+**1. LMU가 데이터를 내주게 하기** (한 번만)
+
+1. LMU에서 **Settings → Gameplay**를 열고 **Enable Plugins**를 켜요.
+2. LMU를 완전히 껐다가 다시 켜요. 이 설정은 게임을 다시 시작해야 적용돼요.
+
+게임 쪽은 이걸로 끝이에요. 나중에 세션에 들어가도 플러그인이 계속
+**○ 게임 대기 중**이거나 LMU가 1.2보다 오래됐다면
+[rF2 Shared Memory Map Plugin](#선택-rf2-shared-memory-map-plugin)도 설치하세요.
+
+**2. teamradio56**
+
+1. [최신 릴리스](https://github.com/hyungwookc07/teamradio56/releases/latest)에서
+   `teamradio56-plugin-x.y.z.zip`만 받으면 돼요. 다른 파일은 필요 없고, 음성 팩은
+   플러그인 안에서 받아요. zip 안에 `TeamRadio56.Core.dll`과
+   `TeamRadio56.SimHub.dll` 두 파일이 들어 있어요.
+2. SimHub을 끄고, DLL **두 개 모두** SimHub 설치 폴더 바로 아래에 복사해요
+   (하위 폴더 아니에요). 기본 경로는 `C:\Program Files (x86)\SimHub\`예요.
+3. SimHub을 켜면 새 플러그인을 활성화할지 묻는 창이 떠요. **teamradio56**에
+   체크하세요. (창이 안 뜨면 SimHub **Settings → Plugins**에서 켜면 돼요.)
+4. SimHub 왼쪽 메뉴에 **teamradio56**이 생겨요. 누르면 설정 화면이 열려요.
+
+### 선택: rF2 Shared Memory Map Plugin
+
+대체 수단이 필요할 때만 하세요 ([준비물](#준비물) 참고). 이미 켜져 있으면 건너뛰세요.
 
 1. [Iron Wolf 릴리스](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin/releases)에서
    `rFactor2SharedMemoryMapPlugin64.dll`을 받아요.
@@ -95,17 +122,8 @@ English: [README.md](README.md)
      ...
    ```
 
-**2. teamradio56**
-
-1. [최신 릴리스](https://github.com/hyungwookc07/teamradio56/releases/latest)에서
-   `teamradio56-plugin-x.y.z.zip`만 받으면 돼요. 다른 파일은 필요 없고, 음성 팩은
-   플러그인 안에서 받아요. zip 안에 `TeamRadio56.Core.dll`과
-   `TeamRadio56.SimHub.dll` 두 파일이 들어 있어요.
-2. SimHub을 끄고, DLL **두 개 모두** SimHub 설치 폴더 바로 아래에 복사해요
-   (하위 폴더 아니에요). 기본 경로는 `C:\Program Files (x86)\SimHub\`예요.
-3. SimHub을 켜면 새 플러그인을 활성화할지 묻는 창이 떠요. **teamradio56**에
-   체크하세요. (창이 안 뜨면 SimHub **Settings → Plugins**에서 켜면 돼요.)
-4. SimHub 왼쪽 메뉴에 **teamradio56**이 생겨요. 누르면 설정 화면이 열려요.
+둘 다 있으면 teamradio56은 LMU가 직접 내주는 데이터를 쓰고, 피트 제한속도와 페널티
+메시지만 이 플러그인에서 가져와요.
 
 ---
 
@@ -119,7 +137,9 @@ English: [README.md](README.md)
 2. **소리를 확인해요.** **상태** 섹션의 **[테스트 발화]**를 누르면 Windows 기본
    오디오 장치로 *"Box box, box box."*가 들려야 해요.
 3. **달려요.** LMU에서 세션에 들어가면 **상태**의 램프가 **○ 게임 대기 중**에서
-   **● LMU 연결됨**으로 바뀌어요. 그 아래에 순위·랩·연료와 최근 무전(최대 8개)이 보여요.
+   **● LMU 연결됨**으로 바뀌어요. 바로 아래 줄에 데이터를 어디서 읽는지 나와요.
+   **데이터: LMU 내장 공유 메모리**(DLL 필요 없음) 또는 **데이터: rF2 공유 메모리
+   플러그인 (DLL)**이에요. 그 아래에 순위·랩·연료와 최근 무전(최대 8개)이 보여요.
 
 설정 화면은 처음에 한국어로 나와요. 맨 위 언어 선택(**한국어** / **English**)에서
 바꿀 수 있어요.
@@ -201,9 +221,18 @@ Windows 볼륨 믹서의 SimHub 볼륨과 기본 오디오 장치를 확인하�
 꺼져 있어도 소리가 나요.
 
 **램프가 계속 "○ 게임 대기 중"이에요.**
-공유 메모리 플러그인이 없거나 꺼져 있어요. DLL이 게임의 `Plugins` 폴더에 있는지,
-`" Enabled": 1`(공백 포함)로 설정됐는지 확인하세요. 메인 메뉴가 아니라 세션에
-들어가 있어야 해요.
+LMU가 아직 데이터를 내주지 않고 있어요. LMU의 **Settings → Gameplay → Enable
+Plugins**가 켜져 있는지, 켠 뒤 게임을 완전히 다시 시작했는지 확인하세요. 메인 메뉴가
+아니라 세션에 들어가 있어야 해요. 그래도 안 되거나 LMU가 1.2보다 오래됐다면
+[rF2 Shared Memory Map Plugin](#선택-rf2-shared-memory-map-plugin)을 설치하세요.
+그 플러그인을 쓴다면 DLL이 게임의 `Plugins` 폴더에 있는지, `" Enabled": 1`(공백
+포함)로 설정됐는지 확인하세요.
+
+**상태에 "LMU 내장 공유 메모리의 값이 예상과 달라 쓰지 않습니다"라고 나와요.**
+게임 업데이트로 LMU가 데이터를 내주는 형식이 바뀐 것 같아요. 잘못된 값으로 무전하지
+않도록 teamradio56이 그 데이터를 읽지 않는 거예요. 고친 버전이 나올 때까지
+[rF2 Shared Memory Map Plugin](#선택-rf2-shared-memory-map-plugin)을 설치하면 알아서
+그쪽으로 읽어요. 로그와 함께 알려 주세요.
 
 **연습·퀄리에서 트래픽 콜이 안 나와요.**
 **레이스에서만**이 기본으로 켜져 있어요. 다른 사람과 트랙을 같이 쓴다면
@@ -247,8 +276,8 @@ SimHub을 끄고 SimHub 폴더의 `teamradio56_backup.txt`를 여세요. 줄마�
   설정 화면만 한국어와 영어를 지원해요.
 - **단방향 무전이에요.** 음성 명령, 음성 인식, 대화는 없어요.
 - **볼륨 슬라이더가 없어요.** Windows 볼륨 믹서를 쓰세요.
-- **가상 에너지, 날씨 예보, 피트 전략 정보는 없어요.** LMU가 공유 메모리로 내주지
-  않는 정보예요.
+- **가상 에너지, 날씨 예보, 피트 전략 콜은 없어요.** teamradio56이 그 데이터를
+  쓰지 않아요.
 
 PC에도 가벼워요. 목소리를 미리 만들어 둔 파일로 틀기 때문에 주행 중에 무거운
 작업을 하지 않아요.
@@ -275,6 +304,9 @@ PC에도 가벼워요. 목소리를 미리 만들어 둔 파일로 틀기 때문
 
 - rF2 Shared Memory Map Plugin: The Iron Wolf
 - 공유 메모리 구조 참고: [pyRfactor2SharedMemory](https://github.com/TonyWhitley/pyRfactor2SharedMemory)
+- LMU 내장 공유 메모리 구조: [pyLMUSharedMemory](https://github.com/TinyPedal/pyLMUSharedMemory)와
+  [lmu-pitwall](https://github.com/Swizzjack/lmu-pitwall)(둘 다 MIT)로 교차 확인했어요.
+  읽는 코드는 직접 썼어요.
 - 음성 팩은 Kokoro 음성 합성 모델로 렌더했어요.
 
 ## 라이선스

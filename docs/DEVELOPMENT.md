@@ -36,7 +36,9 @@ API(본인 키)로 만드는 LLM 멘트, 한국어 무전, edge·ElevenLabs 목�
 - Windows 10/11 (공유 메모리 모드) — 리플레이 모드는 OS 무관
 - Python 3.11 이상 — 파이썬 앱·음성 팩 도구에만 필요 (SimHub 플러그인은 불필요)
 - LMU + [rF2 Shared Memory Map Plugin](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin)
-  (설치는 [INSTALL.md 1절](INSTALL.md#1-공유-메모리-플러그인-설치-필수))
+  (설치는 [INSTALL.md](INSTALL.md#선택-rf2-공유-메모리-플러그인)). 파이썬 앱은 지금도 rF2 플러그인
+  버퍼(`$rFactor2SMMP_*$`, `rf2data.py`)만 읽는다 — LMU 내장 공유 메모리(`LMU_Data`)는 SimHub
+  플러그인(C#)만 읽는다 ([DATA_SOURCES.md](DATA_SOURCES.md#lmu-내장-공유-메모리-lmu_data)).
 
 ### 설치
 
@@ -194,7 +196,9 @@ simhub/            # SimHub 플러그인 + C# 엔진 (simhub/README.md)
 
 - `bash simhub/verify/build-check.sh` — SimHub 없이 스텁으로 전체 C# 컴파일 + 경량판 가드
 - `bash simhub/verify/replay-check.sh` — 리플레이 회귀 (C#이 파이썬과 같은 판단·문장을 내는지,
-  레이스 종료 오라클, 기대 콜 대조). 릴리스 흐름 오프라인 검사(`release-flow-check.sh`)도 여기서 부른다
+  레이스 종료 오라클, 기대 콜 대조). LMU 내장 공유 메모리 교차 검증(`tools/lmu_native_blob.py` 합성
+  덤프 ↔ C# 리더, rF2 동등성, 원천 대체 규칙)과 릴리스 흐름 오프라인 검사(`release-flow-check.sh`)도
+  여기서 부른다
 - `pwsh -NoProfile -File simhub/verify/ps-check.ps1 update.ps1 release.ps1` — PowerShell 5 호환 정적 검사
 - CI(`.github/workflows/ci.yml`)는 `build-check.sh`와 `replay-check.sh`를 돌린다
 
@@ -233,6 +237,9 @@ main에 커밋한 뒤 릴리스를 채운다. 태그를 push할 수 없으면 ma
 - **0.18** — 파이썬 엔진 옆의 오디오 캐시는 찾지 않는다. 그걸 쓰던 경우 [음성 팩 업데이트]로 DLL 옆에
   새로 받거나 설정의 **음성 팩 폴더**에 그 경로를 넣는다.
 - **0.19** — 음성 팩 `kokoro-v017` (zip 8개, 약 185 MB / 화면 표기 약 176 MB).
+- **다음 버전 (미출시)** — LMU 1.2+ 내장 공유 메모리(`LMU_Data`)를 직접 읽어 rF2 Shared Memory Map
+  Plugin(DLL)이 선택이 된다 (게임 Settings → Gameplay → Enable Plugins + 재시작). DLL은 대체 수단으로
+  남고, 있으면 피트 제한속도·페널티 메시지를 거기서 보충한다. 실차 확인 전 ([DATA_SOURCES.md](DATA_SOURCES.md#lmu-내장-공유-메모리-lmu_data)).
 
 ## 개발 마일스톤
 
@@ -326,12 +333,21 @@ REST API(localhost, 게임 UI가 쓰는 로컬 서버)로 보충 예정 — `res
 응답을 수집하면 파싱을 확정한다. 하이브리드 배터리는 양쪽 다 없음.
 (REST 소스는 파이썬 앱 전용이고 플러그인에는 없다.)
 
+플러그인은 LMU 1.2+ 내장 공유 메모리(`LMU_Data`)를 우선 읽고 없으면 rF2 플러그인 버퍼를 읽는다.
+두 경로가 복사하는 차량 레코드는 게임이 쓰는 같은 구조체라 아래 특성은 양쪽에 똑같이 해당한다
+(내장 경로의 출처·빈 필드·확인 안 된 것: [DATA_SOURCES.md](DATA_SOURCES.md#lmu-내장-공유-메모리-lmu_data)).
+
 실차(LMU)에서 확인된 공유 메모리 특성 — 코드가 이에 맞게 방어적으로 동작:
 
 - `mEstimatedLapTime`: 전 차량이 동일한 트랙 기본값으로 채워짐 → 사용하지 않고
   상위 클래스 판정은 클래스 계열 서열(Hypercar > LMP2 > LMP3 > GTE > GT3)로, 모르는 클래스
   문자열은 실제 베스트 랩 중앙값으로 대체
-- `mSectorFlag`: 쓰레기 값(예: 11)이 상시로 들어옴 → 0→1..2 전이(엣지)만 인정
+- `mSectorFlag`: 쓰레기 값(예: 11)이 상시로 들어옴 → 0→1..2 전이(엣지)만 인정. **확인 필요:**
+  lmu-pitwall은 LMU에서 11이 "깨끗함", 1이 옐로라고 실측했다 — 그렇다면 0 이하에서 출발하는 이
+  전이 조건으로는 섹터 옐로 콜이 나갈 수 없다 (제안 `was != 1 && flag == 1`, 파이썬·C# 함께).
+  이번 내장 메모리 작업에서는 바꾸지 않았다
+- `mBrakeTemp`: 섭씨로 그대로 쓴다. **확인 필요:** TinyPedal·lmu-pitwall은 켈빈으로 보고 273.15를
+  뺀다 — 맞다면 브레이크 온도 경고 문턱이 약 273도 어긋나 있다. 이번 작업에서는 바꾸지 않았다
 - Extended `mCurrentPitSpeedLimit`: 0으로 미기입되는 경우 있음 → 80km/h 폴백
 - `mWear`: 새 타이어가 1.0 (남은 수명 비율 방향) — 실차 확인 완료
 - 고스트 차량 플래그 없음 → 속도 추정으로 정지/서행 차량 필터링. 프라이빗 연습/퀄리는 그래도
@@ -346,4 +362,6 @@ STT 양방향 무전, 멀티 스틴트 연료 계획 최적화.
 ## 크레딧
 
 - 공유 메모리 플러그인/레이아웃: The Iron Wolf
+- LMU 내장 공유 메모리 레이아웃 교차 확인: [pyLMUSharedMemory](https://github.com/TinyPedal/pyLMUSharedMemory)
+  (MIT), [lmu-pitwall](https://github.com/Swizzjack/lmu-pitwall) (MIT) — 사실만 참고, 코드는 직접 작성
 - 파이썬 구조체 매핑 참조: [pyRfactor2SharedMemory](https://github.com/TonyWhitley/pyRfactor2SharedMemory)
