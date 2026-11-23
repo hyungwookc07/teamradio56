@@ -229,12 +229,21 @@ git push origin v0.17.1
 4. **build** (Windows) — audio가 돌면 끝날 때까지 기다린다. SimHub 무인 설치
    (`simhub/ci/install-simhub.ps1`, zip sha256 고정) → `release.bat -Ci`로 실제 SimHub 빌드(참조
    어셈블리 버전 확인) → 플러그인 zip + 매니페스트 + 메타. 새 팩을 렌더했으면 그 실행의
-   기술자로 만든다 (`-AudioPackFile`, 태그 커밋의 기술자는 옛 팩)
+   기술자로 만든다 (`-AudioPackFile`, 태그 커밋의 기술자는 옛 팩). 업로드 전에 **Microsoft
+   Defender 검사**(`simhub/ci/scan-defender.ps1` — 서명 갱신·3일 이내, EICAR 자체 시험, zip과 푼
+   내용, 새 음성 팩)가 돌고, 위협·검사기 이상이면 여기서 멈춘다. 보고서 `meta/av-scan.txt`가
+   아티팩트에 실린다 ([docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md#게시-전-관문--백신-검사와-빌드-출처-증명))
 5. **verify-artifact** — 게시될 바로 그 파일로 사용자 업데이트 흐름 재현
-   (플러그인 교체 + `audio-<pack>`에서 음성 팩 설치)
-6. **publish** — 새로 만들면 `gh release create --latest`, 이어받으면 zip → 매니페스트 순으로
-   올린 뒤 제목·본문·latest를 고친다. `releases/latest/download/teamradio56-release.txt`가 새
-   버전을 가리키는지 확인. 쓰기 권한은 이 잡과 음성 팩 게시 잡에만 있다
+   (플러그인 교체 + `audio-<pack>`에서 음성 팩 설치). Defender 보고서가 이 바이트(sha256)를
+   깨끗하다고 했는지 보고, 릴리스 본문에 붙을 '파일 검증' 절을 요약에 미리 보여 준다
+6. **attest** — 같은 파일을 다시 확인하고 zip·매니페스트에 빌드 출처 증명
+   (`actions/attest-build-provenance`) → `gh attestation verify`로 확인. `id-token`·`attestations`
+   쓰기 권한은 이 잡에만 있다
+7. **publish** — Defender 보고서를 한 번 더 대조한 뒤, 새로 만들면 `gh release create --latest`,
+   이어받으면 zip → 매니페스트 순으로 올린 뒤 제목·본문·latest를 고친다. 본문 끝에 '파일 검증'
+   절(SHA-256 · Defender 결과 · `Get-FileHash`/`gh attestation verify` 안내)을 붙인다.
+   `releases/latest/download/teamradio56-release.txt`가 새 버전을 가리키는지 확인. 쓰기 권한은
+   이 잡과 음성 팩 게시 잡에만 있다
 
 - **태그를 push할 수 없을 때** (브랜치 push만 허용되는 자동화 등): main에 있는 커밋을
   **`release/vX.Y.Z` 브랜치로 push**해도 같은 흐름으로 게시한다 (`git push origin
@@ -262,9 +271,10 @@ git push origin v0.17.1
 
 **시험 빌드 (dry run)**: `release-dry/`로 시작하는 브랜치를 push하면
 (`git push origin HEAD:release-dry/test`) 게시·음성 팩 렌더 없이 preflight → gates → Windows
-설치·빌드 → verify-artifact까지 돌고 결과를 아티팩트로 받는다 (팩이 없거나 낡았으면 경고만 하고
-지금 기술자로 빌드). Actions → release → Run workflow(`dry_run` 켠 채, 기본)도 같다. 다른 SimHub
-버전은 Run workflow의 `simhub_version`으로 (새 버전은 zip sha256을 경고로 찍는다 — 확인 후
+설치·빌드·Defender 검사 → verify-artifact → attest까지 돌고 결과를 아티팩트로 받는다 (팩이 없거나
+낡았으면 경고만 하고 지금 기술자로 빌드). dry run도 빌드 출처 증명은 남긴다 (릴리스·태그·자산은
+없음). Actions → release → Run workflow(`dry_run` 켠 채, 기본)도 같다. 다른 SimHub 버전은
+Run workflow의 `simhub_version`으로 (새 버전은 zip sha256을 경고로 찍는다 — 확인 후
 `install-simhub.ps1` 표에 더한다). `dry_run`을 끄면 main에서 태그 push 없이 게시한다 (태그는
 GitHub이 그 커밋에 만든다, `notes`가 변경 사항, 같은 태그가 있으면 거부).
 
@@ -318,6 +328,8 @@ asset=teamradio56_kokoro_v016_1of7.zip,<sha256>,<바이트 수>
 - (선택) Environment `release`에 Required reviewers를 걸면 게시 잡마다 승인을 받는다
   (릴리스 실행 안의 음성 팩 게시도)
 - 변경 불가(immutable) 릴리스를 켜면 화면에서 만든 릴리스는 이어받지 못한다 — 태그 push로
+- 빌드 출처 증명(attest 잡)은 공개 저장소에서 된다 (비공개 저장소는 GitHub Enterprise Cloud가 필요 —
+  아니면 attest 잡이 실패해 게시하지 않는다)
 
 ### 대체 경로 — `release.bat` (실제 SimHub이 있는 Windows PC)
 

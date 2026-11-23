@@ -9,7 +9,14 @@
 #                          (팩 ID는 KNOWN_NAME_SETS에 없는 test-v* — 표가 늘어나도 기대값이 그대로)
 #   publish-audio.sh       태그 실행에서 main에 기술자 커밋, 공개에서 멈춘 뒤 재실행, main 기술자 충돌
 #   publish-release.sh     새로 만들기 vs 이어받기 (zip → 매니페스트 → edit --latest 순서, 실패 시 되돌림),
-#                          이어받기도 버전 비교
+#                          이어받기도 버전 비교, Defender 검사 보고서가 없거나 깨끗하지 않거나 게시할
+#                          바이트와 다르면 거부, 본문 끝 '파일 검증' 절 (SHA-256 · 확인 명령)
+#   verify-release-artifact.sh  같은 보고서 검사 (가짜 dotnet·리플레이 러너로 앞부분만)
+#   attest-check.sh        증명 전 파일 재확인, 증명 후 gh attestation verify (사용자 안내 명령)
+#   scan-defender.ps1      -SampleReport 보고서 ↔ bash 검사기 형식 계약 (pwsh가 있으면)
+#   release.yml 정적 검사  uses: 전부 40자리 SHA 고정, 빌드 잡의 Defender 단계가 업로드 앞,
+#                          attest 잡 권한이 정확히 셋, publish가 attest를 기다림 — 검사기가 무는지
+#                          변형한 사본으로도 확인. 저장소 파일에 완성된 EICAR 문자열 없음
 #
 # 사용법:  bash simhub/verify/release-flow-check.sh
 set -euo pipefail
@@ -42,10 +49,11 @@ if [ -s "$S/fail_match" ] && printf '%s\n' "$*" | grep -qEf "$S/fail_match"; the
     exit 1
 fi
 jqx=""
+repo_arg=""
 args=()
 while [ $# -gt 0 ]; do
     case "$1" in
-        --repo | -R) shift 2 ;;
+        --repo | -R) repo_arg=$2; shift 2 ;;
         --jq | -q) jqx=$2; shift 2 ;;
         --paginate) shift ;;
         *) args+=("$1"); shift ;;
@@ -77,10 +85,11 @@ case "${1:-} ${2:-}" in
         tag=$3
         shift 3
         files=()
-        latest=false draft=false pre=false
+        latest=false draft=false pre=false notes=""
         while [ $# -gt 0 ]; do
             case "$1" in
-                --title | --notes-file | --target) shift 2 ;;
+                --notes-file) notes=$2; shift 2 ;;
+                --title | --target) shift 2 ;;
                 --latest) latest=true; shift ;;
                 --draft) draft=true; shift ;;
                 --prerelease) pre=true; shift ;;
@@ -92,8 +101,19 @@ case "${1:-} ${2:-}" in
         [ ! -f "$(relf "$tag")" ] || { echo "a release with the same tag name already exists" >&2; exit 1; }
         jq -n --arg t "$tag" --argjson d "$draft" --argjson p "$pre" \
             '{tag_name: $t, draft: $d, prerelease: $p, immutable: false, body: "", assets: []}' > "$(relf "$tag")"
+        [ -z "$notes" ] || upd "$(relf "$tag")" --rawfile b "$notes" '.body = $b'
         for f in "${files[@]}"; do add_asset "$tag" "$f"; done
         [ "$latest" != true ] || echo "$tag" > "$S/latest"
+        ;;
+    "attestation verify")
+        # 증명 상태: $FAKE_STATE/attested/<sha256> = 증명을 남긴 저장소
+        sha=$(sha256sum "$3" | cut -d' ' -f1)
+        if [ -f "$S/attested/$sha" ] && [ "$(cat "$S/attested/$sha")" = "$repo_arg" ]; then
+            echo "Verification succeeded! ($3)"
+        else
+            echo "Error: no attestations found for $3 in $repo_arg" >&2
+            exit 1
+        fi
         ;;
     "release upload")
         tag=$3
@@ -233,7 +253,7 @@ chmod +x "$W/bin/"*
 export PATH="$W/bin:$PATH" FAKE_STATE=$ST FAKE_REAL_GIT=$REAL_GIT GH_TOKEN=fake-write
 # 러너처럼 전역 git 설정 없이 (개발 PC의 서명·push 설정이 섞이지 않게)
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-unset GITHUB_SHA GITHUB_OUTPUT GITHUB_STEP_SUMMARY
+unset GITHUB_SHA GITHUB_OUTPUT GITHUB_STEP_SUMMARY GITHUB_REPOSITORY
 
 REPO=hyungwookc07/teamradio56
 FULL=$(sed -n 's/.*public const string Version = "\([^"]*\)".*/\1/p' \
@@ -663,8 +683,34 @@ printf 'PK fake plugin zip' > "$P/dist/ci/assets/$ZIPNAME"
     echo "audio_sha256=$(sha256sum "$AZ" | cut -d' ' -f1)"
     echo "audio_size=$(stat -c %s "$AZ")"
 } > "$P/dist/ci/assets/teamradio56-release.txt"
-printf 'format=1\ntag=%s\ntitle=teamradio56 %s\ncommit=%s\n' "$TAG" "$FULL" "$SHA" > "$P/dist/ci/meta/release-info.txt"
+{
+    printf 'format=1\nversion=%s\ntag=%s\ntitle=teamradio56 %s\ncommit=%s\n' "$NUM" "$TAG" "$FULL" "$SHA"
+    grep -E '^(plugin_asset|plugin_sha256|audio_pack|audio_tag)=' "$P/dist/ci/assets/teamradio56-release.txt"
+    printf 'simhub_wpf_version=9.13.3.0\nsimhub_plugins_version=1.0.0.0\n'
+} > "$P/dist/ci/meta/release-info.txt"
 printf 'teamradio56 %s\n\n생성한 본문\n' "$FULL" > "$P/dist/ci/meta/release-notes.md"
+ZIPSHA=$(sha256sum "$P/dist/ci/assets/$ZIPNAME" | cut -d' ' -f1)
+MANSHA=$(sha256sum "$P/dist/ci/assets/teamradio56-release.txt" | cut -d' ' -f1)
+
+# Windows 빌드의 Defender 검사 보고서 (scan-defender.ps1 형식 — 형식 계약은 아래 -SampleReport 검사가 본다)
+#   mk_av <dist/ci> — 지금 assets와 맞는 깨끗한 보고서
+mk_av() {
+    local d=$1 f
+    {
+        printf '%s\n' format=1 'scanner=Microsoft Defender' product_version=4.18.25100.9 \
+            engine_version=1.1.25100.9 antivirus_signature_version=1.441.123.0 \
+            signature_updated=2026-11-23T06:00:00Z signature_update=Update-MpSignature running_mode=Normal \
+            scan_time=2026-11-23T07:00:00Z exclusions_removed=2 archive_scanning=enabled selftest=detected \
+            selftest_threat=Virus:DOS/EICAR_Test_File selftest_archive=detected scanned_files=2 \
+            extracted_files=2 result=clean
+        while IFS= read -r f; do
+            echo "asset=$f,$(sha256sum "$d/assets/$f" | cut -d' ' -f1),$(stat -c %s "$d/assets/$f")"
+        done < <(find "$d/assets" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+    } > "$d/meta/av-scan.txt"
+}
+AVR=$P/dist/ci/meta/av-scan.txt
+av_edit() { python3 -I -c 'import sys; p, a, b = sys.argv[1:]; s = open(p).read(); assert a in s, a; open(p, "w").write(s.replace(a, b))' "$AVR" "$1" "$2"; }
+mk_av "$P/dist/ci"
 
 publish() {        # <MODE>
     RC=0
@@ -685,6 +731,17 @@ publish tag
     && called "^release create $TAG dist/ci/assets/$ZIPNAME dist/ci/assets/teamradio56-release.txt .*--latest --verify-tag" \
     && ! called '^release (upload|edit)' && [ "$(cat "$ST/latest")" = "$TAG" ]
 expect "새로 만들기: create --latest --verify-tag (zip·매니페스트 함께)"
+body_of() { jq -r .body "$ST/releases/$1.json"; }
+body_has() { body_of "$TAG" | grep -qF -- "$1"; }
+body_line() { body_of "$TAG" | grep -nF -- "$1" | head -n1 | cut -d: -f1; }
+body_has '생성한 본문' && body_has '### 파일 검증' \
+    && body_has "| \`$ZIPNAME\` | \`$ZIPSHA\` |" \
+    && body_has "| \`teamradio56-release.txt\` | \`$MANSHA\` |" \
+    && body_has "Get-FileHash .\\$ZIPNAME -Algorithm SHA256" \
+    && body_has "gh attestation verify $ZIPNAME -R $REPO" \
+    && body_has '엔진 1.1.25100.9, 서명 1.441.123.0, 서명 갱신 2026-11-23 06:00 UTC' \
+    && [ "$(body_line '생성한 본문')" -lt "$(body_line '### 파일 검증')" ]
+expect "새로 만들기: 본문 = 생성한 본문 + 파일 검증 절 (SHA-256 두 줄 · Get-FileHash · gh attestation verify · Defender 버전)"
 
 pub_reset
 mk_release "$TAG" false true
@@ -703,6 +760,11 @@ expect "이어받기: zip → 매니페스트 → edit --latest, create 없음"
     && jq -r .body "$ST/releases/$TAG.json" | grep -q '생성한 본문' \
     && jq -r .body "$ST/releases/$TAG.json" | grep -q '화면에서 쓴 설명'
 expect "이어받기: 자산 2개, 프리릴리스 해제, 화면 본문 보존"
+body_has "| \`$ZIPNAME\` | \`$ZIPSHA\` |" && body_has "| \`teamradio56-release.txt\` | \`$MANSHA\` |" \
+    && body_has "gh attestation verify $ZIPNAME -R $REPO" \
+    && [ "$(body_line '생성한 본문')" -lt "$(body_line '### 파일 검증')" ] \
+    && [ "$(body_line '### 파일 검증')" -lt "$(body_line '화면에서 쓴 설명')" ]
+expect "이어받기: 본문 = 생성한 본문 → 파일 검증 절 → 화면에서 쓴 설명"
 
 # 이어받는 빈 릴리스가 latest(latest 매니페스트 404)여도 공개된 플러그인 릴리스와 비교 — 올리기 전에 멈춘다
 pub_reset
@@ -760,6 +822,359 @@ publish dispatch
 [ "$RC" = 1 ] && has '이미 있습니다' \
     && ! called '^release (create|upload|edit)'
 expect "수동 게시는 기존 릴리스를 이어받지 않음 → 실패"
+
+# 게시 전 Defender 검사 보고서 — 없거나, 깨끗하지 않거나, 게시할 바이트와 다르면 아무것도 올리지 않는다
+nothing_published() { ! called '^release (create|upload|edit)' && [ ! -f "$ST/releases/$TAG.json" ]; }
+av_refuses() {     # <설명> <출력에 있어야 할 문구>
+    pub_reset
+    publish tag
+    [ "$RC" = 1 ] && has '백신 검사 보고서' && has "$2" && nothing_published
+    expect "$1"
+    mk_av "$P/dist/ci"
+}
+rm -f "$AVR"
+av_refuses "Defender 보고서 없음 → 게시 거부" '보고서가 없습니다'
+av_edit 'result=clean' 'result=threat'
+av_refuses "Defender 보고서 result=threat → 게시 거부" 'result=threat'
+av_edit $'selftest=detected\n' ''
+av_refuses "Defender 보고서에 selftest 줄 없음 → 게시 거부" 'selftest=없음'
+av_edit 'selftest=detected' 'selftest=not_detected'
+av_refuses "Defender 자체 시험(EICAR) 실패 보고서 → 게시 거부" 'selftest=not_detected'
+av_edit "asset=$ZIPNAME,$ZIPSHA" "asset=$ZIPNAME,$(printf '0%.0s' {1..64})"
+av_refuses "보고서의 zip sha256 ≠ 게시할 zip → 게시 거부" "$ZIPNAME 이(가) 검사한 바이트와 다릅니다"
+av_edit "asset=teamradio56-release.txt,$MANSHA" "asset=teamradio56-release.txt,$(printf 'f%.0s' {1..64})"
+av_refuses "보고서의 매니페스트 sha256 ≠ 게시할 매니페스트 → 게시 거부" 'teamradio56-release.txt 이(가) 검사한 바이트와 다릅니다'
+python3 -I -c 'import sys; p = sys.argv[1]; s = [l for l in open(p) if not l.startswith("asset=teamradio56-release.txt,")]; open(p, "w").writelines(s)' "$AVR"
+av_refuses "보고서에 매니페스트 줄 없음 (zip만 검사) → 게시 거부" '검사한 파일'
+echo "asset=other.zip,$ZIPSHA,1" >> "$AVR"
+av_refuses "보고서에 게시하지 않는 파일 줄 → 게시 거부 (집합이 같아야)" '검사한 파일'
+av_edit 'signature_updated=2026-11-23T06:00:00Z' 'signature_updated=2026-11-19T06:00:00Z'
+av_refuses "서명이 검사 시각보다 4일 오래됨 → 게시 거부" '3일 넘게'
+av_edit 'result=clean' $'result=clean\nresult=threat'
+av_refuses "보고서에 result가 두 번 → 게시 거부" '두 번'
+av_edit 'running_mode=Normal' 'running_mode=sample'
+av_refuses "검증 게이트용 견본 보고서 → 게시 거부" '견본 보고서'
+sed -i 's/$/\r/' "$AVR"
+av_refuses "CRLF 보고서 → 게시 거부" 'LF가 아닙니다'
+# 보고서가 맞는 이어받기·수동 게시도 파일 검증 절이 붙는다
+pub_reset
+rm -f "$ST/commits/$TAG"
+publish dispatch
+[ "$RC" = 0 ] && body_has '### 파일 검증' && body_has "| \`$ZIPNAME\` | \`$ZIPSHA\` |"
+expect "수동 게시(dispatch)도 본문에 파일 검증 절"
+
+# ── verify-release-artifact.sh (같은 보고서 검사 — dotnet·리플레이 러너는 가짜) ─
+echo "  · verify-release-artifact.sh"
+VR=$W/vr
+mkdir -p "$W/bin-vr" "$VR/simhub/tests/TeamRadio56.Replay/bin/Release/net8.0" "$W/vr-audio"
+printf '#!/bin/sh\necho "dotnet $*" >> "$FAKE_STATE/dotnet.log"\n' > "$W/bin-vr/dotnet"
+printf '#!/bin/sh\necho "replay $*" >> "$FAKE_STATE/dotnet.log"\n' \
+    > "$VR/simhub/tests/TeamRadio56.Replay/bin/Release/net8.0/teamradio56-replay"
+chmod +x "$W/bin-vr/dotnet" "$VR/simhub/tests/TeamRadio56.Replay/bin/Release/net8.0/teamradio56-replay"
+cp "$AZ" "$W/vr-audio/"
+printf 'pack=test-v016\n' > "$VR/desc.txt"
+verify_art() {
+    RC=0
+    rm -rf "$VR/dist"
+    cp -r "$P/dist" "$VR/dist"
+    : > "$W/vsum"
+    : > "$ST/dotnet.log"
+    (cd "$VR" && env PATH="$W/bin-vr:$PATH" REPO=$REPO PUBLISH=false GITHUB_STEP_SUMMARY="$W/vsum" \
+        bash "$SCRIPTS/verify-release-artifact.sh" dist/ci "$W/vr-audio" "$VR/desc.txt") > "$W/out" 2>&1 || RC=$?
+}
+reset_state
+verify_art
+[ "$RC" = 0 ] && grep -q '^replay --release-check' "$ST/dotnet.log" \
+    && grep -qF "| \`$ZIPNAME\` | \`$ZIPSHA\` |" "$W/vsum" && grep -qF "gh attestation verify $ZIPNAME -R $REPO" "$W/vsum" \
+    && grep -q 'Defender 검사: 엔진 1.1.25100.9' "$W/vsum"
+expect "아티팩트 검증: 보고서 통과 → 리플레이 흐름, 요약에 파일 검증 절 미리 보기"
+rm -f "$AVR"
+verify_art
+[ "$RC" = 1 ] && has '백신 검사 보고서' && has '보고서가 없습니다' && [ ! -s "$ST/dotnet.log" ]
+expect "아티팩트 검증: 보고서 없음 → 빌드 전에 실패"
+mk_av "$P/dist/ci"
+av_edit "asset=$ZIPNAME,$ZIPSHA" "asset=$ZIPNAME,$(printf '0%.0s' {1..64})"
+verify_art
+[ "$RC" = 1 ] && has "$ZIPNAME 이(가) 검사한 바이트와 다릅니다" && [ ! -s "$ST/dotnet.log" ]
+expect "아티팩트 검증: 보고서 zip sha256 불일치 → 실패"
+mk_av "$P/dist/ci"
+av_edit 'result=clean' 'result=threat'
+verify_art
+[ "$RC" = 1 ] && has 'result=threat'
+expect "아티팩트 검증: result=threat → 실패"
+mk_av "$P/dist/ci"
+
+# ── attest-check.sh (증명 전 파일 재확인 · 증명 후 사용자 안내 명령) ─────────
+echo "  · attest-check.sh"
+attest_check() {   # <files|verify> [GITHUB_REPOSITORY]
+    RC=0
+    : > "$W/asum"
+    (cd "$P" && env REPO=$REPO GITHUB_REPOSITORY="${2:-$REPO}" GITHUB_STEP_SUMMARY="$W/asum" GH_TOKEN=fake-read \
+        bash "$SCRIPTS/attest-check.sh" "$1" dist/ci) > "$W/out" 2>&1 || RC=$?
+}
+attest_mark() { mkdir -p "$ST/attested"; echo "$2" > "$ST/attested/$1"; }
+reset_state
+attest_check files
+[ "$RC" = 0 ] && has "$ZIPNAME  $ZIPSHA"
+expect "증명 전 확인: zip + 매니페스트, 보고서와 바이트 일치 → 통과"
+rm -f "$AVR"
+attest_check files
+[ "$RC" = 1 ] && has '증명하지 않습니다'
+expect "증명 전 확인: 보고서 없음 → 증명하지 않음"
+mk_av "$P/dist/ci"
+echo x > "$P/dist/ci/assets/extra.txt"
+attest_check files
+[ "$RC" = 1 ] && has 'assets에는'
+expect "증명 전 확인: assets에 다른 파일 → 실패"
+rm -f "$P/dist/ci/assets/extra.txt"
+cp "$P/dist/ci/assets/$ZIPNAME" "$W/zip.bak"
+printf 'tampered' >> "$P/dist/ci/assets/$ZIPNAME"
+attest_check files
+[ "$RC" = 1 ] && has 'plugin_sha256'
+expect "증명 전 확인: zip이 매니페스트 sha256과 다름 → 실패"
+cp "$W/zip.bak" "$P/dist/ci/assets/$ZIPNAME"
+reset_state
+attest_mark "$ZIPSHA" "$REPO"
+attest_mark "$MANSHA" "$REPO"
+attest_check verify
+[ "$RC" = 0 ] && called "^attestation verify dist/ci/assets/$ZIPNAME -R $REPO\$" \
+    && called "^attestation verify dist/ci/assets/teamradio56-release.txt -R $REPO\$" \
+    && grep -qF "gh attestation verify $ZIPNAME -R $REPO" "$W/asum"
+expect "증명 후 확인: 두 파일 다 gh attestation verify -R <저장소> 통과"
+reset_state
+attest_mark "$ZIPSHA" "$REPO"
+attest_check verify
+[ "$RC" = 1 ] && has 'teamradio56-release.txt 의 빌드 출처 증명을 확인하지 못했습니다' \
+    && [ "$(grep -c '^attestation verify dist/ci/assets/teamradio56-release.txt' "$ST/calls.log")" = 6 ]
+expect "증명 후 확인: 매니페스트 증명 없음 → 6번 다시 본 뒤 실패"
+reset_state
+attest_mark "$ZIPSHA" someone/fork
+attest_mark "$MANSHA" someone/fork
+attest_check verify
+[ "$RC" = 1 ] && has "$ZIPNAME 의 빌드 출처 증명"
+expect "증명 후 확인: 다른 저장소의 증명 → 실패"
+attest_check verify someone/fork
+[ "$RC" = 0 ]
+expect "증명 후 확인: 포크의 dry run은 그 저장소(GITHUB_REPOSITORY)에서 확인"
+
+# ── scan-defender.ps1 -SampleReport ↔ bash 검사기 (보고서 형식 계약) ────────
+echo "  · scan-defender.ps1 보고서 형식 ↔ release-lib.sh"
+PWSH=$(command -v pwsh || true)
+if [ -z "$PWSH" ] && [ -x "$HOME/.dotnet/tools/pwsh" ]; then PWSH="$HOME/.dotnet/tools/pwsh"; fi
+if [ -n "$PWSH" ]; then
+    SR=$W/sample
+    mkdir -p "$SR/meta"
+    cp -r "$P/dist/ci/assets" "$SR/assets"
+    RC=0
+    "$PWSH" -NoProfile -NonInteractive -File simhub/ci/scan-defender.ps1 -SampleReport \
+        -AssetsDir "$SR/assets" -ReportPath "$SR/meta/av-scan.txt" > "$W/out" 2>&1 || RC=$?
+    why=$(REPO=$REPO bash -c '. "$1"; av_report_problem "$2" "$3"' _ "$SCRIPTS/release-lib.sh" \
+        "$SR/meta/av-scan.txt" "$SR/assets")
+    [ "$RC" = 0 ] && [[ "$why" == *'견본 보고서'* ]]
+    expect "견본 보고서(-SampleReport)는 그대로는 거부 (실제 검사가 아님)"
+    sed -i 's/^running_mode=sample$/running_mode=Normal/' "$SR/meta/av-scan.txt"
+    why=$(REPO=$REPO bash -c '. "$1"; av_report_problem "$2" "$3"' _ "$SCRIPTS/release-lib.sh" \
+        "$SR/meta/av-scan.txt" "$SR/assets")
+    echo "$why" > "$W/out"
+    [ -z "$why" ] && [ "$(grep -c '^asset=' "$SR/meta/av-scan.txt")" = 2 ] \
+        && ! LC_ALL=C grep -q $'\r' "$SR/meta/av-scan.txt" && [ "$(head -c3 "$SR/meta/av-scan.txt")" = "for" ]
+    expect "scan-defender.ps1이 쓰는 보고서 형식을 bash 검사기가 그대로 읽음 (LF, BOM 없음, asset 줄 2개)"
+elif [ "${TEAMRADIO56_STRICT:-0}" = 1 ]; then
+    fails+=("scan-defender.ps1 보고서 형식 계약 — pwsh 없음 (TEAMRADIO56_STRICT=1)")
+else
+    echo "   ⏭  scan-defender.ps1 보고서 형식 계약 건너뜀 — pwsh 없음"
+fi
+
+# ── release.yml 정적 검사 ────────────────────────────────────────────────
+echo "  · release.yml 정적 검사"
+cat > "$W/wfcheck.py" <<'PY'
+import os, re, sys
+import yaml
+
+ATTEST = "actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8"
+check, wf = sys.argv[1], sys.argv[2]
+
+
+def fail(msg):
+    print(msg)
+    sys.exit(1)
+
+
+def as_list(v):
+    return [v] if isinstance(v, str) else list(v or [])
+
+
+if check == "pins":
+    bad = []
+    for f in sys.argv[2:]:
+        for i, line in enumerate(open(f, encoding="utf-8"), 1):
+            m = re.match(r"^\s*(?:-\s+)?uses:\s*(\S+)(.*)$", line)
+            if not m or m.group(1).startswith("./"):
+                continue
+            ref, rest = m.group(1), m.group(2)
+            if not re.fullmatch(r"[\w.-]+/[\w.-]+(?:/[\w./-]+)?@[0-9a-f]{40}", ref) or not re.search(r"#\s*v\d", rest):
+                bad.append(f"{f}:{i}: {line.strip()}")
+    if bad:
+        fail("40자리 SHA + # v<버전> 주석으로 고정되지 않은 uses:\n" + "\n".join(bad))
+    sys.exit(0)
+
+text = open(wf, encoding="utf-8").read()
+d = yaml.safe_load(text)
+jobs = d["jobs"]
+
+
+def steps(job):
+    return jobs[job].get("steps", [])
+
+
+def find(st, pred):
+    return [i for i, s in enumerate(st) if pred(s)]
+
+
+if check == "scan":
+    st = steps("build")
+    rel = find(st, lambda s: "release.bat -Ci" in str(s.get("run", "")))
+    scan = find(st, lambda s: "scan-defender.ps1" in str(s.get("run", "")))
+    up = find(st, lambda s: str(s.get("uses", "")).startswith("actions/upload-artifact@")
+              and str((s.get("with") or {}).get("name", "")).startswith("teamradio56-release-"))
+    if len(rel) != 1 or len(scan) != 1 or len(up) != 1:
+        fail(f"build 잡: release.bat {len(rel)}개, Defender 검사 {len(scan)}개, 릴리스 업로드 {len(up)}개 (각 1개여야)")
+    if not rel[0] < scan[0] < up[0]:
+        fail("build 잡: Defender 검사가 release.bat 뒤, 아티팩트 업로드 앞이 아니다")
+    s = st[scan[0]]
+    if "if" in s or s.get("continue-on-error"):
+        fail("Defender 검사 단계에 if/continue-on-error — 항상 돌고 실패하면 멈춰야 한다")
+    if s.get("shell") != "powershell":
+        fail("Defender 검사는 Windows PowerShell 5 (shell: powershell)")
+    run = s["run"]
+    for need in ["-AssetsDir dist\\ci\\assets", "-ReportPath dist\\ci\\meta\\av-scan.txt",
+                 "-WorkDir dist\\av-scan", "exit $LASTEXITCODE"]:
+        if need not in run:
+            fail(f"Defender 검사 단계에 '{need}' 없음")
+    for bad in ["-SelfTest", "-SampleReport"]:
+        if bad in run:
+            fail(f"Defender 검사 단계가 {bad}를 쓴다 (실제 검사가 아님)")
+    u = st[up[0]]
+    if (u.get("with") or {}).get("path") != "dist/ci/" or "if" in u:
+        fail("릴리스 아티팩트 업로드는 dist/ci/ 전체(보고서 포함), 조건 없이")
+    if "publish" in str(jobs["build"].get("if", "")):
+        fail("build 잡이 게시 여부에 묶였다 — dry run에서도 검사해야 한다")
+elif check == "attest":
+    a = jobs.get("attest") or fail("attest 잡 없음")
+    if a.get("permissions") != {"contents": "read", "id-token": "write", "attestations": "write"}:
+        fail(f"attest 잡 권한이 contents: read · id-token: write · attestations: write가 아니다: {a.get('permissions')}")
+    if "verify-artifact" not in as_list(a.get("needs")):
+        fail("attest 잡이 verify-artifact를 기다리지 않는다")
+    cond = str(a.get("if", ""))
+    if "needs.verify-artifact.result == 'success'" not in cond:
+        fail("attest 잡 조건에 verify-artifact 성공이 없다")
+    if "publish" in cond:
+        fail("attest 잡이 게시 여부에 묶였다 — dry run에서도 돌아야 한다")
+    st = a.get("steps", [])
+    at = find(st, lambda s: str(s.get("uses", "")).startswith("actions/attest-build-provenance@"))
+    if len(at) != 1:
+        fail("attest 잡에 actions/attest-build-provenance 단계가 하나가 아니다")
+    s = st[at[0]]
+    if s.get("uses") != ATTEST or f"uses: {ATTEST} # v4.2.2" not in text:
+        fail(f"attest-build-provenance 고정이 다르다: {s.get('uses')}")
+    if "if" in s or s.get("continue-on-error"):
+        fail("증명 단계에 if/continue-on-error")
+    sp = [l.strip() for l in str((s.get("with") or {}).get("subject-path", "")).splitlines() if l.strip()]
+    if sp != ["dist/ci/assets/teamradio56-plugin-${{ needs.preflight.outputs.version }}.zip",
+              "dist/ci/assets/teamradio56-release.txt"]:
+        fail(f"증명 대상이 게시 파일 둘(zip, 매니페스트)이 아니다: {sp}")
+    dl = find(st, lambda s: str(s.get("uses", "")).startswith("actions/download-artifact@")
+              and (s.get("with") or {}).get("name") == "teamradio56-release-${{ needs.preflight.outputs.version }}")
+    pre = find(st, lambda s: "attest-check.sh files" in str(s.get("run", "")))
+    post = find(st, lambda s: "attest-check.sh verify" in str(s.get("run", "")))
+    if not dl or not pre or not post or not dl[0] < pre[0] < at[0] < post[0]:
+        fail("attest 잡 순서: 아티팩트 내려받기 → attest-check.sh files → 증명 → attest-check.sh verify")
+    for i in pre + post:
+        if "if" in st[i] or st[i].get("continue-on-error"):
+            fail("attest-check 단계에 if/continue-on-error")
+elif check == "perms":
+    if d.get("permissions") != {}:
+        fail("워크플로 최상위 permissions가 {}가 아니다")
+    for name, j in jobs.items():
+        p = j.get("permissions")
+        if not isinstance(p, dict):
+            fail(f"{name} 잡에 권한 목록(permissions: 이름: 수준)이 없다")
+        if name != "attest" and ("id-token" in p or "attestations" in p):
+            fail(f"{name} 잡에 id-token/attestations 권한 — 증명 권한은 attest 잡에만")
+elif check == "publish":
+    p = jobs["publish"]
+    needs = as_list(p.get("needs"))
+    if "attest" not in needs or "verify-artifact" not in needs:
+        fail(f"publish가 attest·verify-artifact를 기다리지 않는다: {needs}")
+    cond = str(p.get("if", ""))
+    for need in ["needs.attest.result == 'success'", "needs.verify-artifact.result == 'success'",
+                 "needs.preflight.outputs.publish == 'true'"]:
+        if need not in cond:
+            fail(f"publish 조건에 {need} 없음")
+else:
+    fail(f"모르는 검사 {check}")
+PY
+WF=$ROOT/.github/workflows/release.yml
+mapfile -t WF_ALL < <(ls "$ROOT"/.github/workflows/*.yml "$ROOT"/.github/actions/*/action.yml)
+wfcheck() { RC=0; python3 -I "$W/wfcheck.py" "$@" > "$W/out" 2>&1 || RC=$?; }
+wfcheck pins "${WF_ALL[@]}"
+[ "$RC" = 0 ]
+expect "워크플로·액션의 uses: 전부 40자리 SHA + # v<버전> 주석"
+wfcheck scan "$WF"
+[ "$RC" = 0 ]
+expect "build 잡: Defender 검사가 release.bat 뒤·업로드 앞, 조건·continue-on-error 없음"
+wfcheck attest "$WF"
+[ "$RC" = 0 ]
+expect "attest 잡: 권한 정확히 셋, verify-artifact 뒤, dry run에서도, 게시 파일 둘을 증명 → gh로 확인"
+wfcheck perms "$WF"
+[ "$RC" = 0 ]
+expect "최상위 permissions: {}, 증명 권한은 attest 잡에만"
+wfcheck publish "$WF"
+[ "$RC" = 0 ]
+expect "publish가 verify-artifact·attest 성공을 기다림"
+# 검사기가 무는지 — 변형한 사본은 걸려야 한다
+mutant() {         # <검사> <설명> <바꿀 문자열> <새 문자열>
+    python3 -I -c 'import sys; p, o, a, b = sys.argv[1:]; s = open(p, encoding="utf-8").read(); assert a in s, a; open(o, "w", encoding="utf-8").write(s.replace(a, b, 1))' \
+        "$WF" "$W/mutant.yml" "$3" "$4"
+    wfcheck "$1" "$W/mutant.yml"
+    [ "$RC" = 1 ]
+    expect "정적 검사가 문다: $2"
+}
+mutant pins "attest 액션을 태그(@v4)로" '@4d101475d8b20a2381f78447822ac1eab6504dd8' '@v4'
+mutant attest "attest 액션을 다른 SHA로" '@4d101475d8b20a2381f78447822ac1eab6504dd8' "@$(printf 'a%.0s' {1..40})"
+mutant scan "Defender 검사 단계 이름만 남기고 스크립트 제거" 'simhub\ci\scan-defender.ps1' 'simhub\ci\other.ps1'
+mutant scan "Defender 검사에 continue-on-error" '        timeout-minutes: 30
+        env:
+          TR56_AUDIO_DIR' '        timeout-minutes: 30
+        continue-on-error: true
+        env:
+          TR56_AUDIO_DIR'
+mutant scan "Defender 검사를 견본 보고서로" '-WorkDir dist\av-scan @extra' '-WorkDir dist\av-scan -SampleReport @extra'
+mutant attest "attest 잡에 권한 하나 더" '      id-token: write
+      attestations: write' '      id-token: write
+      attestations: write
+      packages: write'
+mutant attest "attest 잡을 게시 실행에만" "if: \${{ !cancelled() && needs.verify-artifact.result == 'success' }}" \
+    "if: \${{ !cancelled() && needs.verify-artifact.result == 'success' && needs.preflight.outputs.publish == 'true' }}"
+mutant attest "증명 대상에서 매니페스트 빠짐" '            dist/ci/assets/teamradio56-release.txt
+' ''
+mutant perms "build 잡에 id-token 권한" '    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read' '    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write'
+mutant publish "publish가 attest를 기다리지 않음" 'needs: [preflight, verify-artifact, attest]' 'needs: [preflight, verify-artifact]'
+mutant publish "publish 조건에서 attest 성공 빠짐" " && needs.attest.result == 'success'" ''
+
+# 저장소 파일에 완성된 EICAR 문자열이 있으면 저장소·체크아웃 자체가 백신에 걸린다 (조각으로만 둔다)
+EICAR=$(printf '%s' 'X5O!P%@AP' '[4\PZX54(P^)' '7CC)7}$' 'EICAR-STAN' 'DARD-ANTIVI' 'RUS-TEST-F' 'ILE!$H+H*')
+git -C "$ROOT" ls-files -co --exclude-standard -z | (cd "$ROOT" && xargs -0 grep -slF -- "$EICAR") > "$W/out" || true
+[ "$(printf '%s' "$EICAR" | sha256sum | cut -d' ' -f1)" = 275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f ] \
+    && [ ! -s "$W/out" ]
+expect "저장소 파일에 완성된 EICAR 문자열 없음 (조각 조립 sha256 = 표준)"
 
 if [ "${#fails[@]}" -gt 0 ]; then
     echo "❌ 릴리스 흐름 검사 실패 ${#fails[@]}건 (통과 $pass건)"

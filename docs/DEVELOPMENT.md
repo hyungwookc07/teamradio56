@@ -199,7 +199,10 @@ simhub/            # SimHub 플러그인 + C# 엔진 (simhub/README.md)
   레이스 종료 오라클, 기대 콜 대조). LMU 내장 공유 메모리 교차 검증(`tools/lmu_native_blob.py` 합성
   덤프 ↔ C# 리더, rF2 동등성, 원천 대체 규칙)과 릴리스 흐름 오프라인 검사(`release-flow-check.sh`)도
   여기서 부른다
-- `pwsh -NoProfile -File simhub/verify/ps-check.ps1 update.ps1 release.ps1` — PowerShell 5 호환 정적 검사
+- `pwsh -NoProfile -File simhub/verify/ps-check.ps1 update.ps1 release.ps1 simhub/ci/scan-defender.ps1` —
+  PowerShell 5 호환 정적 검사 (`"$n개"`처럼 변수 뒤에 한글이 붙어 변수 이름이 되는 실수도 잡는다).
+  `pwsh -NoProfile -File simhub/ci/scan-defender.ps1 -SelfTest` — 릴리스 백신 게이트의 순수 함수
+  (둘 다 `replay-check.sh`가 부른다)
 - CI(`.github/workflows/ci.yml`)는 `build-check.sh`와 `replay-check.sh`를 돌린다
 
 자세한 내용과 환경 변수는 [simhub/README.md](../simhub/README.md)를 본다.
@@ -223,6 +226,81 @@ main에 커밋한 뒤 릴리스를 채운다. 태그를 push할 수 없으면 ma
 다시 렌더하지 않는다. `v0.17.0`은 손으로 만든 빈 릴리스이고 0.17.1이 첫 실제 릴리스다.
 
 소스로 빌드해 쓰는 경우는 `update.bat` 더블클릭 (pull + 빌드 + DLL 복사).
+
+### 게시 전 관문 — 백신 검사와 빌드 출처 증명
+
+둘 다 게시 실행과 dry run(`release-dry/**` 브랜치 push)에서 똑같이 돈다. dry run은 게시하지 않으므로
+새 관문은 dry run으로 먼저 시험한다. publish 잡은 둘 다 통과해야 돈다.
+
+**Microsoft Defender 검사** (build 잡, `simhub/ci/scan-defender.ps1`) — `release.ps1`이 zip·매니페스트를
+만든 직후, 아티팩트를 올리기 전. Windows 러너 이미지는 속도 때문에 Defender를 느슨하게 둔다 (실시간
+보호 끔, `C:\`·`D:\` 제외 경로, 압축 파일 검사 끔, 시작 시 서명 갱신 끔). 그래서 '아무것도 안
+나옴'을 믿지 않는다:
+
+1. WinDefend 서비스가 돌고 있어야 한다 (아니면 시작, 못 하면 실패). `Get-MpComputerStatus` 요약을 로그에 남긴다.
+2. 제외 항목(경로·확장자·프로세스)을 전부 지운다 (일회용 러너). 그래도 검사 대상을 덮는 제외 경로·확장자가
+   남아 있으면 실패.
+3. 압축 파일 검사를 켜고(`DisableArchiveScanning $false`) 다시 읽어 확인한다.
+4. 서명 갱신 (`Update-MpSignature` → `MpCmdRun -SignatureUpdate` → `-SignatureUpdate -MMPC`, 3회). 그다음
+   서명이 3일 이내여야 한다 — 갱신이 조용히 실패해도 여기서 걸린다.
+5. **자체 시험**: 검사 대상과 같은 드라이브의 작업 폴더(`dist\av-scan\selftest`, 압축 푼 파일도
+   `dist\av-scan` 아래)에 EICAR 표준 시험 파일을 만들어 검사한다. 탐지(종료 코드 2 + 위협 목록)가 아니면
+   "검사기가 동작하지 않음"으로 멈춘다 — 그 상태의 '깨끗함'은 의미가 없다. EICAR 문자열은 조각을 이어
+   실행 중에만 만든다 (저장소에 완성된 문자열이 있으면 체크아웃 자체가 백신에 걸린다 —
+   `release-flow-check.sh`가 막는다). zip 안의 EICAR도 검사해 압축 검사가 되는지 보고서에 남긴다
+   (zip은 풀어서도 검사하므로 이건 경고만).
+6. 대상: `dist\ci\assets`의 파일 각각, 플러그인 zip을 새 폴더에 푼 내용(풀린 파일 수 = zip 항목 수),
+   새 음성 팩을 렌더한 실행이면 `dist\audio`의 팩 zip과 푼 내용. `MpCmdRun -Scan -ScanType 3 -File <경로>
+   -DisableRemediation` — 종료 코드 0이면서 위협 표시가 없을 때만 깨끗함, 2는 위협, 그 밖은 검사 오류
+   (둘 다 실패). 끝나고 `Get-MpThreatDetection`에 대상 경로가 있어도 실패.
+7. 보고서 `dist/ci/meta/av-scan.txt` (key=value, UTF-8, LF) — 엔진·서명 버전, 서명 시각, `selftest=detected`,
+   `result=clean`, 게시 자산마다 `asset=<이름>,<sha256>,<크기>`. 전부 통과했을 때만 쓴다. 실행 요약에도 한 절.
+
+리눅스 게이트에서는 Defender가 없으므로 `scan-defender.ps1 -SelfTest`가 순수 함수(EICAR 조립 68바이트·
+sha256, 제외 판정, `MpCmdRun` 출력 판정, 보고서 형식)만 시험하고, `-SampleReport`로 만든 보고서를 bash
+검사기에 넣어 형식 계약을 본다 (견본 보고서는 게시 쪽이 거부한다).
+
+**바이트 묶기** — 보고서는 아티팩트에 함께 실린다. verify-artifact(`verify-release-artifact.sh`),
+attest(`attest-check.sh files`), publish(`publish-release.sh`)가 각각 보고서가 있고 `result=clean`,
+`selftest=detected`, 서명이 검사 시각 기준 3일 이내, `asset=` 줄의 집합이 게시할 파일(zip + 매니페스트)과
+같고 sha256·크기도 같은지 본다 (`release-lib.sh`의 `av_report_problem`). 하나라도 어긋나면 게시하지
+않는다 — 검사한 바이트가 곧 게시하는 바이트다. 게시 자산은 여전히 zip과 매니페스트 둘뿐이다 (보고서는
+`meta/`에 있어 올라가지 않는다).
+
+**빌드 출처 증명** (attest 잡) — verify-artifact가 통과하면 같은 아티팩트를 받아 위 확인을 다시 하고,
+`actions/attest-build-provenance`(v4.2.2, SHA 고정)로 zip과 매니페스트에 SLSA 빌드 출처 증명을 남긴 뒤,
+릴리스 본문이 안내하는 명령 그대로(`gh attestation verify <파일> -R <저장소>`) 확인한다 (증명 API가 바로
+안 보일 수 있어 10초 간격 6번). `id-token: write`·`attestations: write`는 이 잡에만 있다 (빌드·코드 실행
+없음). 실패하면 publish가 돌지 않는다. dry run도 증명을 남긴다 — 릴리스·태그·자산은 만들지 않지만,
+증명 기록은 저장소의 attestations에 (공개 저장소라 Sigstore 공개 투명성 로그에도) 남는다.
+
+**릴리스 본문** — publish가 생성한 본문 끝에 '파일 검증' 절을 붙인다: 게시 파일별 SHA-256 표, Defender
+엔진·서명 버전·서명 시각과 자체 시험, 사용자가 확인하는 법 (PowerShell
+`Get-FileHash .\teamradio56-plugin-<버전>.zip -Algorithm SHA256`,
+`gh attestation verify teamradio56-plugin-<버전>.zip -R hyungwookc07/teamradio56`). 이어받기에서 화면에
+쓴 본문은 그 아래에 남는다. 같은 절을 verify-artifact 실행 요약에서 미리 볼 수 있다 (dry run 포함).
+
+`release-flow-check.sh`는 이 흐름을 가짜 gh로 돌리고(보고서 없음·깨끗하지 않음·자체 시험 없음·sha256
+불일치 → 게시 거부, 본문의 SHA-256·확인 명령), `release.yml`을 정적으로 본다 — 모든 `uses:`가 40자리
+SHA 고정, build 잡의 검사 단계가 업로드 앞(조건·`continue-on-error` 없음), attest 잡 권한이 정확히 셋,
+publish가 attest 성공을 기다림.
+
+#### 백신이 파일을 잡으면
+
+build 잡이 "Microsoft Defender 검사 실패"로 멈추고 아티팩트는 올라가지 않는다 (게시 없음). 직접 만든
+DLL의 오탐일 가능성이 크지만, 확인하기 전에는 게시하지 않는다.
+
+1. **게시하지 않는다.** 검사 단계를 끄거나 건너뛰지 않는다 (조건·`continue-on-error` 추가 금지 — 정적
+   검사가 막는다). 손으로 올리는 대체 경로(`release.bat`)로 돌아가지도 않는다.
+2. 로그에서 위협 이름, 파일 경로(압축 푼 DLL이면 그 경로), sha256을 본다. 같은 커밋을 로컬에서
+   `release.bat -NoPublish`로 빌드해 sha256을 비교하고, 최신 서명의 Defender로 그 파일을 검사한다.
+   최근 바뀐 의존성·빌드 도구·커밋을 살핀다 (진짜 오염일 수 있다).
+3. 오탐으로 판단되면 [Microsoft Security Intelligence 제출 페이지](https://www.microsoft.com/wdsi/filesubmission)에
+   그 파일을 오탐(incorrectly detected)으로 제출한다. 서명이 고쳐지면 Re-run failed jobs로 다시 검사한다
+   (같은 커밋을 다시 빌드한다).
+4. "검사기가 동작하지 않습니다"(EICAR 미탐지), 서명 갱신·신선도 실패, 서비스 시작 실패는 위협이 아니라
+   러너 문제다 — Re-run failed jobs. 계속되면 러너 이미지의 Defender 설정이 바뀐 것이니 로그의 상태
+   요약을 보고 `scan-defender.ps1`을 고친다.
 
 ## 버전별 업데이트 메모 (플러그인)
 

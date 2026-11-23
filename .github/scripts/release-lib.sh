@@ -87,3 +87,111 @@ adopt_blocker() {
         return
     fi
 }
+
+# ── 백신 검사 보고서 ─────────────────────────────────────────────────────
+# simhub/ci/scan-defender.ps1이 Windows 빌드 러너에서 게시 파일을 Microsoft Defender로 검사하고
+# dist/ci/meta/av-scan.txt(key=value, LF)로 남긴다. 아티팩트에 함께 실려 verify-artifact·attest·publish가
+# 이 보고서가 '게시할 바로 그 바이트'를 깨끗하다고 했는지 본다 (asset=<이름>,<sha256>,<크기>).
+AV_MAX_SIG_AGE_SEC=$((3 * 86400))
+
+_av_kv() { sed -n "s/^$1=//p" "$2" | head -n1; }
+
+# 출력이 비면 통과, 아니면 이유 한 줄.
+#   av_report_problem <보고서> <assets 폴더>
+av_report_problem() {
+    local rep=$1 dir=$2 k v dup want got name line sha size rest sig scan
+    if [ ! -s "$rep" ]; then
+        echo "보고서가 없습니다 ($(basename "$rep") — Windows 빌드의 Defender 검사 단계가 돌지 않았다)"
+        return
+    fi
+    if grep -q $'\r' "$rep"; then echo "줄 끝이 LF가 아닙니다"; return; fi
+    if [ -n "$(tail -c1 "$rep")" ]; then echo "마지막 줄이 끝나지 않았습니다 (잘린 보고서?)"; return; fi
+    if grep -qvE '^[a-z][a-z0-9_]*=' "$rep"; then echo "key=value가 아닌 줄이 있습니다"; return; fi
+    dup=$(grep -vE '^(asset|extra_file)=' "$rep" | cut -d= -f1 | LC_ALL=C sort | uniq -d | head -n1)
+    if [ -n "$dup" ]; then echo "키 $dup 이(가) 두 번 나옵니다"; return; fi
+    if [ "$(_av_kv format "$rep")" != 1 ]; then echo "format=1이 아닙니다"; return; fi
+    v=$(_av_kv scanner "$rep")
+    if [ "$v" != "Microsoft Defender" ]; then echo "scanner=${v:-없음} (Microsoft Defender여야 한다)"; return; fi
+    if [ "$(_av_kv running_mode "$rep")" = sample ]; then
+        echo "검증 게이트용 견본 보고서(-SampleReport)입니다 — 실제 검사가 아닙니다"
+        return
+    fi
+    for k in engine_version antivirus_signature_version signature_updated scan_time; do
+        if [ -z "$(_av_kv "$k" "$rep")" ]; then echo "$k 가 비었습니다"; return; fi
+    done
+    v=$(_av_kv selftest "$rep")
+    if [ "$v" != detected ]; then
+        echo "탐지 자체 시험(EICAR)을 통과하지 않았습니다 (selftest=${v:-없음}) — 검사기가 동작했는지 알 수 없다"
+        return
+    fi
+    v=$(_av_kv result "$rep")
+    if [ "$v" != clean ]; then echo "검사 결과가 clean이 아닙니다 (result=${v:-없음})"; return; fi
+    # 서명이 검사 시각 기준 3일 이내 (스크립트도 막지만 보고서만으로도 확인한다)
+    sig=$(_av_kv signature_updated "$rep")
+    scan=$(_av_kv scan_time "$rep")
+    for v in "$sig" "$scan"; do
+        if ! [[ "$v" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+            echo "시각 형식이 ISO-8601 UTC가 아닙니다: $v"
+            return
+        fi
+    done
+    sig=$(date -u -d "$sig" +%s) && scan=$(date -u -d "$scan" +%s) || { echo "시각을 읽지 못했습니다"; return; }
+    if [ $((scan - sig)) -gt "$AV_MAX_SIG_AGE_SEC" ] || [ $((sig - scan)) -gt 86400 ]; then
+        echo "서명($(_av_kv signature_updated "$rep"))이 검사 시각($(_av_kv scan_time "$rep"))보다 3일 넘게 오래됐습니다"
+        return
+    fi
+    # 검사한 자산 = 게시할 파일 (집합이 같고 바이트가 같다)
+    want=$(find "$dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)
+    got=$(sed -n 's/^asset=\([^,]*\),.*/\1/p' "$rep" | LC_ALL=C sort)
+    if [ -z "$want" ]; then echo "게시할 파일이 없습니다 ($dir)"; return; fi
+    if [ "$want" != "$got" ]; then
+        echo "검사한 파일($(tr '\n' ' ' <<< "$got" | sed 's/ $//')) ≠ 게시할 파일($(tr '\n' ' ' <<< "$want" | sed 's/ $//'))"
+        return
+    fi
+    while IFS= read -r name; do
+        line=$(awk -v n="asset=$name," 'index($0, n) == 1' "$rep")
+        rest=${line#"asset=$name,"}
+        sha=${rest%%,*}
+        size=${rest#*,}
+        if ! [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || ! [[ "$size" =~ ^[0-9]+$ ]]; then
+            echo "asset 줄 형식이 잘못됐습니다: $line"
+            return
+        fi
+        v=$(sha256sum "$dir/$name" | cut -d' ' -f1)
+        if [ "$sha" != "$v" ]; then
+            echo "$name 이(가) 검사한 바이트와 다릅니다 (보고서 sha256 $sha, 게시할 파일 $v)"
+            return
+        fi
+        if [ "$size" != "$(stat -c %s "$dir/$name")" ]; then
+            echo "$name 크기가 검사한 파일과 다릅니다"
+            return
+        fi
+    done <<< "$want"
+}
+
+# 릴리스 본문 끝에 붙이는 '파일 검증' 절 — 게시 파일의 SHA-256, Defender 검사 결과, 사용자가 확인하는 법.
+# 보고서는 av_report_problem을 통과한 것이어야 한다. env REPO.
+#   release_verify_section <보고서> <assets 폴더> <버전>
+release_verify_section() {
+    local rep=$1 dir=$2 v=$3 f when
+    when=$(_av_kv signature_updated "$rep" | sed 's/^\([0-9-]*\)T\([0-9]*:[0-9]*\).*/\1 \2 UTC/')
+    printf '%s\n' "### 파일 검증" "" "| 파일 | SHA-256 |" "| --- | --- |"
+    while IFS= read -r f; do
+        printf '| `%s` | `%s` |\n' "$f" "$(sha256sum "$dir/$f" | cut -d' ' -f1)"
+    done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+    printf '%s\n' "" \
+        "- **백신 검사**: Microsoft Defender (엔진 $(_av_kv engine_version "$rep"), 서명 $(_av_kv antivirus_signature_version "$rep"), 서명 갱신 $when)로 게시 직전에 위 두 파일과 zip을 푼 DLL까지 검사했고 위협이 없었습니다. 검사 전에 EICAR 시험 파일로 검사기가 실제로 잡는지 먼저 확인했습니다." \
+        "- **빌드 출처 증명**: 이 저장소의 GitHub Actions 릴리스 워크플로가 위 두 파일을 만들었다는 서명된 증명(attestation)을 남겼습니다." \
+        "" \
+        "받은 zip이 게시된 파일과 같은지 확인하려면 (선택) zip이 있는 폴더의 PowerShell에서:" \
+        "" \
+        '```powershell' \
+        "Get-FileHash .\\teamradio56-plugin-$v.zip -Algorithm SHA256" \
+        '```' \
+        "" \
+        "나온 Hash가 위 표의 값과 같으면 됩니다 (대소문자는 상관없습니다). 로그인한 [GitHub CLI](https://cli.github.com/)가 있으면 이 저장소의 워크플로가 만든 파일인지도 확인할 수 있습니다:" \
+        "" \
+        '```' \
+        "gh attestation verify teamradio56-plugin-$v.zip -R $REPO" \
+        '```'
+}

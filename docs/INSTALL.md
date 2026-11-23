@@ -33,6 +33,9 @@ LMU 1.2부터는 게임이 직접 공유 메모리로 데이터를 내줘요. te
    플러그인 안에서 받아요. 압축을 풀면 DLL이 두 개 있어요.
    - `TeamRadio56.Core.dll`
    - `TeamRadio56.SimHub.dll`
+
+   받은 zip이 릴리스에 올라간 파일과 똑같은지 확인하고 싶으면
+   [선택: 받은 zip 확인하기](#선택-받은-zip-확인하기)를 보세요. 안 해도 돼요.
 2. **SimHub을 끄고**, 두 DLL을 **SimHub 설치 폴더 바로 아래**에 복사해요.
    하위 폴더에 넣으면 안 돼요. 기본 경로는 이래요.
 
@@ -101,6 +104,31 @@ LMU 1.2부터는 게임이 직접 공유 메모리로 데이터를 내줘요. te
 
 > 예전에 파이썬 단독 실행판을 쓰면서 LMU Steam 시작 옵션에 `launch_with_lmu.bat`을
 > 넣었다면 지우세요. 그대로 두면 무전이 두 번(서로 다른 목소리로) 나올 수 있어요.
+
+## 선택: 받은 zip 확인하기
+
+꼭 할 필요는 없어요. 받은 zip이 릴리스에 올라간 파일과 똑같은지 직접 확인하고 싶을 때만 하세요.
+
+릴리스 페이지 본문의 **파일 검증** 부분에 zip의 SHA-256 값이 있어요. 게시하기 전에
+Microsoft Defender로 검사한 결과도 함께 적혀 있어요. (예전 릴리스에는 이 부분이 없어요.)
+
+1. zip을 받은 폴더의 빈 곳을 오른쪽 클릭하고 **터미널에서 열기**를 눌러요.
+   (Windows 10은 Shift를 누른 채 오른쪽 클릭 → **여기에 PowerShell 창 열기**)
+2. 아래처럼 입력해요. `x.y.z`는 받은 버전으로 바꾸세요.
+
+   ```powershell
+   Get-FileHash .\teamradio56-plugin-x.y.z.zip -Algorithm SHA256
+   ```
+
+3. 나온 **Hash** 값이 릴리스 페이지의 값과 같으면 돼요. 대소문자는 상관없어요.
+   다르면 설치하지 말고 다시 받아 보세요.
+
+[GitHub CLI](https://cli.github.com/)에 로그인해 쓰고 있다면, 이 저장소의 GitHub Actions가
+만든 파일인지도 확인할 수 있어요. **Verification succeeded!**가 나오면 돼요.
+
+```
+gh attestation verify teamradio56-plugin-x.y.z.zip -R hyungwookc07/teamradio56
+```
 
 ## 선택: rF2 공유 메모리 플러그인
 

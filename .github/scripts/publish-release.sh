@@ -7,6 +7,10 @@
 # 올린 자산을 지워 빈 릴리스로 되돌린다 — 'Re-run failed jobs'로 다시 이어받을 수 있게.
 # 판단은 preflight가 아니라 게시하는 지금의 릴리스 상태로 한다 (그사이 만들어졌을 수 있다).
 #
+# 게시 전에 Windows 빌드의 Defender 검사 보고서(meta/av-scan.txt)가 이 zip·매니페스트 바이트를
+# 깨끗하다고 했는지 본다 (아니면 게시하지 않는다). 본문 끝에는 '파일 검증' 절(SHA-256, 검사 결과,
+# 확인 방법)을 붙인다 — 이어받기에서 화면에 쓴 본문은 그 아래에 남는다.
+#
 # env: TAG SHA MODE(tag|dispatch) GH_TOKEN REPO   — 작업 폴더에 dist/ci (아티팩트)
 set -euo pipefail
 
@@ -23,6 +27,7 @@ kv() { sed -n "s/^$1=//p" "$2" | head -n1; }
 MAN="$DIST/assets/teamradio56-release.txt"
 INFO="$DIST/meta/release-info.txt"
 NOTES="$DIST/meta/release-notes.md"
+AV="$DIST/meta/av-scan.txt"
 V=$(kv version "$MAN")
 ZIP="$DIST/assets/teamradio56-plugin-$V.zip"
 
@@ -35,6 +40,9 @@ mapfile -t files < <(find "$DIST/assets" -mindepth 1 -maxdepth 1 -printf "%f\n" 
 [ "$(kv commit "$INFO")" = "$SHA" ] || err "빌드 커밋 $(kv commit "$INFO") ≠ 이 실행의 커밋 $SHA"
 TITLE=$(kv title "$INFO")
 [ -n "$TITLE" ] && [ -s "$NOTES" ] || err "release-info.txt title 또는 release-notes.md가 비었습니다"
+# 백신 검사 — 보고서의 asset sha256 = 지금 게시할 파일 (자산 구성 확인은 위에서 끝났다)
+why=$(av_report_problem "$AV" "$DIST/assets")
+[ -z "$why" ] || err "백신 검사 보고서(av-scan.txt): $why — 게시하지 않습니다"
 
 # 2. 같은 태그 릴리스 — 없거나, 태그 push 실행이면 화면에서 만든 빈 릴리스
 ADOPT=false
@@ -91,11 +99,15 @@ else
     flags=(--target "$SHA")
 fi
 
-# 6. 게시
+# 6. 게시 — 본문 = 생성한 본문 + '파일 검증' 절 (+ 이어받기면 화면에서 쓴 본문)
+body=$(mktemp)
+{
+    cat "$NOTES"
+    echo
+    release_verify_section "$AV" "$DIST/assets" "$V"
+} > "$body"
 if [ "$ADOPT" = true ]; then
     # 화면에서 쓴 본문이 있으면 생성한 본문 아래에 남긴다
-    body=$(mktemp)
-    cat "$NOTES" > "$body"
     if [ -n "$(tr -d '[:space:]' <<< "$OLD_BODY")" ]; then
         printf '\n%s\n' "$OLD_BODY" >> "$body"
     fi
@@ -117,12 +129,12 @@ if [ "$ADOPT" = true ]; then
         --prerelease=false --latest
     uploaded=()
     trap - EXIT
-    rm -f "$body"
 else
     # 자산을 다 올린 뒤 공개되고, 실패하면 gh가 초안을 지운다
     gh release create "$TAG" "$ZIP" "$MAN" --repo "$REPO" --title "$TITLE" \
-        --notes-file "$NOTES" --latest "${flags[@]}"
+        --notes-file "$body" --latest "${flags[@]}"
 fi
+rm -f "$body"
 
 # 7. 사용자 업데이터가 보는 주소 확인
 ok=false
@@ -143,5 +155,6 @@ done
     echo
     echo "- https://github.com/$REPO/releases/tag/$TAG$([ "$ADOPT" = true ] && echo ' (화면에서 만든 빈 릴리스를 이어받음)')"
     echo "- 업데이터 확인 주소: https://github.com/$REPO/releases/latest/download/teamradio56-release.txt (version=$V, audio_tag=$AUDIO_TAG)"
+    echo "- Defender 검사: 엔진 $(kv engine_version "$AV") · 서명 $(kv antivirus_signature_version "$AV") · 자체 시험 $(kv selftest "$AV") · $(kv result "$AV") — 본문에 '파일 검증' 절"
 } >> "$SUMMARY"
 echo "✅ 릴리스 $TAG 게시 완료"

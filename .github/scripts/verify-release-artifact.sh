@@ -8,6 +8,8 @@
 # 렌더했으면 그 아티팩트의 audio_pack.txt). 매니페스트의 audio_* 줄을 이것과 대조한다.
 # env PUBLISH=true면 음성 팩을 못 받는 것도 실패 (dry run은 경고 후 팩 설치 흐름만 뺀다).
 # env EXPECT_PACK: 매니페스트의 audio_pack이 이 팩이어야 한다 (새 팩 렌더 실행).
+# Windows 빌드의 Defender 검사 보고서(meta/av-scan.txt)가 이 zip·매니페스트 바이트를 깨끗하다고
+# 했는지도 본다 (publish와 같은 규칙). 요약에는 릴리스 본문에 붙을 '파일 검증' 절을 미리 보여 준다.
 set -euo pipefail
 
 DIST=${1:?dist dir}
@@ -15,6 +17,9 @@ AUDIO=${2:?audio dir}
 DESC=${3:-voice_lines/audio_pack.txt}
 REPO=${REPO:?}
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
+export REPO
+# shellcheck source=release-lib.sh
+. "$(dirname "$0")/release-lib.sh"
 
 err() { echo "::error::$*"; exit 1; }
 kv() { sed -n "s/^$1=//p" "$2" | head -n1; }
@@ -39,6 +44,9 @@ done
 [ "$(kv plugin_asset "$MAN")" = "$ZIP" ] || err "plugin_asset ≠ $ZIP"
 sha=$(sha256sum "$DIST/assets/$ZIP" | cut -d' ' -f1)
 [ "$sha" = "$(kv plugin_sha256 "$MAN")" ] || err "plugin_sha256 ≠ zip 실제 해시 $sha"
+AV="$DIST/meta/av-scan.txt"
+why=$(av_report_problem "$AV" "$DIST/assets")
+[ -z "$why" ] || err "백신 검사 보고서(av-scan.txt): $why"
 [ -f "$DESC" ] || err "기술자가 없습니다: $DESC"
 if [ -n "${EXPECT_PACK:-}" ] && [ "$(kv audio_pack "$MAN")" != "$EXPECT_PACK" ]; then
     err "매니페스트 audio_pack $(kv audio_pack "$MAN") ≠ 이번 실행이 렌더한 팩 $EXPECT_PACK"
@@ -72,4 +80,11 @@ simhub/tests/TeamRadio56.Replay/bin/Release/net8.0/teamradio56-replay \
     echo "- $ZIP sha256 \`$sha\`"
     echo "- 음성 팩 $(kv audio_pack "$MAN") ($AUDIO_TAG): $([ ${#AUDIO_ARGS[@]} -gt 0 ] && echo '설치 흐름 확인' || echo '건너뜀')"
     echo "- SimHub: $(kv simhub_wpf_version "$INFO") (SimHub.Plugins $(kv simhub_plugins_version "$INFO"))"
+    echo "- Defender 검사: 엔진 $(kv engine_version "$AV") · 서명 $(kv antivirus_signature_version "$AV") ($(kv signature_updated "$AV")) · 자체 시험 $(kv selftest "$AV") ($(kv selftest_threat "$AV")) · zip 안의 시험 파일 $(kv selftest_archive "$AV") · $(kv result "$AV") · 파일 $(kv scanned_files "$AV")개 + 압축 푼 $(kv extracted_files "$AV")개"
+    echo
+    echo "<details><summary>릴리스 본문에 붙을 '파일 검증' 절 (미리 보기)</summary>"
+    echo
+    release_verify_section "$AV" "$DIST/assets" "$V"
+    echo
+    echo "</details>"
 } >> "$SUMMARY"

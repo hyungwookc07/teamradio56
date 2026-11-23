@@ -95,6 +95,8 @@ English: [README.md](README.md)
    `teamradio56-plugin-x.y.z.zip`만 받으면 돼요. 다른 파일은 필요 없고, 음성 팩은
    플러그인 안에서 받아요. zip 안에 `TeamRadio56.Core.dll`과
    `TeamRadio56.SimHub.dll` 두 파일이 들어 있어요.
+   (선택: 받은 zip을 확인하는 SHA-256 값과 방법은 릴리스 본문의 '파일 검증'에 있어요 —
+   [자세히](docs/INSTALL.md#선택-받은-zip-확인하기).)
 2. SimHub을 끄고, DLL **두 개 모두** SimHub 설치 폴더 바로 아래에 복사해요
    (하위 폴더 아니에요). 기본 경로는 `C:\Program Files (x86)\SimHub\`예요.
 3. SimHub을 켜면 새 플러그인을 활성화할지 묻는 창이 떠요. **teamradio56**에

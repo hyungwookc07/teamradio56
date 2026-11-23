@@ -34,6 +34,19 @@ foreach ($path in $args) {
             $problems += "PowerShell 7 전용 연산자 '$($t.Text)' 줄 $($t.Extent.StartLineNumber)"
         }
     }
+    # "$count개"처럼 변수 바로 뒤에 한글이 붙으면 한글까지 변수 이름이 된다 — 빈 값(StrictMode면 예외).
+    # 문자열 안의 변수 토큰까지 본다 (고치기: "${count}개" 또는 "$($count)개")
+    $stack = New-Object System.Collections.Stack
+    foreach ($t in $tokens) { $stack.Push($t) }
+    while ($stack.Count -gt 0) {
+        $t = $stack.Pop()
+        if ($t -is [System.Management.Automation.Language.VariableToken] -and $t.Name -match '[ᄀ-ᇿ㄰-㆏가-힣]') {
+            $problems += "변수 이름에 한글이 붙음 '$($t.Text)' 줄 $($t.Extent.StartLineNumber) — `${이름} 또는 `$(`$이름)으로"
+        }
+        if ($t -is [System.Management.Automation.Language.StringExpandableToken] -and $null -ne $t.NestedTokens) {
+            foreach ($n in $t.NestedTokens) { $stack.Push($n) }
+        }
+    }
     $paramAsts = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandParameterAst] }, $true)
     foreach ($p in $paramAsts) {
         if ($ps7Params -contains $p.ParameterName) {

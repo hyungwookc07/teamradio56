@@ -297,7 +297,7 @@ for bat in update.bat release.bat; do
         fail=1
     fi
 done
-for ps in update.ps1 release.ps1 simhub/ci/install-simhub.ps1; do
+for ps in update.ps1 release.ps1 simhub/ci/install-simhub.ps1 simhub/ci/scan-defender.ps1; do
     if [ "$(head -c3 "$ps" | od -An -tx1 | tr -d ' ')" != "efbbbf" ]; then
         echo "❌ $ps 에 UTF-8 BOM이 없습니다"
         fail=1
@@ -309,7 +309,12 @@ if [ -z "$PWSH" ] && [ -x "$HOME/.dotnet/tools/pwsh" ]; then
 fi
 if [ -n "$PWSH" ]; then
     if ! "$PWSH" -NoProfile -NonInteractive -File simhub/verify/ps-check.ps1 \
-        update.ps1 release.ps1 simhub/ci/install-simhub.ps1 simhub/verify/ps-check.ps1; then
+        update.ps1 release.ps1 simhub/ci/install-simhub.ps1 simhub/ci/scan-defender.ps1 simhub/verify/ps-check.ps1; then
+        fail=1
+    fi
+    # 릴리스 백신 게이트(Windows 러너 전용)의 순수 함수 — EICAR 조립(68바이트·sha256), 제외 판정,
+    # MpCmdRun 출력 판정, 보고서 형식. Defender는 건드리지 않는다
+    if ! "$PWSH" -NoProfile -NonInteractive -File simhub/ci/scan-defender.ps1 -SelfTest; then
         fail=1
     fi
     mkdir -p "$OUT/rel/dlls"

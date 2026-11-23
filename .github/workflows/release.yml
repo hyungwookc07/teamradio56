@@ -5,6 +5,9 @@ name: release
 # 게시물은 이 워크플로가 Windows에서 실제 SimHub으로 만든 아티팩트 그대로다 (스텁 빌드 금지).
 # 멘트 집합이 바뀐 게시 실행은 음성 팩을 먼저 렌더·게시하고(audio 잡 → audio-pack.yml, 약 2시간)
 # 그 기술자로 빌드한다.
+# 게시 전 관문 두 개는 dry run에서도 돈다: Windows 빌드 러너의 Microsoft Defender 검사(탐지·검사기
+# 자체 시험 실패면 멈춤, 보고서가 아티팩트에 실려 이후 잡이 sha256으로 대조)와 attest 잡의 빌드 출처
+# 증명. 게시(publish)는 둘 다 통과해야 돈다.
 on:
   push:
     tags: ['v*']
@@ -174,6 +177,21 @@ jobs:
         run: >-
           release.bat -Ci -SimHubPath "%SIMHUB_DIR%" -OutDir dist\ci\assets -MetaDir dist\ci\meta
           -ExpectTag %EXPECT_TAG% -NotesFile "%RUNNER_TEMP%\notes.txt" -AudioPackFile "%AUDIO_PACK_FILE%" %DRY%
+      # 게시될 파일을 Microsoft Defender로 검사한다 (dry run도). 위협이 나오거나, 검사기가 EICAR 자체
+      # 시험을 못 잡거나, 서명을 갱신하지 못하면 여기서 멈춘다 — 아티팩트를 올리지 않는다.
+      # 보고서 dist/ci/meta/av-scan.txt가 아티팩트에 실려 verify-artifact·attest·publish가 게시할
+      # 파일의 sha256과 대조한다. 작업 폴더 dist/av-scan(자체 시험·압축 풀기)은 올리지 않는다
+      - name: Microsoft Defender 검사 (게시 파일 · 압축 푼 내용 · 새 음성 팩)
+        shell: powershell
+        timeout-minutes: 30
+        env:
+          TR56_AUDIO_DIR: ${{ needs.preflight.outputs.need_pack == 'true' && 'dist\audio' || '' }}
+        run: |
+          $extra = @()
+          if ($env:TR56_AUDIO_DIR) { $extra = @('-ExtraDir', $env:TR56_AUDIO_DIR) }
+          powershell -NoProfile -ExecutionPolicy Bypass -File simhub\ci\scan-defender.ps1 `
+            -AssetsDir dist\ci\assets -ReportPath dist\ci\meta\av-scan.txt -WorkDir dist\av-scan @extra
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: teamradio56-release-${{ needs.preflight.outputs.version }}
@@ -218,10 +236,44 @@ jobs:
           EXPECT_PACK: ${{ needs.preflight.outputs.need_pack == 'true' && needs.preflight.outputs.pack || '' }}
         run: bash .github/scripts/verify-release-artifact.sh dist/ci "$RUNNER_TEMP/audio" "$DESC"
 
-  publish:
+  # 게시될 파일(플러그인 zip + 매니페스트)의 빌드 출처 증명 — dry run에서도 돈다. 릴리스·태그·자산은
+  # 만들지 않지만 증명 기록은 저장소의 attestations에 남는다 (공개 저장소면 Sigstore 공개 로그에도).
+  # id-token·attestations 쓰기는 이 잡에만 둔다 — 빌드나 코드 실행 없이, 내려받은 아티팩트가
+  # Defender 보고서와 같은 바이트인지 다시 보고 증명한 뒤, 릴리스 본문이 안내하는 명령으로 확인한다.
+  # 실패하면 publish가 돌지 않는다
+  attest:
     needs: [preflight, verify-artifact]
+    if: ${{ !cancelled() && needs.verify-artifact.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: teamradio56-release-${{ needs.preflight.outputs.version }}
+          path: dist/ci
+      - name: 증명할 파일 재확인 (zip + 매니페스트 · sha256 · Defender 보고서)
+        run: bash .github/scripts/attest-check.sh files dist/ci
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/ci/assets/teamradio56-plugin-${{ needs.preflight.outputs.version }}.zip
+            dist/ci/assets/teamradio56-release.txt
+      - name: 사용자 안내 명령으로 증명 확인 (gh attestation verify)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/attest-check.sh verify dist/ci
+
+  publish:
+    needs: [preflight, verify-artifact, attest]
     if: >-
-      ${{ !cancelled() && needs.verify-artifact.result == 'success'
+      ${{ !cancelled() && needs.verify-artifact.result == 'success' && needs.attest.result == 'success'
       && needs.preflight.outputs.publish == 'true' && github.repository == 'hyungwookc07/teamradio56' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15

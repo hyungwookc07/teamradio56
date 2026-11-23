@@ -102,6 +102,8 @@ as well.
    [latest release](https://github.com/hyungwookc07/teamradio56/releases/latest).
    That one file is all you need. You can ignore the other files, and the
    voice pack installs from inside the plugin. The zip contains two files: `TeamRadio56.Core.dll` and `TeamRadio56.SimHub.dll`.
+   (Optional: the release notes list the zip's SHA-256 under "파일 검증" (file
+   verification), with the commands to check your download.)
 2. Close SimHub. Copy **both** DLLs into the SimHub install folder itself,
    not a subfolder. The default is `C:\Program Files (x86)\SimHub\`.
 3. Start SimHub. When it asks whether to enable the new plugin, tick
